@@ -36,9 +36,10 @@ export default function NavigationRail() {
       title: 'CRM & Funil de Vendas (Kanban)',
     },
     {
-      href: '#',
+      href: '/bots',
       icon: Bot,
-      title: 'Automações & Chatbots',
+      title: 'Automações & Chatbots No-Code',
+      badge: '3',
     },
     {
       href: '#',
