@@ -53,6 +53,7 @@ export interface Conversation {
   assignee?: UserProfile;
   status: ConversationStatus;
   priority: 'low' | 'medium' | 'high' | 'urgent';
+  channel_type?: ChannelType;
   last_message_preview?: string;
   last_message_at?: string;
   unread_count: number;
@@ -65,8 +66,17 @@ export interface Message {
   conversation_id: string;
   sender_type: 'contact' | 'agent' | 'bot' | 'system';
   sender_id?: string;
+  sender_name?: string;
   content: string;
   message_type: 'text' | 'image' | 'audio' | 'video' | 'document' | 'template';
   delivery_status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   created_at: string;
+}
+
+export interface QuickTemplate {
+  id: string;
+  shortcut: string;
+  title: string;
+  content: string;
+  category: 'saudacao' | 'vendas' | 'suporte' | 'cobranca';
 }
