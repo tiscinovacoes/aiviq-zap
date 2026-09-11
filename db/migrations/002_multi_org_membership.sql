@@ -18,6 +18,14 @@
 --       x-organization-id: <uuid da organização ativa>
 --   Há um fallback de transição: se o header não vier E o usuário pertencer a
 --   exatamente UMA organização, ela é resolvida automaticamente (ver §3).
+--
+-- ✅ VALIDADA EM 11/09/2026 no projeto Supabase "Poli" (npzffhpmmaoirikhtmje).
+--   Aplicada com sucesso sobre a 001; 24 testes de isolamento passaram;
+--   advisors de segurança e performance sem nenhum WARN.
+--   Este arquivo já incorpora as correções encontradas durante a validação
+--   (search_path em touch_updated_at, policies de escrita separadas por comando,
+--   índices de FK). No projeto validado elas entraram como 002b/002c; uma
+--   aplicação limpa deste arquivo produz o mesmo estado final.
 
 BEGIN;
 
@@ -182,8 +190,12 @@ BEGIN
     SELECT unnest(ARRAY[
       'organizations:organizations_select',    'organizations:organizations_update',
       'organization_members:org_members_select','organization_members:org_members_write',
+      'organization_members:org_members_insert','organization_members:org_members_update',
+      'organization_members:org_members_delete',
       'profiles:profiles_select',              'profiles:profiles_update_self',
       'inboxes:inboxes_select',                'inboxes:inboxes_write',
+      'inboxes:inboxes_insert',                'inboxes:inboxes_update',
+      'inboxes:inboxes_delete',
       'contacts:contacts_select',              'contacts:contacts_insert',
       'contacts:contacts_update',              'contacts:contacts_delete',
       'conversations:conversations_select',    'conversations:conversations_insert',
@@ -220,12 +232,25 @@ CREATE POLICY org_members_select ON organization_members
         OR organization_id = (SELECT private.current_organization_id())
     );
 
-CREATE POLICY org_members_write ON organization_members
-    FOR ALL TO authenticated
+-- Escrita separada por comando (não FOR ALL): FOR ALL inclui SELECT e criaria
+-- uma segunda policy permissiva de leitura, avaliada em toda query.
+-- Apontado pelo linter do Supabase (0006_multiple_permissive_policies).
+CREATE POLICY org_members_insert ON organization_members
+    FOR INSERT TO authenticated
+    WITH CHECK ( organization_id = (SELECT private.current_organization_id())
+                 AND (SELECT private.is_organization_admin()) );
+
+CREATE POLICY org_members_update ON organization_members
+    FOR UPDATE TO authenticated
     USING ( organization_id = (SELECT private.current_organization_id())
             AND (SELECT private.is_organization_admin()) )
     WITH CHECK ( organization_id = (SELECT private.current_organization_id())
                  AND (SELECT private.is_organization_admin()) );
+
+CREATE POLICY org_members_delete ON organization_members
+    FOR DELETE TO authenticated
+    USING ( organization_id = (SELECT private.current_organization_id())
+            AND (SELECT private.is_organization_admin()) );
 
 -- --------------------------------------------------------------------- profiles
 -- Identidade global: cada um vê a si mesmo e aos colegas da organização ativa.
@@ -246,11 +271,21 @@ CREATE POLICY inboxes_select ON inboxes
     FOR SELECT TO authenticated
     USING ( organization_id = (SELECT private.current_organization_id()) );
 
-CREATE POLICY inboxes_write ON inboxes
-    FOR ALL TO authenticated
+CREATE POLICY inboxes_insert ON inboxes
+    FOR INSERT TO authenticated
+    WITH CHECK ( organization_id = (SELECT private.current_organization_id())
+                 AND (SELECT private.is_organization_admin()) );
+
+CREATE POLICY inboxes_update ON inboxes
+    FOR UPDATE TO authenticated
     USING ( organization_id = (SELECT private.current_organization_id())
             AND (SELECT private.is_organization_admin()) )
     WITH CHECK ( organization_id = (SELECT private.current_organization_id()) );
+
+CREATE POLICY inboxes_delete ON inboxes
+    FOR DELETE TO authenticated
+    USING ( organization_id = (SELECT private.current_organization_id())
+            AND (SELECT private.is_organization_admin()) );
 
 -- --------------------------------------------------------------------- contacts
 CREATE POLICY contacts_select ON contacts
@@ -332,11 +367,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_external_dedup
     WHERE external_message_id IS NOT NULL;
 
 -- ==============================================================================
+-- 6b. ÍNDICES DE CONSULTA
+--     conversations.inbox_id estava sem índice — e é a coluna da query mais
+--     quente do produto. Apontado pelo linter (0001_unindexed_foreign_keys).
+-- ==============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_conversations_inbox
+    ON conversations (inbox_id);
+
+-- Query real do inbox: "conversas abertas desta caixa atribuídas a mim".
+-- Padrão validado em produção pelo Chatwoot (conv_acid_inbid_stat_asgnid_idx).
+CREATE INDEX IF NOT EXISTS idx_conversations_org_inbox_status_assignee
+    ON conversations (organization_id, inbox_id, status, assignee_id);
+
+-- Ordenação da lista de conversas.
+CREATE INDEX IF NOT EXISTS idx_conversations_org_last_message
+    ON conversations (organization_id, last_message_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_org_members_invited_by
+    ON organization_members (invited_by) WHERE invited_by IS NOT NULL;
+
+-- ==============================================================================
 -- 7. updated_at automático em organization_members
 -- ==============================================================================
 
+-- search_path travado também aqui: vale para toda função, não só SECURITY DEFINER.
 CREATE OR REPLACE FUNCTION touch_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql
+SET search_path = ''
+AS $$
 BEGIN NEW.updated_at := NOW(); RETURN NEW; END; $$;
 
 DROP TRIGGER IF EXISTS org_members_touch ON organization_members;
