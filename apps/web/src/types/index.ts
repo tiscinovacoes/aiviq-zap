@@ -39,8 +39,13 @@ export interface Contact {
   phone?: string;
   email?: string;
   avatar_url?: string;
+  company?: string;
   tags: string[];
+  assigned_to?: string; // Carteira do atendente
+  assigned_user?: UserProfile;
   custom_attributes: Record<string, any>;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Conversation {
@@ -79,4 +84,28 @@ export interface QuickTemplate {
   title: string;
   content: string;
   category: 'saudacao' | 'vendas' | 'suporte' | 'cobranca';
+}
+
+export type DealStage =
+  | 'lead_qualificado'
+  | 'contato_inicial'
+  | 'demonstracao'
+  | 'proposta_enviada'
+  | 'fechado_ganho'
+  | 'perdido';
+
+export interface Deal {
+  id: string;
+  organization_id: string;
+  contact_id: string;
+  contact?: Contact;
+  title: string;
+  value: number; // Em centavos ou valor float em Reais
+  stage: DealStage;
+  probability: number; // 0 - 100%
+  expected_close_date?: string;
+  assignee_id?: string;
+  assignee_name?: string;
+  created_at: string;
+  updated_at?: string;
 }
