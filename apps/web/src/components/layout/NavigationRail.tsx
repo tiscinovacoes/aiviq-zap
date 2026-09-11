@@ -8,6 +8,7 @@ import {
   Users,
   Briefcase,
   Bot,
+  Send,
   BarChart3,
   Settings,
   LogOut,
@@ -42,9 +43,14 @@ export default function NavigationRail() {
       badge: '3',
     },
     {
-      href: '#',
+      href: '/campaigns',
+      icon: Send,
+      title: 'Disparo em Massa & Campanhas',
+    },
+    {
+      href: '/reports',
       icon: BarChart3,
-      title: 'Métricas & Relatórios',
+      title: 'Métricas & Relatórios Executivos (BI)',
     },
     {
       href: '#',
