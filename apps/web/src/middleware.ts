@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { updateSession } from '@/lib/supabase/middleware';
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const token = request.cookies.get('poli_token')?.value;
 
   // Rotas públicas que não exigem autenticação
   const isPublicRoute =
@@ -13,27 +13,30 @@ export function middleware(request: NextRequest) {
     pathname.startsWith('/static') ||
     pathname === '/favicon.ico';
 
-  // Se o usuário tentar acessar a raiz '/', redireciona com base no status do token
+  // Validação real de sessão com Supabase Auth e renovação automática de token (CR-001 B2, I5)
+  const { supabaseResponse, user } = await updateSession(request);
+
+  // Se o usuário tentar acessar a raiz '/', redireciona com base no status da sessão real
   if (pathname === '/') {
-    if (token) {
+    if (user) {
       return NextResponse.redirect(new URL('/inbox', request.url));
     }
     return NextResponse.redirect(new URL('/auth/login', request.url));
   }
 
   // Se não estiver autenticado e tentar rota protegida
-  if (!token && !isPublicRoute) {
+  if (!user && !isPublicRoute) {
     const loginUrl = new URL('/auth/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   // Se já estiver autenticado e tentar acessar tela de login
-  if (token && pathname === '/auth/login') {
+  if (user && pathname === '/auth/login') {
     return NextResponse.redirect(new URL('/inbox', request.url));
   }
 
-  return NextResponse.next();
+  return supabaseResponse;
 }
 
 export const config = {

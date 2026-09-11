@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import { Contact } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
-let mockContacts: Contact[] = [
+const DEV_SAMPLE_CONTACTS: Contact[] = [
   {
     id: 'cont-001',
     organization_id: '00000000-0000-0000-0000-000000000000',
@@ -89,10 +90,31 @@ export async function GET(req: NextRequest) {
     const assigned = searchParams.get('assigned_to');
     const query = searchParams.get('q')?.toLowerCase();
 
-    let contacts = [...mockContacts];
+    const supabase = await createClient();
+    const isDev = process.env.NODE_ENV === 'development';
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    let contacts: Contact[] = [];
+
+    if (!isPlaceholder) {
+      const { data: dbContacts, error } = await supabase
+        .from('contacts')
+        .select('*');
+
+      if (error) {
+        if (!isDev) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        contacts = [...DEV_SAMPLE_CONTACTS];
+      } else {
+        contacts = (dbContacts || []) as Contact[];
+      }
+    } else {
+      contacts = isDev ? [...DEV_SAMPLE_CONTACTS] : [];
+    }
 
     if (tag && tag !== 'all') {
-      contacts = contacts.filter((c) => c.tags.includes(tag));
+      contacts = contacts.filter((c) => c.tags?.includes(tag));
     }
 
     if (assigned && assigned !== 'all') {
@@ -131,6 +153,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Nome do contato é obrigatório' }, { status: 400 });
     }
 
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile) {
+        return NextResponse.json({ error: 'Perfil não encontrado' }, { status: 404 });
+      }
+
+      const { data: contact, error } = await supabase
+        .from('contacts')
+        .insert({
+          organization_id: profile.organization_id,
+          name,
+          phone: phone || null,
+          email: email || null,
+          tags: tags.length > 0 ? tags : ['Novo Lead'],
+          custom_attributes: { company },
+        })
+        .select()
+        .single();
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, contact }, { status: 201 });
+    }
+
+    // Dev mode fallback
     const newContact: Contact = {
       id: `cont-${Date.now()}`,
       organization_id: '00000000-0000-0000-0000-000000000000',
@@ -143,8 +205,6 @@ export async function POST(req: NextRequest) {
       custom_attributes: {},
       created_at: new Date().toISOString(),
     };
-
-    mockContacts.unshift(newContact);
 
     return NextResponse.json({ success: true, contact: newContact }, { status: 201 });
   } catch (err: any) {

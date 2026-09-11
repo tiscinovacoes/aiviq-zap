@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
     });
 
     if (error || !data.session) {
-      // In development fallback, allow test account if Supabase is not connected
-      if (email === 'admin@poli.dev' && password === 'admin123') {
+      // In development fallback, allow test account if Supabase is not connected (CR-001 B1: Strictly gated to development)
+      if (process.env.NODE_ENV === 'development' && email === 'admin@poli.dev' && password === 'admin123') {
         const mockUser = {
           id: '00000000-0000-0000-0000-000000000001',
           organization_id: '00000000-0000-0000-0000-000000000000',
@@ -49,10 +49,18 @@ export async function POST(req: NextRequest) {
 
         response.cookies.set('poli_token', 'mock-dev-token-jwt', {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
+          secure: false,
           sameSite: 'lax',
           path: '/',
           maxAge: rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24, // 30 dias ou 24h
+        });
+
+        response.cookies.set('poli_dev_token', 'mock-dev-token-jwt', {
+          httpOnly: true,
+          secure: false,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24,
         });
 
         return response;
