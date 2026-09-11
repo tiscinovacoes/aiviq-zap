@@ -29,8 +29,11 @@ export async function POST(req: NextRequest) {
     });
 
     if (error || !data.session) {
-      // In development fallback, allow test account if Supabase is not connected (CR-001 B1: Strictly gated to development)
-      if (process.env.NODE_ENV === 'development' && email === 'admin@poli.dev' && password === 'admin123') {
+      const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+      const allowDemo = process.env.NODE_ENV === 'development' || isPlaceholder || process.env.ALLOW_DEMO_LOGIN === 'true';
+
+      // Fallback demo account allowed in development, unprovisioned placeholder stage or explicit demo mode
+      if (allowDemo && email === 'admin@poli.dev' && password === 'admin123') {
         const mockUser = {
           id: '00000000-0000-0000-0000-000000000001',
           organization_id: '00000000-0000-0000-0000-000000000000',

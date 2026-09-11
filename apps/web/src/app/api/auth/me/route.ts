@@ -4,8 +4,11 @@ import { createClient } from '@/lib/supabase/server';
 export async function GET(req: NextRequest) {
   const token = req.cookies.get('poli_token')?.value;
 
-  // Development mode fallback only when running in dev environment (CR-001 B1)
-  if (process.env.NODE_ENV === 'development' && token === 'mock-dev-token-jwt') {
+  // Development / unprovisioned placeholder fallback
+  const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+  const allowDemo = process.env.NODE_ENV === 'development' || isPlaceholder || process.env.ALLOW_DEMO_LOGIN === 'true';
+
+  if (allowDemo && token === 'mock-dev-token-jwt') {
     return NextResponse.json({
       user: {
         id: '00000000-0000-0000-0000-000000000001',

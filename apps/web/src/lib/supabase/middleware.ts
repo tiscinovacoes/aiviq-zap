@@ -37,14 +37,15 @@ export async function updateSession(request: NextRequest) {
     user = null;
   }
 
-  // Development mode fallback only when running in dev environment
-  const isDev = process.env.NODE_ENV === 'development';
+  // Development / unprovisioned placeholder fallback
+  const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+  const allowDemo = process.env.NODE_ENV === 'development' || isPlaceholder || process.env.ALLOW_DEMO_LOGIN === 'true';
   const devToken = request.cookies.get('poli_dev_token')?.value;
-  if (!user && isDev && devToken === 'mock-dev-token-jwt') {
+  if (!user && allowDemo && devToken === 'mock-dev-token-jwt') {
     user = {
       id: '00000000-0000-0000-0000-000000000001',
       email: 'admin@poli.dev',
-      user_metadata: { full_name: 'Lucas Reis (Dev)' },
+      user_metadata: { full_name: 'Lucas Reis (Demo)' },
     } as any;
   }
 
