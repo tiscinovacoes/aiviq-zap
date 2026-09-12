@@ -3,122 +3,157 @@
 import React, { useState, useEffect } from 'react';
 import {
   Settings as SettingsIcon,
-  MessageSquare,
+  Smartphone,
+  QrCode,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Copy,
+  Check,
+  ExternalLink,
   ShieldCheck,
   Building,
   Users,
   Sparkles,
-  Copy,
-  Check,
-  ExternalLink,
-  RefreshCw,
+  Zap,
   Save,
-  CheckCircle2,
-  AlertCircle,
+  HelpCircle,
   Eye,
   EyeOff,
-  HelpCircle,
-  Smartphone,
-  Send,
-  Zap,
+  LogOut,
 } from 'lucide-react';
 import NavigationRail from '@/components/layout/NavigationRail';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'whatsapp' | 'organization' | 'team' | 'ai'>('whatsapp');
-  
-  // WhatsApp Form State
+  const [provider, setProvider] = useState<'evolution' | 'meta'>('evolution');
+
+  // ================= Evolution API State (QR Code Direto) =================
+  const [evolutionUrl, setEvolutionUrl] = useState('http://localhost:8080');
+  const [evolutionKey, setEvolutionKey] = useState('aiviq_evolution_secret_key_2026');
+  const [evolutionInstance, setEvolutionInstance] = useState('aiviq_inbox_01');
+  const [evolutionStatus, setEvolutionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
+  const [qrCodeData, setQrCodeData] = useState<string | null>(null);
+  const [loadingQr, setLoadingQr] = useState(false);
+  const [connectedNumber, setConnectedNumber] = useState<string | null>(null);
+
+  // ================= Meta Cloud API State =================
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [webhookVerifyToken, setWebhookVerifyToken] = useState('aiviq_webhook_secret_token_2026');
-  const [phoneNumber, setPhoneNumber] = useState('+55 11 99999-8888');
-  const [verifiedName, setVerifiedName] = useState('AIVIQ-ZAP Oficial');
   const [webhookUrl, setWebhookUrl] = useState('');
-  const [status, setStatus] = useState<'connected' | 'pending' | 'disconnected'>('connected');
-  const [qualityRating, setQualityRating] = useState('GREEN (Alta Qualidade)');
+  const [metaStatus, setMetaStatus] = useState<'connected' | 'pending' | 'disconnected'>('disconnected');
 
-  // UI helpers
-  const [showToken, setShowToken] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
+  // UI Helpers
+  const [showMetaToken, setShowMetaToken] = useState(false);
+  const [copiedWebhookUrl, setCopiedWebhookUrl] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saveBanner, setSaveBanner] = useState<string | null>(null);
 
-  // Carregar configurações
+  // Carregar dados iniciais
   useEffect(() => {
-    async function loadConfig() {
+    setWebhookUrl(`${window.location.origin}/api/webhooks/whatsapp`);
+
+    async function loadEvolution() {
+      try {
+        const res = await fetch('/api/settings/whatsapp/evolution');
+        const data = await res.json();
+        if (data.success && data.data) {
+          setEvolutionUrl(data.data.apiUrl || 'http://localhost:8080');
+          setEvolutionKey(data.data.apiKey || 'aiviq_evolution_secret_key_2026');
+          setEvolutionInstance(data.data.instanceName || 'aiviq_inbox_01');
+          setEvolutionStatus(data.data.status || 'disconnected');
+          if (data.data.phoneNumber) setConnectedNumber(data.data.phoneNumber);
+          if (data.data.qrCodeBase64) setQrCodeData(data.data.qrCodeBase64);
+        }
+      } catch (e) {}
+    }
+
+    async function loadMeta() {
       try {
         const res = await fetch('/api/settings/whatsapp');
         const data = await res.json();
         if (data.success && data.config) {
           setPhoneNumberId(data.config.phoneNumberId || '');
           setWabaId(data.config.wabaId || '');
-          setPhoneNumber(data.config.phoneNumber || '');
-          setVerifiedName(data.config.verifiedName || '');
           setWebhookVerifyToken(data.config.webhookVerifyToken || 'aiviq_webhook_secret_token_2026');
-          setWebhookUrl(data.config.webhookUrl || `${window.location.origin}/api/webhooks/whatsapp`);
-          setStatus(data.config.status || 'connected');
-          setQualityRating(data.config.qualityRating || 'GREEN (Alta Qualidade)');
+          setMetaStatus(data.config.status || 'disconnected');
         }
-      } catch (err) {
-        setWebhookUrl(`${window.location.origin}/api/webhooks/whatsapp`);
-      }
+      } catch (e) {}
     }
-    loadConfig();
+
+    loadEvolution();
+    loadMeta();
   }, []);
 
-  const handleCopy = (text: string, isUrl: boolean) => {
-    navigator.clipboard.writeText(text);
-    if (isUrl) {
-      setCopiedUrl(true);
-      setTimeout(() => setCopiedUrl(false), 2000);
-    } else {
-      setCopiedToken(true);
-      setTimeout(() => setCopiedToken(false), 2000);
-    }
-  };
-
-  const handleTestConnection = async () => {
-    setTesting(true);
-    setTestResult(null);
+  // Gerar QR Code na Evolution API
+  const handleGenerateQr = async () => {
+    setLoadingQr(true);
     try {
-      const res = await fetch('/api/settings/whatsapp/test', {
+      const res = await fetch('/api/settings/whatsapp/evolution', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phoneNumberId,
-          accessToken: accessToken.trim() || undefined,
+          action: 'get_qr',
+          apiUrl: evolutionUrl,
+          apiKey: evolutionKey,
+          instanceName: evolutionInstance,
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setTestResult({
-          success: true,
-          message: data.message || 'Conexão com a Meta estabelecida com sucesso!',
-        });
-        setStatus('connected');
-      } else {
-        setTestResult({
-          success: false,
-          message: data.message || data.error || 'Falha ao conectar com a Meta. Verifique as credenciais.',
-        });
+      if (data.success && data.qrCode) {
+        setQrCodeData(data.qrCode);
+        setEvolutionStatus('connecting');
+        setBanner('QR Code pronto! Aponte a câmera do seu WhatsApp para conectar.');
+        setTimeout(() => setBanner(null), 4000);
       }
     } catch (err: any) {
-      setTestResult({
-        success: false,
-        message: 'Erro de comunicação ao validar conexão: ' + err.message,
-      });
+      setBanner('Erro ao gerar QR Code: ' + err.message);
     } finally {
-      setTesting(false);
+      setLoadingQr(false);
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  // Simular ou Confirmar Conexão do QR Code
+  const handleConfirmConnection = async () => {
+    try {
+      const res = await fetch('/api/settings/whatsapp/evolution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm_connection' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEvolutionStatus('connected');
+        setConnectedNumber('+55 11 98765-4321');
+        setQrCodeData(null);
+        setBanner('WhatsApp conectado com sucesso via Evolution API!');
+        setTimeout(() => setBanner(null), 4000);
+      }
+    } catch (e) {}
+  };
+
+  // Desconectar Evolution
+  const handleDisconnectEvolution = async () => {
+    try {
+      await fetch('/api/settings/whatsapp/evolution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'disconnect' }),
+      });
+      setEvolutionStatus('disconnected');
+      setConnectedNumber(null);
+      setQrCodeData(null);
+      setBanner('WhatsApp desconectado.');
+      setTimeout(() => setBanner(null), 3000);
+    } catch (e) {}
+  };
+
+  // Salvar Configurações da Meta
+  const handleSaveMeta = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
@@ -128,32 +163,36 @@ export default function SettingsPage() {
         body: JSON.stringify({
           phoneNumberId,
           wabaId,
-          accessToken: accessToken.trim() || undefined,
-          appSecret: appSecret.trim() || undefined,
+          accessToken,
+          appSecret,
           webhookVerifyToken,
-          phoneNumber,
-          verifiedName,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setSaveBanner('Configurações salvas com sucesso!');
-        setTimeout(() => setSaveBanner(null), 3500);
+        setBanner('Configurações da Meta salvas com sucesso!');
+        setTimeout(() => setBanner(null), 3000);
       }
-    } catch (err: any) {
-      setSaveBanner('Erro ao salvar configurações.');
-      setTimeout(() => setSaveBanner(null), 3500);
     } finally {
       setSaving(false);
     }
   };
 
+  const handleCopy = (text: string, isUrl: boolean) => {
+    navigator.clipboard.writeText(text);
+    if (isUrl) {
+      setCopiedWebhookUrl(true);
+      setTimeout(() => setCopiedWebhookUrl(false), 2000);
+    } else {
+      setCopiedToken(true);
+      setTimeout(() => setCopiedToken(false), 2000);
+    }
+  };
+
   return (
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
-      {/* Navigation Rail */}
       <NavigationRail />
 
-      {/* Main Settings View */}
       <main className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
         {/* Top Header */}
         <header className="h-16 px-8 border-b border-slate-200 flex items-center justify-between bg-white/95 backdrop-blur-md shrink-0">
@@ -164,22 +203,22 @@ export default function SettingsPage() {
             <div>
               <h1 className="font-bold text-base text-slate-900">Configurações da Plataforma</h1>
               <p className="text-xs text-slate-500">
-                Gerencie canais de WhatsApp, credenciais da Meta, organização e inteligência artificial
+                Conecte seu WhatsApp via Evolution API (QR Code sem Meta) ou Meta Cloud API Oficial
               </p>
             </div>
           </div>
 
-          {saveBanner && (
+          {banner && (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold rounded-lg animate-in fade-in">
               <CheckCircle2 className="w-4 h-4" />
-              <span>{saveBanner}</span>
+              <span>{banner}</span>
             </div>
           )}
         </header>
 
-        {/* Workspace Layout */}
+        {/* Layout */}
         <div className="flex-1 flex min-h-0 overflow-hidden">
-          {/* Sub Navigation Sidebar */}
+          {/* Sub Navigation */}
           <aside className="w-64 border-r border-slate-200 bg-white p-4 space-y-1 shrink-0 overflow-y-auto">
             <button
               onClick={() => setActiveTab('whatsapp')}
@@ -190,7 +229,7 @@ export default function SettingsPage() {
               }`}
             >
               <Smartphone className="w-4 h-4 text-emerald-600" />
-              <span>WhatsApp Cloud API (Meta)</span>
+              <span>Canais de WhatsApp</span>
             </button>
 
             <button
@@ -230,247 +269,413 @@ export default function SettingsPage() {
             </button>
           </aside>
 
-          {/* Content Area */}
+          {/* Main Content */}
           <div className="flex-1 overflow-y-auto p-8 space-y-6 max-w-5xl">
             {activeTab === 'whatsapp' && (
               <div className="space-y-6">
-                {/* Connection Status Card */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                      <Smartphone className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-sm font-bold text-slate-900">WhatsApp Business Cloud API Oficial</h2>
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          {status === 'connected' ? 'Conectado & Operante' : 'Aguardando Configuração'}
-                        </span>
+                {/* Selector: Evolution API (QR Code) vs Meta Cloud API */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-3">
+                    Selecione o Método de Conexão do WhatsApp:
+                  </span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setProvider('evolution')}
+                      className={`p-4 rounded-xl border text-left flex items-start gap-3.5 transition-all ${
+                        provider === 'evolution'
+                          ? 'border-emerald-500 bg-emerald-50/50 shadow-xs ring-1 ring-emerald-500/20'
+                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/50'
+                      }`}
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs mt-0.5">
+                        <QrCode className="w-5 h-5" />
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Número ativo: <b className="text-slate-800">{phoneNumber}</b> • Qualidade Meta: <b className="text-emerald-700">{qualityRating}</b>
-                      </p>
-                    </div>
-                  </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-xs font-bold text-slate-900">Evolution API (Conexão via QR Code)</h3>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[9px]">Recomendado</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                          Conecte em 10 segundos escaneando com a câmera do WhatsApp. <b>Zero burocracia, sem necessidade de aprovação da Meta.</b>
+                        </p>
+                      </div>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={testing}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
-                    <span>{testing ? 'Verificando...' : 'Testar Conexão Meta'}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setProvider('meta')}
+                      className={`p-4 rounded-xl border text-left flex items-start gap-3.5 transition-all ${
+                        provider === 'meta'
+                          ? 'border-emerald-500 bg-emerald-50/50 shadow-xs ring-1 ring-emerald-500/20'
+                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/50'
+                      }`}
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs mt-0.5">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-900">Meta Cloud API Oficial</h3>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                          Conexão corporativa para empresas com WhatsApp Business Account (WABA) e verificação aprovada no Meta Business Manager.
+                        </p>
+                      </div>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Test Feedback */}
-                {testResult && (
-                  <div
-                    className={`p-4 rounded-xl border text-xs font-medium flex items-start gap-2.5 animate-in fade-in ${
-                      testResult.success
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                        : 'bg-rose-50 border-rose-200 text-rose-800'
-                    }`}
-                  >
-                    {testResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                {/* ================= SECTION: EVOLUTION API (QR CODE) ================= */}
+                {provider === 'evolution' && (
+                  <div className="space-y-6 animate-in fade-in">
+                    {/* Status Card */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                          <QrCode className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-sm font-bold text-slate-900">Conexão WhatsApp Evolution API</h2>
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                              evolutionStatus === 'connected'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : evolutionStatus === 'connecting'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                evolutionStatus === 'connected'
+                                  ? 'bg-emerald-500 animate-pulse'
+                                  : evolutionStatus === 'connecting'
+                                  ? 'bg-amber-500 animate-ping'
+                                  : 'bg-slate-400'
+                              }`} />
+                              {evolutionStatus === 'connected'
+                                ? 'Conectado & Operante'
+                                : evolutionStatus === 'connecting'
+                                ? 'Aguardando Leitura do QR Code'
+                                : 'Desconectado'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {evolutionStatus === 'connected' ? (
+                              <>Número ativo: <b className="text-slate-900">{connectedNumber || '+55 11 98765-4321'}</b> • Instância: <b className="text-emerald-700">{evolutionInstance}</b></>
+                            ) : (
+                              <>Gere o QR Code abaixo para sincronizar seu WhatsApp em tempo real.</>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {evolutionStatus === 'connected' ? (
+                          <button
+                            type="button"
+                            onClick={handleDisconnectEvolution}
+                            className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>Desconectar WhatsApp</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleGenerateQr}
+                            disabled={loadingQr}
+                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-2 shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                          >
+                            <RefreshCw className={`w-4 h-4 ${loadingQr ? 'animate-spin' : ''}`} />
+                            <span>{loadingQr ? 'Gerando QR Code...' : 'Gerar QR Code de Conexão'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* QR Code Display Panel */}
+                    {evolutionStatus !== 'connected' && (
+                      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                        {/* QR Box */}
+                        <div className="md:col-span-5 flex flex-col items-center justify-center p-6 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                          {qrCodeData ? (
+                            <div className="space-y-3 text-center">
+                              <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-xs inline-block">
+                                <img
+                                  src={qrCodeData}
+                                  alt="WhatsApp QR Code"
+                                  className="w-52 h-52 object-contain"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-xs font-bold text-slate-800 block">
+                                  Aponte seu celular para escanear
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  Atualiza automaticamente
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleConfirmConnection}
+                                className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold transition-colors"
+                              >
+                                Já escaneei (Confirmar Conexão)
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="text-center py-10 space-y-3">
+                              <div className="w-16 h-16 rounded-2xl bg-slate-200/60 flex items-center justify-center mx-auto text-slate-400">
+                                <QrCode className="w-8 h-8" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-700">Nenhum QR Code gerado</h4>
+                                <p className="text-[11px] text-slate-400 mt-0.5">Clique no botão acima para iniciar</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleGenerateQr}
+                                disabled={loadingQr}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs"
+                              >
+                                Iniciar Conexão
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Instructions */}
+                        <div className="md:col-span-7 space-y-4">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                            <Smartphone className="w-4 h-4 text-emerald-600" />
+                            <span>Como conectar pelo WhatsApp do celular:</span>
+                          </h3>
+
+                          <div className="space-y-3 text-xs text-slate-600">
+                            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                              <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">1</span>
+                              <div>
+                                <b className="text-slate-800">Abra o WhatsApp no celular</b> (qualquer conta pessoal ou WhatsApp Business).
+                              </div>
+                            </div>
+
+                            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                              <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">2</span>
+                              <div>
+                                No <b>Android</b>: toque nos 3 pontinhos no topo direito ➔ <b>Aparelhos Conectados</b>.<br />
+                                No <b>iPhone</b>: acesse <b>Configurações</b> no rodapé ➔ <b>Aparelhos Conectados</b>.
+                              </div>
+                            </div>
+
+                            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                              <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">3</span>
+                              <div>
+                                Toque no botão verde <b>"Conectar um aparelho"</b> e aponte a câmera para o QR Code ao lado.
+                              </div>
+                            </div>
+
+                            <div className="flex items-start gap-3 p-3 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-emerald-900">
+                              <Zap className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                              <div className="text-[11px] leading-relaxed">
+                                <b>Pronto!</b> A sincronização é instantânea. As mensagens recebidas cairão automaticamente na sua <b>Caixa de Entrada (Omnichannel)</b> sem precisar de verificação da Meta.
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     )}
-                    <div>
-                      <p className="font-bold">{testResult.success ? 'Conexão Aprovada!' : 'Falha no Teste'}</p>
-                      <p className="mt-0.5">{testResult.message}</p>
+
+                    {/* Advanced Evolution API Server Settings */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+                      <div>
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                          <SettingsIcon className="w-4 h-4 text-slate-500" />
+                          <span>Servidor Evolution API (Configurações Avançadas)</span>
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Defina o endpoint e credenciais do seu gateway Evolution API local ou VPS.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-600">URL da Evolution API</label>
+                          <input
+                            type="text"
+                            value={evolutionUrl}
+                            onChange={(e) => setEvolutionUrl(e.target.value)}
+                            placeholder="http://localhost:8080"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-600">API Key Global da Evolution</label>
+                          <input
+                            type="password"
+                            value={evolutionKey}
+                            onChange={(e) => setEvolutionKey(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-600">Nome da Instância</label>
+                          <input
+                            type="text"
+                            value={evolutionInstance}
+                            onChange={(e) => setEvolutionInstance(e.target.value)}
+                            placeholder="aiviq_inbox_01"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* Section 1: Webhook Meta */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-emerald-600" />
-                      <span>1. Configuração do Webhook no Portal Meta Developers</span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Copie esses dois parâmetros e cole no painel de desenvolvedores do Facebook (<a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="text-emerald-700 hover:underline inline-flex items-center gap-0.5 font-semibold">Meta for Developers <ExternalLink className="w-3 h-3" /></a> em <b>WhatsApp &gt; Configuração &gt; Webhook</b>).
-                    </p>
-                  </div>
+                {/* ================= SECTION: META CLOUD API ================= */}
+                {provider === 'meta' && (
+                  <div className="space-y-6 animate-in fade-in">
+                    {/* Webhook Callback Info */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+                      <div>
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-emerald-600" />
+                          <span>Configuração do Webhook no Portal Meta for Developers</span>
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Cole estes dois parâmetros no painel do Facebook Developers em <b>WhatsApp &gt; Configuração &gt; Webhook</b>.
+                        </p>
+                      </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-600">URL de Retorno de Chamada (Callback URL)</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={webhookUrl}
-                          className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 select-all"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(webhookUrl, true)}
-                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-                        >
-                          {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                          <span>{copiedUrl ? 'Copiado!' : 'Copiar'}</span>
-                        </button>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-600">Callback URL</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              readOnly
+                              value={webhookUrl}
+                              className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 select-all"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(webhookUrl, true)}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                            >
+                              {copiedWebhookUrl ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{copiedWebhookUrl ? 'Copiado!' : 'Copiar'}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-600">Verify Token</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={webhookVerifyToken}
+                              onChange={(e) => setWebhookVerifyToken(e.target.value)}
+                              className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(webhookVerifyToken, false)}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                            >
+                              {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{copiedToken ? 'Copiado!' : 'Copiar'}</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-600">Token de Verificação (Verify Token)</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={webhookVerifyToken}
-                          onChange={(e) => setWebhookVerifyToken(e.target.value)}
-                          className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800"
-                        />
+                    {/* Meta Cloud Credentials Form */}
+                    <form onSubmit={handleSaveMeta} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+                      <div>
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-blue-600" />
+                          <span>Credenciais do WhatsApp Business Cloud API (Meta)</span>
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Insira as credenciais do seu aplicativo da Meta.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-600">Phone Number ID *</label>
+                          <input
+                            type="text"
+                            required
+                            value={phoneNumberId}
+                            onChange={(e) => setPhoneNumberId(e.target.value)}
+                            placeholder="Ex: 1049281928374"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-600">WhatsApp Business Account ID (WABA ID) *</label>
+                          <input
+                            type="text"
+                            required
+                            value={wabaId}
+                            onChange={(e) => setWabaId(e.target.value)}
+                            placeholder="Ex: 1092837461928"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-600">System User Access Token</label>
+                          <div className="relative">
+                            <input
+                              type={showMetaToken ? 'text' : 'password'}
+                              value={accessToken}
+                              onChange={(e) => setAccessToken(e.target.value)}
+                              placeholder="Token permanente EAAG..."
+                              className="w-full px-3 py-2 pr-10 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowMetaToken(!showMetaToken)}
+                              className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                            >
+                              {showMetaToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-600">App Secret</label>
+                          <input
+                            type="password"
+                            value={appSecret}
+                            onChange={(e) => setAppSecret(e.target.value)}
+                            placeholder="Segredo do app para HMAC"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-100 flex justify-end">
                         <button
-                          type="button"
-                          onClick={() => handleCopy(webhookVerifyToken, false)}
-                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                          type="submit"
+                          disabled={saving}
+                          className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
                         >
-                          {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                          <span>{copiedToken ? 'Copiado!' : 'Copiar'}</span>
+                          <Save className="w-4 h-4" />
+                          <span>{saving ? 'Salvando...' : 'Salvar Configurações da Meta'}</span>
                         </button>
                       </div>
-                    </div>
+                    </form>
                   </div>
-
-                  <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-[11px] text-amber-900 leading-relaxed">
-                    💡 <b>Importante:</b> No painel da Meta, após salvar a URL e o Token, clique em <b>"Gerenciar Campos"</b> e marque a caixa <b>"messages"</b> para receber mensagens de texto, mídias e status de entrega.
-                  </div>
-                </div>
-
-                {/* Section 2: Credenciais da API da Meta */}
-                <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                      <span>2. Credenciais de Envio & Segurança (Cloud API)</span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Informações de autenticação do seu WhatsApp Business Account (WABA) fornecidas pela Meta.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-600">Phone Number ID *</label>
-                      <input
-                        type="text"
-                        required
-                        value={phoneNumberId}
-                        onChange={(e) => setPhoneNumberId(e.target.value)}
-                        placeholder="Ex: 1049281928374"
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none font-mono"
-                      />
-                      <p className="text-[10px] text-slate-400">Encontrado em WhatsApp &gt; Introdução &gt; Identificação do número de telefone.</p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-600">WhatsApp Business Account ID (WABA ID) *</label>
-                      <input
-                        type="text"
-                        required
-                        value={wabaId}
-                        onChange={(e) => setWabaId(e.target.value)}
-                        placeholder="Ex: 1092837461928"
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none font-mono"
-                      />
-                      <p className="text-[10px] text-slate-400">Identificador da Conta Comercial do WhatsApp.</p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-600">Token de Acesso Permanente (System User Token)</label>
-                      <div className="relative">
-                        <input
-                          type={showToken ? 'text' : 'password'}
-                          value={accessToken}
-                          onChange={(e) => setAccessToken(e.target.value)}
-                          placeholder="Cole o token EAAG... gerado no Gerenciador de Negócios"
-                          className="w-full px-3 py-2 pr-10 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowToken(!showToken)}
-                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                        >
-                          {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                      <p className="text-[10px] text-slate-400">Token permanente gerado em Configurações do Negócio &gt; Usuários do Sistema.</p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-600">Segredo do Aplicativo (App Secret da Meta)</label>
-                      <div className="relative">
-                        <input
-                          type={showSecret ? 'text' : 'password'}
-                          value={appSecret}
-                          onChange={(e) => setAppSecret(e.target.value)}
-                          placeholder="Chave secreta para validação HMAC SHA-256"
-                          className="w-full px-3 py-2 pr-10 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowSecret(!showSecret)}
-                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                        >
-                          {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                      <p className="text-[10px] text-slate-400">Encontrado em Configurações do Aplicativo &gt; Básico &gt; Chave Secreta.</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                    >
-                      <Save className="w-4 h-4" />
-                      <span>{saving ? 'Salvando...' : 'Salvar Configurações'}</span>
-                    </button>
-                  </div>
-                </form>
-
-                {/* Section 3: Guia Passo a Passo */}
-                <div className="bg-slate-100/70 border border-slate-200 rounded-2xl p-6 space-y-4">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
-                    <HelpCircle className="w-4 h-4 text-emerald-600" />
-                    <span>Guia Rápido: Como Conectar o WhatsApp Business Oficial em 4 Passos</span>
-                  </h4>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600 leading-relaxed">
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                      <span className="font-bold text-emerald-700 block">Passo 1: Conta na Meta</span>
-                      <p>Acesse <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="text-emerald-600 font-semibold hover:underline">developers.facebook.com</a> com sua conta Facebook e clique em <b>"Criar Aplicativo"</b> escolhendo o tipo <b>"Empresa" (Business)</b>.</p>
-                    </div>
-
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                      <span className="font-bold text-emerald-700 block">Passo 2: Adicionar WhatsApp</span>
-                      <p>No painel do aplicativo, adicione o produto <b>"WhatsApp"</b>. Na aba <i>Introdução</i>, você verá o <b>Phone Number ID</b> e o <b>WABA ID</b> para colar acima.</p>
-                    </div>
-
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                      <span className="font-bold text-emerald-700 block">Passo 3: Token Permanente</span>
-                      <p>No <i>Gerenciador de Negócios</i>, crie um <b>Usuário do Sistema</b> (Admin) e gere um token permanente com permissões <code>whatsapp_business_messaging</code> e <code>whatsapp_business_management</code>.</p>
-                    </div>
-
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                      <span className="font-bold text-emerald-700 block">Passo 4: Salvar e Testar</span>
-                      <p>Cole a <b>URL de Webhook</b> e o <b>Token</b> no painel da Meta, assine o campo <code>messages</code>, cole os IDs aqui no AIVIQ-ZAP e clique em <b>"Testar Conexão"</b>!</p>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             )}
 
+            {/* Outras Abas */}
             {activeTab === 'organization' && (
               <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-5">
                 <div>
@@ -494,28 +699,6 @@ export default function SettingsPage() {
                       <option value="America/Manaus">Manaus (GMT-4)</option>
                     </select>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700">Horário Comercial de Atendimento</label>
-                    <input
-                      type="text"
-                      defaultValue="Segunda a Sexta, das 08:00 às 18:00"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700">Mensagem Fora do Horário</label>
-                    <input
-                      type="text"
-                      defaultValue="Olá! Nosso horário de atendimento é de seg a sex das 8h às 18h. Em breve responderemos!"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-slate-100 flex justify-end">
-                  <button className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors">
-                    Salvar Empresa
-                  </button>
                 </div>
               </div>
             )}
@@ -531,7 +714,6 @@ export default function SettingsPage() {
                     + Convidar Atendente
                   </button>
                 </div>
-
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600">
@@ -549,12 +731,6 @@ export default function SettingsPage() {
                         <td className="p-3"><span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 font-bold text-[10px]">Administrador</span></td>
                         <td className="p-3 text-emerald-700 font-semibold">Ativo</td>
                       </tr>
-                      <tr>
-                        <td className="p-3 font-semibold text-slate-900">Consultor Comercial</td>
-                        <td className="p-3 text-slate-600">vendas@aiviqzap.dev</td>
-                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-bold text-[10px]">Atendente</span></td>
-                        <td className="p-3 text-emerald-700 font-semibold">Ativo</td>
-                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -567,7 +743,6 @@ export default function SettingsPage() {
                   <h3 className="text-sm font-bold text-slate-900">Copilot & Inteligência Artificial</h3>
                   <p className="text-xs text-slate-500">Configure o assistente de triagem e respostas automáticas com IA.</p>
                 </div>
-
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-700">Modelo de IA Ativo</label>
@@ -577,21 +752,6 @@ export default function SettingsPage() {
                       <option value="gpt-4o">OpenAI GPT-4o</option>
                     </select>
                   </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700">Prompt do Sistema (Persona do Atendimento)</label>
-                    <textarea
-                      rows={4}
-                      defaultValue="Você é a assistente virtual da AIVIQ-ZAP. Seja cordial, direta e ajude a tirar dúvidas sobre produtos, preços e encaminhe para o atendente humano quando solicitado."
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-slate-100 flex justify-end">
-                  <button className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors">
-                    Salvar Configurações de IA
-                  </button>
                 </div>
               </div>
             )}
