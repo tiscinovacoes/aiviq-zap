@@ -29,10 +29,11 @@ export async function POST(req: NextRequest) {
     });
 
     if (error || !data.session) {
-      const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
-      const allowDemo = process.env.NODE_ENV === 'development' || isPlaceholder || process.env.ALLOW_DEMO_LOGIN === 'true';
+      // CR-002 B1-R: o backdoor NUNCA é habilitado por env var ausente (isPlaceholder removido).
+      // Exige dev local OU opt-in explícito. Em produção mal configurada, falha fechada.
+      const allowDemo = process.env.NODE_ENV === 'development' || process.env.ALLOW_DEMO_LOGIN === 'true';
 
-      // Fallback demo account allowed in development, unprovisioned placeholder stage or explicit demo mode
+      // Fallback demo account allowed only in development or explicit demo mode (ALLOW_DEMO_LOGIN)
       if (allowDemo && email === 'admin@poli.dev' && password === 'admin123') {
         const mockUser = {
           id: '00000000-0000-0000-0000-000000000001',

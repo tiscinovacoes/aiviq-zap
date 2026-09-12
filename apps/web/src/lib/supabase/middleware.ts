@@ -37,9 +37,9 @@ export async function updateSession(request: NextRequest) {
     user = null;
   }
 
-  // Development / unprovisioned placeholder fallback
-  const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
-  const allowDemo = process.env.NODE_ENV === 'development' || isPlaceholder || process.env.ALLOW_DEMO_LOGIN === 'true';
+  // CR-002 B1-R: o backdoor NUNCA é habilitado por env var ausente (isPlaceholder removido).
+  // Exige dev local OU opt-in explícito. Em produção mal configurada, falha fechada.
+  const allowDemo = process.env.NODE_ENV === 'development' || process.env.ALLOW_DEMO_LOGIN === 'true';
   const devToken = request.cookies.get('poli_dev_token')?.value;
   if (!user && allowDemo && devToken === 'mock-dev-token-jwt') {
     user = {
