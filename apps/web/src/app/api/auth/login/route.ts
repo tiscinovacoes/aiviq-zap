@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/server';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'E-mail inválido' }),
@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
 
     const { email, password, rememberMe } = parseResult.data;
 
-    // Supabase auth sign-in
+    // Supabase SSR auth sign-in
+    const supabase = await createClient();
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
