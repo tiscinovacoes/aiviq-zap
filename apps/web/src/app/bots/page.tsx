@@ -78,23 +78,23 @@ export default function BotsDashboardPage() {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-[#07090e] text-slate-100 antialiased overflow-hidden font-sans">
+    <div className="flex h-screen w-screen bg-slate-50 text-slate-900 antialiased overflow-hidden font-sans">
       {/* 72px Left Rail */}
       <NavigationRail />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         {/* Topbar Header */}
-        <header className="h-16 px-8 border-b border-white/5 bg-[#090d16]/80 backdrop-blur flex items-center justify-between shrink-0 sticky top-0 z-10">
+        <header className="h-16 px-8 border-b border-slate-200 bg-white flex items-center justify-between shrink-0 sticky top-0 z-10">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
               <Bot className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-white tracking-tight">
+              <h1 className="text-base font-bold text-slate-900 tracking-tight">
                 Automações & Chatbots No-Code
               </h1>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 Construtor visual de fluxos conversacionais omnichannel com IA integrada
               </p>
             </div>
@@ -108,13 +108,13 @@ export default function BotsDashboardPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar fluxos..."
-                className="w-full pl-9 pr-4 py-1.5 bg-[#0f1422] border border-white/10 rounded-lg text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500 transition-colors"
               />
             </div>
 
             <button
               onClick={() => setIsNewModalOpen(true)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all active:scale-95"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-2 transition-all"
             >
               <Plus className="w-4 h-4" />
               Novo Fluxo
@@ -125,70 +125,70 @@ export default function BotsDashboardPage() {
         <div className="p-8 space-y-8 max-w-7xl w-full mx-auto">
           {/* Hero KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="p-5 rounded-xl bg-[#0e121e] border border-white/5 flex flex-col justify-between relative overflow-hidden">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between relative overflow-hidden">
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
                 <span>Bots em Execução</span>
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
                   <Play className="w-3.5 h-3.5 fill-current" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-white">{metrics.activeBots}</span>
+                <span className="text-2xl font-black text-slate-900">{metrics.activeBots}</span>
                 <span className="text-xs text-slate-500">de {metrics.totalBots} fluxos ativos</span>
               </div>
-              <div className="mt-2 text-[11px] text-emerald-400 flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> 100% online no WhatsApp Cloud
+              <div className="mt-2 text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> 100% online no WhatsApp Cloud
               </div>
             </div>
 
-            <div className="p-5 rounded-xl bg-[#0e121e] border border-white/5 flex flex-col justify-between relative overflow-hidden">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between relative overflow-hidden">
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
                 <span>Atendimentos Automatizados</span>
-                <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 flex items-center justify-center">
                   <Zap className="w-3.5 h-3.5" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-white">
+                <span className="text-2xl font-black text-slate-900">
                   {metrics.totalAutomations.toLocaleString()}
                 </span>
-                <span className="text-xs text-emerald-400 flex items-center gap-0.5">
+                <span className="text-xs text-emerald-700 font-semibold flex items-center gap-0.5">
                   <TrendingUp className="w-3 h-3" /> +18.4% hoje
                 </span>
               </div>
-              <div className="mt-2 text-[11px] text-slate-400 flex items-center gap-1">
+              <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1">
                 Economia estimada de 142 horas humanas
               </div>
             </div>
 
-            <div className="p-5 rounded-xl bg-[#0e121e] border border-white/5 flex flex-col justify-between relative overflow-hidden">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between relative overflow-hidden">
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
                 <span>Taxa de Resolução (Deflexão)</span>
-                <div className="w-7 h-7 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center">
                   <Sparkles className="w-3.5 h-3.5" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-white">{metrics.avgResolution}</span>
+                <span className="text-2xl font-black text-slate-900">{metrics.avgResolution}</span>
                 <span className="text-xs text-slate-500">resolvidos sem transbordo</span>
               </div>
-              <div className="mt-2 text-[11px] text-purple-400 flex items-center gap-1">
-                Copiloto Qwen Agent ativo
+              <div className="mt-2 text-[11px] text-indigo-700 font-medium flex items-center gap-1">
+                Copiloto AIVIQ Agent ativo
               </div>
             </div>
 
-            <div className="p-5 rounded-xl bg-[#0e121e] border border-white/5 flex flex-col justify-between relative overflow-hidden">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between relative overflow-hidden">
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
                 <span>Velocidade de Resposta</span>
-                <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center">
                   <Clock className="w-3.5 h-3.5" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-white">0.8 seg</span>
+                <span className="text-2xl font-black text-slate-900">0.8 seg</span>
                 <span className="text-xs text-slate-500">latência de IA</span>
               </div>
-              <div className="mt-2 text-[11px] text-emerald-400 flex items-center gap-1">
+              <div className="mt-2 text-[11px] text-emerald-700 font-medium flex items-center gap-1">
                 Disparo instantâneo por webhook
               </div>
             </div>
@@ -197,7 +197,7 @@ export default function BotsDashboardPage() {
           {/* Bot Cards List */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold text-white tracking-wide uppercase text-slate-400">
+              <h2 className="text-xs font-bold tracking-wider uppercase text-slate-500">
                 Seus Fluxos Ativos ({filteredBots.length})
               </h2>
             </div>
@@ -206,29 +206,29 @@ export default function BotsDashboardPage() {
               {filteredBots.map((b) => (
                 <div
                   key={b.id}
-                  className="bg-[#0e121e] border border-white/5 hover:border-indigo-500/40 rounded-xl p-5 flex flex-col justify-between group transition-all shadow-sm hover:shadow-indigo-500/5"
+                  className="bg-white border border-slate-200 hover:border-emerald-500 rounded-xl p-5 flex flex-col justify-between group transition-all shadow-xs"
                 >
                   <div className="space-y-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-indigo-600/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                        <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center">
                           <Bot className="w-5 h-5" />
                         </div>
                         <div>
-                          <h3 className="text-sm font-semibold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">
+                          <h3 className="text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors line-clamp-1">
                             {b.name}
                           </h3>
-                          <p className="text-[11px] text-slate-500">v{b.publishedVersion} publicada</p>
+                          <p className="text-[11px] text-slate-400">v{b.publishedVersion} publicada</p>
                         </div>
                       </div>
 
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                           b.status === 'active'
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : b.status === 'paused'
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                            : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-slate-100 text-slate-600 border border-slate-200'
                         }`}
                       >
                         {b.status === 'active' ? 'Ativo' : b.status === 'paused' ? 'Pausado' : 'Rascunho'}
@@ -239,36 +239,36 @@ export default function BotsDashboardPage() {
                       {b.channels.map((ch) => (
                         <span
                           key={ch}
-                          className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-[#161c2e] text-slate-300 border border-white/5 flex items-center gap-1"
+                          className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1"
                         >
-                          <MessageSquare className="w-2.5 h-2.5 text-emerald-400" />
+                          <MessageSquare className="w-2.5 h-2.5 text-emerald-600" />
                           {ch}
                         </span>
                       ))}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 text-xs">
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
                       <div>
-                        <span className="text-[10px] text-slate-500 block">Conversas</span>
-                        <span className="font-semibold text-slate-200">
+                        <span className="text-[10px] text-slate-400 block">Conversas</span>
+                        <span className="font-semibold text-slate-900">
                           {b.totalConversations.toLocaleString()}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 block">Taxa de Resolução</span>
-                        <span className="font-semibold text-purple-400">{b.resolutionRate}</span>
+                        <span className="text-[10px] text-slate-400 block">Taxa de Resolução</span>
+                        <span className="font-semibold text-indigo-700">{b.resolutionRate}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-4 mt-3 border-t border-white/5 flex items-center justify-between">
+                  <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-[10px] text-slate-500">
                       {b.groupsCount} grupos de blocos
                     </span>
 
                     <Link
                       href={`/bots/${b.id}`}
-                      className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all"
+                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                       Editar Fluxo
@@ -283,39 +283,39 @@ export default function BotsDashboardPage() {
 
         {/* Modal Novo Fluxo */}
         {isNewModalOpen && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#0e121e] border border-white/10 rounded-2xl w-full max-w-lg p-6 space-y-5 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-white/5 pb-4">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg p-6 space-y-5 shadow-xl text-slate-900">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Criar Novo Chatbot</h3>
-                    <p className="text-xs text-slate-400">Escolha um template profissional ou comece em branco</p>
+                    <h3 className="text-sm font-bold text-slate-900">Criar Novo Chatbot</h3>
+                    <p className="text-xs text-slate-500">Escolha um template profissional ou comece em branco</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setIsNewModalOpen(false)}
-                  className="text-slate-400 hover:text-white text-sm"
+                  className="text-slate-400 hover:text-slate-700 text-sm"
                 >
                   ✕
                 </button>
               </div>
 
               <div className="space-y-3">
-                <label className="text-xs font-semibold text-slate-300 block">Nome do Fluxo</label>
+                <label className="text-xs font-semibold text-slate-700 block">Nome do Fluxo</label>
                 <input
                   type="text"
                   value={newBotName}
                   onChange={(e) => setNewBotName(e.target.value)}
                   placeholder="Ex: Triagem Comercial WhatsApp"
-                  className="w-full px-3 py-2 bg-[#080b12] border border-white/10 rounded-lg text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500"
                 />
               </div>
 
               <div className="space-y-2">
-                <span className="text-xs font-semibold text-slate-400 block">Templates Recomendados:</span>
+                <span className="text-xs font-semibold text-slate-500 block">Templates Recomendados:</span>
                 <div className="grid grid-cols-1 gap-2">
                   {[
                     {
@@ -334,30 +334,30 @@ export default function BotsDashboardPage() {
                     <button
                       key={tpl.name}
                       onClick={() => handleCreateBot(tpl.name)}
-                      className="p-3 rounded-xl bg-[#141a2b] hover:bg-indigo-600/10 border border-white/5 hover:border-indigo-500/40 text-left transition-all group"
+                      className="p-3 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-left transition-all group"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-white group-hover:text-indigo-300">
+                        <span className="text-xs font-bold text-slate-900 group-hover:text-emerald-700">
                           {tpl.name}
                         </span>
-                        <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-400" />
+                        <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600" />
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-1">{tpl.desc}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">{tpl.desc}</p>
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
                 <button
                   onClick={() => setIsNewModalOpen(false)}
-                  className="px-4 py-2 bg-transparent text-slate-400 hover:text-white text-xs font-semibold"
+                  className="px-4 py-2 bg-slate-100 text-slate-600 hover:text-slate-900 rounded-lg text-xs font-semibold transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={() => handleCreateBot()}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-xs"
                 >
                   Criar em Branco
                 </button>

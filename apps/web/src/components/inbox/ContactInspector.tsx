@@ -27,14 +27,14 @@ export default function ContactInspector() {
   };
 
   return (
-    <aside className="w-[340px] h-full bg-[#0a0e17] border-l border-white/5 flex flex-col overflow-y-auto">
+    <aside className="w-[340px] h-full bg-white border-l border-slate-200 flex flex-col overflow-y-auto">
       {/* Profile Header */}
-      <div className="p-5 border-b border-white/5 text-center">
-        <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 mx-auto flex items-center justify-center text-xl font-bold text-white mb-3 shadow-lg shadow-indigo-600/20">
+      <div className="p-5 border-b border-slate-200 text-center">
+        <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 mx-auto flex items-center justify-center text-xl font-bold text-emerald-700 mb-3 shadow-xs">
           {contact?.name.slice(0, 2).toUpperCase() || 'CX'}
         </div>
-        <h4 className="font-bold text-white text-base">{contact?.name}</h4>
-        <p className="text-xs text-slate-400 mt-0.5">{custom.cargo || 'Cliente Cadastrado'}</p>
+        <h4 className="font-bold text-slate-900 text-base">{contact?.name}</h4>
+        <p className="text-xs text-slate-500 mt-0.5">{custom.cargo || 'Cliente Cadastrado'}</p>
 
         {/* Tags */}
         <div className="flex justify-center gap-1.5 mt-3 flex-wrap">
@@ -43,10 +43,10 @@ export default function ContactInspector() {
               key={t}
               className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${
                 t === 'VIP'
-                  ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                  ? 'bg-amber-50 text-amber-700 border-amber-200'
                   : t === 'Lead Quente'
-                  ? 'bg-rose-500/10 text-rose-300 border-rose-500/20'
-                  : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20'
+                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
               }`}
             >
               {t}
@@ -56,13 +56,13 @@ export default function ContactInspector() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-white/5 bg-[#0f131c] text-xs">
+      <div className="flex border-b border-slate-200 bg-slate-50 text-xs">
         <button
           onClick={() => setActiveTab('details')}
           className={`flex-1 py-2.5 text-center font-medium transition-colors ${
             activeTab === 'details'
-              ? 'text-indigo-400 border-b-2 border-indigo-500'
-              : 'text-slate-400 hover:text-white'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 bg-white font-semibold'
+              : 'text-slate-500 hover:text-slate-900'
           }`}
         >
           Detalhes
@@ -71,8 +71,8 @@ export default function ContactInspector() {
           onClick={() => setActiveTab('deals')}
           className={`flex-1 py-2.5 text-center font-medium transition-colors ${
             activeTab === 'deals'
-              ? 'text-indigo-400 border-b-2 border-indigo-500'
-              : 'text-slate-400 hover:text-white'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 bg-white font-semibold'
+              : 'text-slate-500 hover:text-slate-900'
           }`}
         >
           CRM / Deals
@@ -81,8 +81,8 @@ export default function ContactInspector() {
           onClick={() => setActiveTab('notes')}
           className={`flex-1 py-2.5 text-center font-medium transition-colors ${
             activeTab === 'notes'
-              ? 'text-indigo-400 border-b-2 border-indigo-500'
-              : 'text-slate-400 hover:text-white'
+              ? 'text-emerald-700 border-b-2 border-emerald-600 bg-white font-semibold'
+              : 'text-slate-500 hover:text-slate-900'
           }`}
         >
           Notas ({notes.length})
@@ -97,47 +97,47 @@ export default function ContactInspector() {
               <h5 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">
                 Informações de Contato
               </h5>
-              <div className="space-y-2.5 text-xs text-slate-300">
+              <div className="space-y-2.5 text-xs text-slate-700">
                 <div className="flex items-center gap-2">
-                  <Phone className="w-3.5 h-3.5 text-slate-500" />
+                  <Phone className="w-3.5 h-3.5 text-slate-400" />
                   <span>{contact?.phone || 'Não informado'}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Mail className="w-3.5 h-3.5 text-slate-500" />
+                  <Mail className="w-3.5 h-3.5 text-slate-400" />
                   <span>{contact?.email || 'Não informado'}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Briefcase className="w-3.5 h-3.5 text-slate-500" />
+                  <Briefcase className="w-3.5 h-3.5 text-slate-400" />
                   <span>{custom.empresa || 'Pessoa Física'}</span>
                 </div>
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-xs text-slate-400 space-y-1">
-              <p className="text-white font-medium">Canal de Atendimento:</p>
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+              <p className="text-slate-900 font-semibold">Canal de Atendimento:</p>
               <p>WhatsApp Cloud API Oficial</p>
-              <p className="text-[11px] text-slate-500">Número ID: 1049281928374</p>
+              <p className="text-[11px] text-slate-400">Número ID: 1049281928374</p>
             </div>
           </div>
         )}
 
         {activeTab === 'deals' && (
           <div className="space-y-4">
-            <div className="p-3.5 rounded-xl bg-[#181b25] border border-white/10 space-y-2.5">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-white">Upgrade Plano Pro (10 licenças)</span>
-                <span className="text-emerald-400 font-bold">{custom.deal_value || 'R$ 10.680/ano'}</span>
+                <span className="font-semibold text-slate-900">Upgrade Plano Pro (10 licenças)</span>
+                <span className="text-emerald-600 font-bold">{custom.deal_value || 'R$ 10.680/ano'}</span>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-500">
                 Fase: {custom.deal_stage || 'Proposta Enviada'} (4/5 etapas)
               </p>
-              <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
-                <div className="w-4/5 h-full bg-indigo-500 rounded-full" />
+              <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                <div className="w-4/5 h-full bg-emerald-600 rounded-full" />
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-dashed border-white/10 text-center">
-              <button className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">
+            <div className="p-3 rounded-lg border border-dashed border-slate-300 text-center">
+              <button className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold">
                 + Criar Nova Oportunidade
               </button>
             </div>
@@ -153,7 +153,7 @@ export default function ContactInspector() {
               {!isAddingNote && (
                 <button
                   onClick={() => setIsAddingNote(true)}
-                  className="text-indigo-400 hover:text-indigo-300 text-xs flex items-center gap-1 font-medium"
+                  className="text-emerald-700 hover:text-emerald-800 text-xs flex items-center gap-1 font-semibold"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Adicionar</span>
@@ -162,24 +162,24 @@ export default function ContactInspector() {
             </div>
 
             {isAddingNote && (
-              <form onSubmit={handleAddNote} className="space-y-2 bg-[#181b25] p-2.5 rounded-xl border border-white/10">
+              <form onSubmit={handleAddNote} className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <textarea
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
                   placeholder="Escreva uma nota confidencial..."
-                  className="w-full h-16 bg-[#0a0e17] border border-white/10 rounded-lg p-2 text-xs text-white placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500"
+                  className="w-full h-16 bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-900 placeholder-slate-400 resize-none focus:outline-none focus:border-emerald-500"
                 />
                 <div className="flex justify-end gap-1.5">
                   <button
                     type="button"
                     onClick={() => setIsAddingNote(false)}
-                    className="px-2 py-1 text-slate-400 hover:text-white text-xs"
+                    className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
-                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-md"
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-md shadow-xs"
                   >
                     Salvar Nota
                   </button>
@@ -188,7 +188,7 @@ export default function ContactInspector() {
             )}
 
             {notes.map((note, idx) => (
-              <div key={idx} className="p-3 rounded-lg bg-white/5 border border-white/5 text-xs text-slate-300 leading-relaxed">
+              <div key={idx} className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed">
                 "{note}"
               </div>
             ))}

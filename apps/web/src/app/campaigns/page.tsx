@@ -87,23 +87,23 @@ export default function CampaignsPage() {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-[#07090e] text-slate-100 antialiased overflow-hidden font-sans">
+    <div className="flex h-screen w-screen bg-slate-50 text-slate-900 antialiased overflow-hidden font-sans">
       {/* 72px Left Navigation Rail */}
       <NavigationRail />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         {/* Topbar Header */}
-        <header className="h-16 px-8 border-b border-white/5 bg-[#090d16]/80 backdrop-blur flex items-center justify-between shrink-0 sticky top-0 z-10">
+        <header className="h-16 px-8 border-b border-slate-200 bg-white flex items-center justify-between shrink-0 sticky top-0 z-10">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
               <Send className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-white tracking-tight">
+              <h1 className="text-base font-bold text-slate-900 tracking-tight">
                 Disparo em Massa & Campanhas
               </h1>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 Transmissão em escala no WhatsApp Cloud Oficial com gatilhos de chatbot
               </p>
             </div>
@@ -117,7 +117,7 @@ export default function CampaignsPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Buscar campanha..."
-                className="w-full pl-9 pr-4 py-1.5 bg-[#0f1422] border border-white/10 rounded-lg text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500 transition-colors"
               />
             </div>
 
@@ -126,7 +126,7 @@ export default function CampaignsPage() {
                 setIsWizardOpen(true);
                 setWizardStep(1);
               }}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all active:scale-95"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-2 transition-all"
             >
               <Plus className="w-4 h-4" />
               Nova Campanha
@@ -137,79 +137,79 @@ export default function CampaignsPage() {
         <div className="p-8 space-y-8 max-w-7xl w-full mx-auto">
           {/* Hero KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="p-5 rounded-xl bg-[#0e121e] border border-white/5 flex flex-col justify-between">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
                 <span>Campanhas Ativas</span>
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
                   <Play className="w-3.5 h-3.5 fill-current" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-white">
+                <span className="text-2xl font-black text-slate-900">
                   {metrics?.activeCampaigns ?? 1}
                 </span>
                 <span className="text-xs text-slate-500">
                   de {metrics?.totalCampaigns ?? 3} cadastradas
                 </span>
               </div>
-              <div className="mt-2 text-[11px] text-emerald-400 flex items-center gap-1">
-                <Zap className="w-3 h-3" /> Fila Meta Cloud API operando a 80 msgs/s
+              <div className="mt-2 text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                <Zap className="w-3 h-3 text-emerald-600" /> Fila Meta Cloud API operando a 80 msgs/s
               </div>
             </div>
 
-            <div className="p-5 rounded-xl bg-[#0e121e] border border-white/5 flex flex-col justify-between">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
                 <span>Disparos Realizados (Mês)</span>
-                <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 flex items-center justify-center">
                   <Send className="w-3.5 h-3.5" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-white">
+                <span className="text-2xl font-black text-slate-900">
                   {metrics?.monthlyDispatches.toLocaleString() ?? '48.500'}
                 </span>
-                <span className="text-xs text-emerald-400 flex items-center gap-0.5">
+                <span className="text-xs text-emerald-700 font-semibold flex items-center gap-0.5">
                   <TrendingUp className="w-3 h-3" /> +22.8%
                 </span>
               </div>
-              <div className="mt-2 text-[11px] text-slate-400">
+              <div className="mt-2 text-[11px] text-slate-500">
                 Limite mensal contratado: 100.000
               </div>
             </div>
 
-            <div className="p-5 rounded-xl bg-[#0e121e] border border-white/5 flex flex-col justify-between">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
                 <span>Taxa Média de Entrega</span>
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
                   <CheckCheck className="w-3.5 h-3.5" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-white">
+                <span className="text-2xl font-black text-slate-900">
                   {metrics?.avgDeliveryRate ?? '98.7%'}
                 </span>
                 <span className="text-xs text-slate-500">tique duplo Meta</span>
               </div>
-              <div className="mt-2 text-[11px] text-emerald-400 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" /> Reputação Verde (High Quality)
+              <div className="mt-2 text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3 text-emerald-600" /> Reputação Verde (High Quality)
               </div>
             </div>
 
-            <div className="p-5 rounded-xl bg-[#0e121e] border border-white/5 flex flex-col justify-between">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
                 <span>Taxa de Resposta / Interação</span>
-                <div className="w-7 h-7 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center">
                   <MessageSquare className="w-3.5 h-3.5" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-white">
+                <span className="text-2xl font-black text-slate-900">
                   {metrics?.avgReplyRate ?? '31.4%'}
                 </span>
-                <span className="text-xs text-purple-400">leads engajados</span>
+                <span className="text-xs text-indigo-700 font-medium">leads engajados</span>
               </div>
-              <div className="mt-2 text-[11px] text-slate-400 flex items-center gap-1">
-                <Bot className="w-3 h-3 text-purple-400" /> Chatbot acionado automaticamente
+              <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1">
+                <Bot className="w-3 h-3 text-indigo-600" /> Chatbot acionado automaticamente
               </div>
             </div>
           </div>
@@ -229,8 +229,8 @@ export default function CampaignsPage() {
                   onClick={() => setFilterStatus(tab.id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     filterStatus === tab.id
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'bg-[#0e121e] text-slate-400 hover:text-white border border-white/5'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
                   }`}
                 >
                   {tab.label}
@@ -244,10 +244,10 @@ export default function CampaignsPage() {
           </div>
 
           {/* Campaigns Table */}
-          <div className="bg-[#0e121e] border border-white/5 rounded-2xl overflow-hidden shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-white/5 bg-[#0a0e17]/50 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                   <th className="py-3.5 px-6">Nome da Campanha</th>
                   <th className="py-3.5 px-4">Status</th>
                   <th className="py-3.5 px-4">Progresso de Disparo</th>
@@ -256,7 +256,7 @@ export default function CampaignsPage() {
                   <th className="py-3.5 px-6 text-right">Ação</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5 text-xs">
+              <tbody className="divide-y divide-slate-100 text-xs">
                 {filteredCampaigns.map((camp) => {
                   const progressPct =
                     camp.totalContacts > 0
@@ -264,14 +264,14 @@ export default function CampaignsPage() {
                       : 0;
 
                   return (
-                    <tr key={camp.id} className="hover:bg-white/[0.02] transition-colors group">
+                    <tr key={camp.id} className="hover:bg-slate-50/80 transition-colors group">
                       <td className="py-4 px-6">
-                        <div className="font-semibold text-white group-hover:text-indigo-400 transition-colors">
+                        <div className="font-semibold text-slate-900 group-hover:text-emerald-700 transition-colors">
                           {camp.name}
                         </div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                          <span className="flex items-center gap-1 text-emerald-400 font-medium">
-                            <CheckCircle2 className="w-3 h-3" /> {camp.channel}
+                        <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                          <span className="flex items-center gap-1 text-emerald-700 font-medium">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {camp.channel}
                           </span>
                           <span>•</span>
                           <span>{camp.totalContacts.toLocaleString()} contatos na base</span>
@@ -282,12 +282,12 @@ export default function CampaignsPage() {
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                             camp.status === 'running'
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : camp.status === 'scheduled'
-                              ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
                               : camp.status === 'completed'
-                              ? 'bg-slate-500/10 text-slate-300 border-slate-500/20'
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                              ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
                           }`}
                         >
                           {camp.status === 'running'
@@ -303,16 +303,16 @@ export default function CampaignsPage() {
                       <td className="py-4 px-4">
                         <div className="w-44 space-y-1.5">
                           <div className="flex justify-between text-[10px]">
-                            <span className="text-slate-400 font-medium">{progressPct}%</span>
-                            <span className="text-slate-500">
+                            <span className="text-slate-700 font-semibold">{progressPct}%</span>
+                            <span className="text-slate-400">
                               {camp.sentCount.toLocaleString()} / {camp.totalContacts.toLocaleString()}
                             </span>
                           </div>
-                          <div className="h-1.5 w-full bg-[#161c2e] rounded-full overflow-hidden">
+                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                             <div
                               style={{ width: `${progressPct}%` }}
                               className={`h-full rounded-full ${
-                                camp.status === 'completed' ? 'bg-indigo-500' : 'bg-emerald-500'
+                                camp.status === 'completed' ? 'bg-slate-400' : 'bg-emerald-600'
                               }`}
                             />
                           </div>
@@ -320,22 +320,22 @@ export default function CampaignsPage() {
                       </td>
 
                       <td className="py-4 px-4">
-                        <div className="font-semibold text-slate-200">
+                        <div className="font-semibold text-slate-800">
                           {camp.deliveredCount.toLocaleString()}
-                          <span className="text-[10px] text-slate-500 ml-1">
+                          <span className="text-[10px] text-slate-400 ml-1">
                             ({camp.sentCount > 0 ? ((camp.deliveredCount / camp.sentCount) * 100).toFixed(0) : 0}%)
                           </span>
                         </div>
-                        <div className="text-[10px] text-emerald-400">
+                        <div className="text-[10px] text-emerald-700 font-medium">
                           {camp.readCount.toLocaleString()} leituras confirmadas
                         </div>
                       </td>
 
                       <td className="py-4 px-4">
-                        <div className="font-semibold text-purple-400">
+                        <div className="font-semibold text-indigo-700">
                           {camp.repliedCount.toLocaleString()} respostas
                         </div>
-                        <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
                           <Bot className="w-3 h-3 text-slate-400" /> Gatilho ativo
                         </div>
                       </td>
@@ -344,20 +344,20 @@ export default function CampaignsPage() {
                         {camp.status === 'running' || camp.status === 'paused' ? (
                           <button
                             onClick={() => toggleCampaignStatus(camp.id)}
-                            className="px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 text-xs font-semibold text-slate-300 hover:text-white inline-flex items-center gap-1.5 transition-all"
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-700 inline-flex items-center gap-1.5 transition-all shadow-2xs"
                           >
                             {camp.status === 'running' ? (
                               <>
-                                <Pause className="w-3.5 h-3.5 text-amber-400 fill-current" /> Pausar
+                                <Pause className="w-3.5 h-3.5 text-amber-600 fill-current" /> Pausar
                               </>
                             ) : (
                               <>
-                                <Play className="w-3.5 h-3.5 text-emerald-400 fill-current" /> Retomar
+                                <Play className="w-3.5 h-3.5 text-emerald-600 fill-current" /> Retomar
                               </>
                             )}
                           </button>
                         ) : (
-                          <span className="text-[11px] text-slate-500 font-medium">Finalizado</span>
+                          <span className="text-[11px] text-slate-400 font-medium">Finalizado</span>
                         )}
                       </td>
                     </tr>
@@ -370,28 +370,28 @@ export default function CampaignsPage() {
 
         {/* 3-Step Wizard Modal for New Campaign */}
         {isWizardOpen && (
-          <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#0e121e] border border-white/10 rounded-2xl w-full max-w-2xl p-6 space-y-6 shadow-2xl">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl p-6 space-y-6 shadow-xl">
               {/* Wizard Step Indicator */}
-              <div className="flex items-center justify-between border-b border-white/5 pb-4">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-xs">
                     {wizardStep}/3
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">
+                    <h3 className="text-sm font-bold text-slate-900">
                       {wizardStep === 1 && 'Passo 1: Mensagem & Canal de Disparo'}
                       {wizardStep === 2 && 'Passo 2: Seleção da Base de Contatos'}
                       {wizardStep === 3 && 'Passo 3: Regras de Envio & Gatilho do Chatbot'}
                     </h3>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-slate-500">
                       Assistente oficial em 3 passos para envio em massa no WhatsApp
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setIsWizardOpen(false)}
-                  className="text-slate-400 hover:text-white text-sm"
+                  className="text-slate-400 hover:text-slate-700 text-sm"
                 >
                   ✕
                 </button>
@@ -401,7 +401,7 @@ export default function CampaignsPage() {
               {wizardStep === 1 && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-slate-300 block">
+                    <label className="text-xs font-semibold text-slate-700 block">
                       Nome da Campanha
                     </label>
                     <input
@@ -409,33 +409,33 @@ export default function CampaignsPage() {
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="Ex: Campanha de Black Friday VIP 2026"
-                      className="w-full px-3 py-2 bg-[#080b12] border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-emerald-500"
                     />
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-300">
+                      <label className="text-xs font-semibold text-slate-700">
                         Mensagem WhatsApp
                       </label>
                       <button
                         type="button"
                         onClick={handleEnhanceWithAI}
                         disabled={isEnhancingAI}
-                        className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 transition-colors"
+                        className="text-[11px] text-indigo-700 hover:text-indigo-800 font-semibold flex items-center gap-1 transition-colors"
                       >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        {isEnhancingAI ? 'Otimizando com IA...' : '✨ Melhorar com IA'}
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        {isEnhancingAI ? 'Otimizando com IA...' : '✨ Otimizar com IA'}
                       </button>
                     </div>
                     <textarea
                       rows={4}
                       value={formData.messageText}
                       onChange={(e) => setFormData({ ...formData, messageText: e.target.value })}
-                      className="w-full p-3 bg-[#080b12] border border-white/10 rounded-lg text-xs text-white leading-relaxed focus:outline-none focus:border-indigo-500"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 leading-relaxed focus:outline-none focus:bg-white focus:border-emerald-500"
                     />
                     <p className="text-[11px] text-slate-500">
-                      Variáveis aceitas: <code className="text-indigo-400">{'{{nome}}'}</code>, <code className="text-indigo-400">{'{{empresa}}'}</code>.
+                      Variáveis aceitas: <code className="text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded">{'{{nome}}'}</code>, <code className="text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded">{'{{empresa}}'}</code>.
                     </p>
                   </div>
                 </div>
@@ -445,7 +445,7 @@ export default function CampaignsPage() {
               {wizardStep === 2 && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-slate-300 block">
+                    <label className="text-xs font-semibold text-slate-700 block">
                       Segmentação por Etiquetas
                     </label>
                     <div className="flex flex-wrap gap-2">
@@ -463,8 +463,8 @@ export default function CampaignsPage() {
                             }}
                             className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                               isSelected
-                                ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500'
-                                : 'bg-[#141928] text-slate-400 border-white/5'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                             }`}
                           >
                             🏷️ {tag}
@@ -475,12 +475,12 @@ export default function CampaignsPage() {
                   </div>
 
                   {/* Upload CSV Option */}
-                  <div className="p-4 rounded-xl border border-dashed border-white/10 bg-[#080b12] flex flex-col items-center justify-center text-center space-y-2">
-                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                  <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center text-center space-y-2">
+                    <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
                       <FileSpreadsheet className="w-4 h-4" />
                     </div>
                     <div>
-                      <span className="text-xs font-semibold text-white block">
+                      <span className="text-xs font-semibold text-slate-800 block">
                         Importar planilha CSV / Excel
                       </span>
                       <span className="text-[11px] text-slate-500">
@@ -489,15 +489,15 @@ export default function CampaignsPage() {
                     </div>
                     <button
                       type="button"
-                      className="px-3 py-1 bg-white/5 hover:bg-white/10 text-slate-300 rounded text-xs font-semibold transition-colors"
+                      className="px-3 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded text-xs font-semibold transition-colors shadow-2xs"
                     >
                       Selecionar Arquivo
                     </button>
                   </div>
 
-                  <div className="p-3 bg-emerald-950/30 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center justify-between">
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center justify-between">
                     <span>Audiência estimada para disparo:</span>
-                    <strong className="text-sm font-bold text-white">
+                    <strong className="text-sm font-bold text-emerald-900">
                       {formData.totalContacts.toLocaleString()} contatos válidos
                     </strong>
                   </div>
@@ -508,7 +508,7 @@ export default function CampaignsPage() {
               {wizardStep === 3 && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-slate-300 block">
+                    <label className="text-xs font-semibold text-slate-700 block">
                       Acionar Chatbot Automaticamente ao Responder
                     </label>
                     <select
@@ -516,7 +516,7 @@ export default function CampaignsPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, botToTriggerOnReply: e.target.value })
                       }
-                      className="w-full px-3 py-2 bg-[#080b12] border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-emerald-500"
                     >
                       <option value="Qualificação Comercial & Triagem Inteligente">
                         🤖 Qualificação Comercial & Triagem Inteligente (Recomendado)
@@ -531,30 +531,30 @@ export default function CampaignsPage() {
                   </div>
 
                   <div className="space-y-3 pt-2">
-                    <label className="flex items-center gap-3 p-3 rounded-xl bg-[#141928] border border-white/5 cursor-pointer">
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={formData.avoidDuplicates}
                         onChange={(e) =>
                           setFormData({ ...formData, avoidDuplicates: e.target.checked })
                         }
-                        className="rounded bg-black border-white/20 text-indigo-600 focus:ring-0"
+                        className="rounded bg-white border-slate-300 text-emerald-600 focus:ring-0"
                       />
-                      <span className="text-xs text-slate-300">
+                      <span className="text-xs text-slate-700">
                         <b>Evitar mensagens duplicadas:</b> não enviar se o contato já recebeu disparo nas últimas 24h.
                       </span>
                     </label>
 
-                    <label className="flex items-center gap-3 p-3 rounded-xl bg-[#141928] border border-white/5 cursor-pointer">
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={formData.ddiPlus55}
                         onChange={(e) =>
                           setFormData({ ...formData, ddiPlus55: e.target.checked })
                         }
-                        className="rounded bg-black border-white/20 text-indigo-600 focus:ring-0"
+                        className="rounded bg-white border-slate-300 text-emerald-600 focus:ring-0"
                       />
-                      <span className="text-xs text-slate-300">
+                      <span className="text-xs text-slate-700">
                         <b>Higienização de DDI:</b> Adicionar automaticamente DDI +55 aos números brasileiros.
                       </span>
                     </label>
@@ -563,11 +563,11 @@ export default function CampaignsPage() {
               )}
 
               {/* Wizard Footer Controls */}
-              <div className="flex items-center justify-between pt-4 border-t border-white/5">
+              <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                 {wizardStep > 1 ? (
                   <button
                     onClick={() => setWizardStep(wizardStep - 1)}
-                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-lg text-xs font-semibold transition-colors"
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
                   >
                     Voltar
                   </button>
@@ -578,14 +578,14 @@ export default function CampaignsPage() {
                 {wizardStep < 3 ? (
                   <button
                     onClick={() => setWizardStep(wizardStep + 1)}
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-lg shadow-indigo-600/30"
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs"
                   >
                     Avançar <ChevronRight className="w-4 h-4" />
                   </button>
                 ) : (
                   <button
                     onClick={handleFinishWizard}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-600/30"
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs"
                   >
                     <Send className="w-4 h-4" /> Confirmar e Disparar Campanha
                   </button>

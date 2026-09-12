@@ -29,7 +29,7 @@ export default function InboxPage() {
   }, [fetchUser, fetchConversations]);
 
   return (
-    <div className="flex h-screen w-screen bg-[#090d16] text-slate-100 overflow-hidden font-sans select-none">
+    <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
       {/* 1. Persistent Left Navigation Rail (72px) */}
       <NavigationRail />
 
@@ -37,7 +37,7 @@ export default function InboxPage() {
       <ConversationList />
 
       {/* 3. Center Active Chat Canvas (flex-1) */}
-      <main className="flex-1 h-full bg-[#090d16] flex flex-col relative min-w-0">
+      <main className="flex-1 h-full bg-slate-50/50 flex flex-col relative min-w-0">
         {activeConversation ? (
           <>
             <ChatHeader />
@@ -45,14 +45,14 @@ export default function InboxPage() {
             <MessageComposer inputText={inputText} setInputText={setInputText} />
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-8 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4 text-indigo-400 border border-white/5">
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center bg-slate-50">
+            <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-4 text-emerald-600">
               <MessageSquare className="w-8 h-8" />
             </div>
-            <h3 className="text-base font-semibold text-white mb-1">
+            <h3 className="text-base font-semibold text-slate-800 mb-1">
               Selecione uma conversa para iniciar o atendimento
             </h3>
-            <p className="text-xs text-slate-400 max-w-sm">
+            <p className="text-xs text-slate-500 max-w-sm">
               Visualize o histórico em tempo real, responda clientes por WhatsApp, Instagram ou Webchat e acione copilotos de IA.
             </p>
           </div>

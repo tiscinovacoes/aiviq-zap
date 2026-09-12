@@ -130,18 +130,18 @@ export default function BotCanvasEditorPage() {
 
   return (
     <div
-      className="flex h-screen w-screen bg-[#07090e] text-slate-100 antialiased overflow-hidden font-sans select-none"
+      className="flex h-screen w-screen bg-slate-50 text-slate-900 antialiased overflow-hidden font-sans select-none"
       onMouseMove={handleMouseMoveCanvas}
       onMouseUp={handleMouseUpCanvas}
     >
       {/* Main Canvas + Panels */}
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
         {/* Editor Topbar */}
-        <header className="h-16 px-6 border-b border-white/5 bg-[#090d16]/90 backdrop-blur flex items-center justify-between z-20 shrink-0">
+        <header className="h-16 px-6 border-b border-slate-200 bg-white/95 backdrop-blur flex items-center justify-between z-20 shrink-0">
           <div className="flex items-center gap-4">
             <Link
               href="/bots"
-              className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+              className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-colors"
               title="Voltar para lista de automações"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -152,26 +152,26 @@ export default function BotCanvasEditorPage() {
                 type="text"
                 value={bot.name}
                 onChange={(e) => useBotStore.setState((s) => s.bot ? ({ bot: { ...s.bot, name: e.target.value } }) : s)}
-                className="bg-transparent border border-transparent hover:border-white/10 focus:border-indigo-500 rounded px-2 py-1 text-sm font-bold text-white focus:outline-none transition-all w-80"
+                className="bg-transparent border border-transparent hover:border-slate-300 focus:border-emerald-500 rounded px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none transition-all w-80"
               />
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                 v{publishedVersion} Produção
               </span>
-              <span className="text-xs text-slate-500 flex items-center gap-1">
-                <CheckCircle className="w-3 h-3 text-slate-500" />
-                {isDirty ? 'Alterações não salvas' : 'Salvo no cofre'}
+              <span className="text-xs text-slate-400 flex items-center gap-1">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                {isDirty ? 'Alterações pendentes' : 'Salvo na nuvem'}
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             {/* Undo / Redo */}
-            <div className="flex items-center bg-[#0e121e] border border-white/10 rounded-lg p-1">
+            <div className="flex items-center bg-slate-100 border border-slate-200 rounded-lg p-1">
               <button
                 onClick={undo}
                 disabled={!canUndo()}
                 title="Desfazer (Ctrl+Z)"
-                className="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                className="p-1.5 rounded hover:bg-white text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
               >
                 <Undo2 className="w-4 h-4" />
               </button>
@@ -179,7 +179,7 @@ export default function BotCanvasEditorPage() {
                 onClick={redo}
                 disabled={!canRedo()}
                 title="Refazer (Ctrl+Y)"
-                className="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+                className="p-1.5 rounded hover:bg-white text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
               >
                 <Redo2 className="w-4 h-4" />
               </button>
@@ -190,8 +190,8 @@ export default function BotCanvasEditorPage() {
               onClick={() => (isSimulating ? closeSimulation() : openSimulation())}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
                 isSimulating
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                  : 'bg-[#141a2b] hover:bg-[#1c243c] text-purple-300 border border-purple-500/30'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
               }`}
             >
               <Smartphone className="w-4 h-4" />
@@ -202,7 +202,7 @@ export default function BotCanvasEditorPage() {
             <button
               onClick={handlePublish}
               disabled={publishing}
-              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-emerald-600/20 flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
             >
               <Globe className="w-4 h-4" />
               {publishing ? 'Publicando...' : `Publicar v${publishedVersion + 1}`}
@@ -221,14 +221,14 @@ export default function BotCanvasEditorPage() {
         {/* Editor Workspace: Left Palette + Canvas Area + Right Config */}
         <div className="flex-1 flex min-h-0 relative overflow-hidden">
           {/* Left Toolbox / Palette */}
-          <aside className="w-64 border-r border-white/5 bg-[#090d16]/95 flex flex-col shrink-0 z-10 p-4 space-y-4 overflow-y-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-white/5">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+          <aside className="w-64 border-r border-slate-200 bg-white flex flex-col shrink-0 z-10 p-4 space-y-4 overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 Blocos de Ação
               </span>
               <button
                 onClick={() => createGroup()}
-                className="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded text-[11px] font-semibold flex items-center gap-1 transition-all"
+                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-[11px] font-semibold flex items-center gap-1 transition-all"
               >
                 <Plus className="w-3 h-3" /> Grupo
               </button>
@@ -236,7 +236,7 @@ export default function BotCanvasEditorPage() {
 
             {/* Category: Mensagens */}
             <div className="space-y-1.5">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                 💬 Mensagens (Bot Fala)
               </span>
               {[
@@ -245,9 +245,9 @@ export default function BotCanvasEditorPage() {
                 <button
                   key={item.type}
                   onClick={() => selectedGroupId && addBlock(selectedGroupId, item.type)}
-                  className="w-full px-3 py-2 rounded-lg bg-[#0e121e] hover:bg-[#161c2e] border border-white/5 hover:border-indigo-500/40 text-left flex items-center gap-2.5 text-xs text-slate-300 hover:text-white transition-all group"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/80 hover:border-emerald-500/40 text-left flex items-center gap-2.5 text-xs text-slate-700 hover:text-slate-900 transition-all group"
                 >
-                  <item.icon className="w-4 h-4 text-indigo-400" />
+                  <item.icon className="w-4 h-4 text-emerald-600" />
                   <span className="font-medium">{item.label}</span>
                 </button>
               ))}
@@ -255,7 +255,7 @@ export default function BotCanvasEditorPage() {
 
             {/* Category: Entradas */}
             <div className="space-y-1.5">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                 ✍️ Entradas (Usuário Responde)
               </span>
               {[
@@ -265,9 +265,9 @@ export default function BotCanvasEditorPage() {
                 <button
                   key={item.type}
                   onClick={() => selectedGroupId && addBlock(selectedGroupId, item.type)}
-                  className="w-full px-3 py-2 rounded-lg bg-[#0e121e] hover:bg-[#161c2e] border border-white/5 hover:border-purple-500/40 text-left flex items-center gap-2.5 text-xs text-slate-300 hover:text-white transition-all"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/80 hover:border-emerald-500/40 text-left flex items-center gap-2.5 text-xs text-slate-700 hover:text-slate-900 transition-all"
                 >
-                  <item.icon className="w-4 h-4 text-purple-400" />
+                  <item.icon className="w-4 h-4 text-indigo-600" />
                   <span className="font-medium">{item.label}</span>
                 </button>
               ))}
@@ -275,7 +275,7 @@ export default function BotCanvasEditorPage() {
 
             {/* Category: Lógica & Ações */}
             <div className="space-y-1.5">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                 ⚡ Ações no Atendimento
               </span>
               {[
@@ -287,22 +287,22 @@ export default function BotCanvasEditorPage() {
                 <button
                   key={item.type}
                   onClick={() => selectedGroupId && addBlock(selectedGroupId, item.type)}
-                  className="w-full px-3 py-2 rounded-lg bg-[#0e121e] hover:bg-[#161c2e] border border-white/5 hover:border-emerald-500/40 text-left flex items-center gap-2.5 text-xs text-slate-300 hover:text-white transition-all"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/80 hover:border-emerald-500/40 text-left flex items-center gap-2.5 text-xs text-slate-700 hover:text-slate-900 transition-all"
                 >
-                  <item.icon className="w-4 h-4 text-emerald-400" />
+                  <item.icon className="w-4 h-4 text-emerald-600" />
                   <span className="font-medium">{item.label}</span>
                 </button>
               ))}
             </div>
 
-            <div className="pt-4 border-t border-white/5 text-[11px] text-slate-500 leading-relaxed">
-              💡 <b className="text-slate-400">Dica:</b> Selecione um grupo no canvas e clique em qualquer bloco acima para adicioná-lo.
+            <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400 leading-relaxed">
+              💡 <b className="text-slate-600">Dica:</b> Selecione um grupo no canvas e clique em qualquer bloco acima para adicioná-lo.
             </div>
           </aside>
 
           {/* Canvas Area */}
           <div
-            className="flex-1 h-full relative overflow-auto bg-[#07090e] bg-[radial-gradient(#1e2638_1px,transparent_1px)] [background-size:24px_24px]"
+            className="flex-1 h-full relative overflow-auto bg-slate-100/70 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:24px_24px]"
             onClick={() => selectBlock(null, null)}
           >
             {/* SVG Connecting Edges */}
@@ -316,7 +316,7 @@ export default function BotCanvasEditorPage() {
                   refY="3"
                   orient="auto"
                 >
-                  <polygon points="0 0, 8 3, 0 6" fill="#6366f1" />
+                  <polygon points="0 0, 8 3, 0 6" fill="#10b981" />
                 </marker>
               </defs>
               {bot.edges.map((edge) => {
@@ -351,12 +351,12 @@ export default function BotCanvasEditorPage() {
                   <path
                     key={edge.id}
                     d={pathData}
-                    stroke="#6366f1"
+                    stroke="#10b981"
                     strokeWidth="2"
                     strokeDasharray="4 2"
                     fill="none"
                     markerEnd="url(#arrowhead)"
-                    className="opacity-80"
+                    className="opacity-90"
                   />
                 );
               })}
@@ -368,13 +368,13 @@ export default function BotCanvasEditorPage() {
                 left: `${bot.events[0].graphCoordinates.x}px`,
                 top: `${bot.events[0].graphCoordinates.y}px`,
               }}
-              className="absolute z-10 w-24 p-3 bg-emerald-950/80 border border-emerald-500/40 rounded-xl shadow-lg shadow-emerald-950/50 flex flex-col items-center gap-1 cursor-default text-center"
+              className="absolute z-10 w-24 p-3 bg-white border border-emerald-300 shadow-sm rounded-xl flex flex-col items-center gap-1 cursor-default text-center"
             >
-              <div className="w-6 h-6 rounded-full bg-emerald-500 text-black flex items-center justify-center font-bold text-xs">
+              <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
                 ▶
               </div>
-              <span className="text-[11px] font-bold text-emerald-300">Início</span>
-              <span className="text-[9px] text-slate-400">Gatilho Chat</span>
+              <span className="text-[11px] font-bold text-emerald-800">Início</span>
+              <span className="text-[9px] text-slate-400 font-medium">Gatilho Chat</span>
             </div>
 
             {/* Render Groups on Canvas */}
@@ -393,24 +393,24 @@ export default function BotCanvasEditorPage() {
                     e.stopPropagation();
                     selectBlock(group.id, group.blocks[0]?.id || null);
                   }}
-                  className={`absolute z-10 w-[300px] bg-[#0c101c] border rounded-xl shadow-2xl transition-shadow ${
+                  className={`absolute z-10 w-[300px] bg-white border rounded-xl shadow-xs transition-shadow ${
                     isGroupSelected
-                      ? 'border-indigo-500 shadow-indigo-500/10 ring-1 ring-indigo-500'
-                      : 'border-white/10 hover:border-white/20'
+                      ? 'border-emerald-500 shadow-sm ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
                   {/* Group Header */}
-                  <div className="p-3 border-b border-white/5 flex items-center justify-between cursor-move bg-[#0f1422] rounded-t-xl">
+                  <div className="p-3 border-b border-slate-100 flex items-center justify-between cursor-move bg-slate-50/80 rounded-t-xl">
                     <input
                       type="text"
                       value={group.title}
                       onChange={(e) => updateGroup(group.id, { title: e.target.value })}
-                      className="bg-transparent text-xs font-bold text-white focus:outline-none border-b border-transparent focus:border-indigo-500 no-drag w-48"
+                      className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none border-b border-transparent focus:border-emerald-500 no-drag w-48"
                     />
                     <div className="flex items-center gap-1 no-drag">
                       <button
                         onClick={() => deleteGroup(group.id)}
-                        className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
                         title="Excluir grupo"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -432,18 +432,18 @@ export default function BotCanvasEditorPage() {
                           }}
                           className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all relative ${
                             isBlockSelected
-                              ? 'bg-indigo-600/15 border-indigo-500 text-white'
-                              : 'bg-[#141928] border-white/5 text-slate-300 hover:border-white/20'
+                              ? 'bg-emerald-50/80 border-emerald-400 text-emerald-950 font-semibold shadow-2xs'
+                              : 'bg-slate-50/80 border-slate-200/80 text-slate-700 hover:bg-slate-100/80'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 overflow-hidden">
-                              {b.type === 'text' && <MessageSquare className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
-                              {b.type === 'text_input' && <HelpCircle className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
-                              {b.type === 'choice_input' && <Split className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
-                              {b.type === 'assign_to_agent' && <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                              {b.type === 'add_label' && <Tag className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                              {b.type === 'condition' && <Split className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                              {b.type === 'text' && <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                              {b.type === 'text_input' && <HelpCircle className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+                              {b.type === 'choice_input' && <Split className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+                              {b.type === 'assign_to_agent' && <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                              {b.type === 'add_label' && <Tag className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                              {b.type === 'condition' && <Split className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
 
                               <span className="font-semibold truncate">
                                 {b.type === 'text' && (b.content.text || 'Texto vazio')}
@@ -458,20 +458,20 @@ export default function BotCanvasEditorPage() {
                             {/* Anchor connector */}
                             <div
                               title="Conector de saída"
-                              className="w-2.5 h-2.5 rounded-full bg-indigo-500 border border-white shrink-0 -mr-1"
+                              className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white shrink-0 -mr-1 shadow-2xs"
                             />
                           </div>
 
                           {/* Choice input items preview */}
                           {b.type === 'choice_input' && b.items && (
-                            <div className="mt-2 space-y-1 pl-4 border-l border-white/10">
+                            <div className="mt-2 space-y-1 pl-4 border-l border-slate-200">
                               {b.items.map((item) => (
                                 <div
                                   key={item.id}
-                                  className="text-[10px] text-slate-400 flex items-center justify-between"
+                                  className="text-[10px] text-slate-500 flex items-center justify-between"
                                 >
                                   <span>• {item.content}</span>
-                                  <span className="w-2 h-2 rounded-full bg-purple-400" />
+                                  <span className="w-2 h-2 rounded-full bg-indigo-500" />
                                 </div>
                               ))}
                             </div>
@@ -485,7 +485,7 @@ export default function BotCanvasEditorPage() {
                   <div className="p-2 pt-0 flex justify-center no-drag">
                     <button
                       onClick={() => addBlock(group.id, 'text')}
-                      className="w-full py-1.5 border border-dashed border-white/10 hover:border-indigo-500/50 rounded-lg text-[11px] text-slate-400 hover:text-indigo-400 flex items-center justify-center gap-1 transition-colors"
+                      className="w-full py-1.5 border border-dashed border-slate-300 hover:border-emerald-500 hover:text-emerald-700 bg-white rounded-lg text-[11px] text-slate-500 flex items-center justify-center gap-1 transition-colors"
                     >
                       <Plus className="w-3 h-3" /> Adicionar Bloco
                     </button>
@@ -497,17 +497,17 @@ export default function BotCanvasEditorPage() {
 
           {/* Right Configuration Panel */}
           {selectedBlock && selectedGroup && (
-            <aside className="w-80 border-l border-white/5 bg-[#090d16]/95 flex flex-col shrink-0 z-10 p-5 space-y-5 overflow-y-auto">
-              <div className="flex items-center justify-between pb-3 border-b border-white/5">
+            <aside className="w-80 border-l border-slate-200 bg-white flex flex-col shrink-0 z-10 p-5 space-y-5 overflow-y-auto">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
-                  <Settings2 className="w-4 h-4 text-indigo-400" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-white">
+                  <Settings2 className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-900">
                     Configurar Bloco
                   </span>
                 </div>
                 <button
                   onClick={() => selectBlock(null, null)}
-                  className="text-slate-400 hover:text-white"
+                  className="text-slate-400 hover:text-slate-600"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -516,7 +516,7 @@ export default function BotCanvasEditorPage() {
               {/* Block Type Specific Settings */}
               {selectedBlock.type === 'text' && (
                 <div className="space-y-3">
-                  <label className="text-xs font-semibold text-slate-300 block">
+                  <label className="text-xs font-semibold text-slate-700 block">
                     Conteúdo da Mensagem
                   </label>
                   <textarea
@@ -528,10 +528,10 @@ export default function BotCanvasEditorPage() {
                       })
                     }
                     placeholder="Digite sua mensagem. Use {{variavel}} para interpolação."
-                    className="w-full p-2.5 bg-[#0e121e] border border-white/10 rounded-lg text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white"
                   />
                   <p className="text-[11px] text-slate-500">
-                    Dica: Digite <code className="text-indigo-400">{'{{nome}}'}</code> para puxar o nome do contato.
+                    Dica: Digite <code className="text-emerald-700 font-bold">{'{{nome}}'}</code> para puxar o nome do contato.
                   </p>
                 </div>
               )}
@@ -539,7 +539,7 @@ export default function BotCanvasEditorPage() {
               {selectedBlock.type === 'text_input' && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-slate-300 block">
+                    <label className="text-xs font-semibold text-slate-700 block">
                       Placeholder do Campo
                     </label>
                     <input
@@ -550,12 +550,12 @@ export default function BotCanvasEditorPage() {
                           options: { ...selectedBlock.options, placeholder: e.target.value },
                         })
                       }
-                      className="w-full px-3 py-2 bg-[#0e121e] border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-emerald-500 focus:bg-white"
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-slate-300 block">
+                    <label className="text-xs font-semibold text-slate-700 block">
                       Salvar Resposta na Variável
                     </label>
                     <input
@@ -567,7 +567,7 @@ export default function BotCanvasEditorPage() {
                         })
                       }
                       placeholder="Ex: nome, email, documento"
-                      className="w-full px-3 py-2 bg-[#0e121e] border border-white/10 rounded-lg text-xs text-indigo-300 focus:outline-none focus:border-indigo-500 font-mono"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-indigo-700 focus:outline-none focus:border-emerald-500 focus:bg-white font-mono"
                     />
                   </div>
                 </div>
@@ -575,7 +575,7 @@ export default function BotCanvasEditorPage() {
 
               {selectedBlock.type === 'choice_input' && (
                 <div className="space-y-4">
-                  <label className="text-xs font-semibold text-slate-300 block">
+                  <label className="text-xs font-semibold text-slate-700 block">
                     Opções de Botão / Escolha
                   </label>
                   <div className="space-y-2">
@@ -589,14 +589,14 @@ export default function BotCanvasEditorPage() {
                             newItems[idx] = { ...item, content: e.target.value };
                             updateBlock(selectedGroup.id, selectedBlock.id, { items: newItems });
                           }}
-                          className="flex-1 px-3 py-1.5 bg-[#0e121e] border border-white/10 rounded-lg text-xs text-white"
+                          className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:border-emerald-500"
                         />
                         <button
                           onClick={() => {
                             const newItems = selectedBlock.items?.filter((_, i) => i !== idx);
                             updateBlock(selectedGroup.id, selectedBlock.id, { items: newItems });
                           }}
-                          className="text-slate-500 hover:text-red-400 p-1"
+                          className="text-slate-400 hover:text-rose-600 p-1"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -611,7 +611,7 @@ export default function BotCanvasEditorPage() {
                         ];
                         updateBlock(selectedGroup.id, selectedBlock.id, { items: newItems });
                       }}
-                      className="w-full py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-slate-300 flex items-center justify-center gap-1 font-semibold"
+                      className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs flex items-center justify-center gap-1 font-semibold transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" /> Adicionar Opção
                     </button>
@@ -621,7 +621,7 @@ export default function BotCanvasEditorPage() {
 
               {selectedBlock.type === 'assign_to_agent' && (
                 <div className="space-y-3">
-                  <label className="text-xs font-semibold text-slate-300 block">
+                  <label className="text-xs font-semibold text-slate-700 block">
                     Estratégia de Atribuição
                   </label>
                   <select
@@ -631,7 +631,7 @@ export default function BotCanvasEditorPage() {
                         options: { ...selectedBlock.options, strategy: e.target.value },
                       })
                     }
-                    className="w-full px-3 py-2 bg-[#0e121e] border border-white/10 rounded-lg text-xs text-white"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:border-emerald-500"
                   >
                     <option value="round_robin">Distribuição Circular (Round-Robin)</option>
                     <option value="team">Encaminhar para Fila de Departamento</option>
@@ -639,7 +639,7 @@ export default function BotCanvasEditorPage() {
                   </select>
 
                   <div className="space-y-2 pt-2">
-                    <label className="text-xs font-semibold text-slate-300 block">
+                    <label className="text-xs font-semibold text-slate-700 block">
                       Nome do Atendente ou Time
                     </label>
                     <input
@@ -651,7 +651,7 @@ export default function BotCanvasEditorPage() {
                         })
                       }
                       placeholder="Ex: Consultor Sênior"
-                      className="w-full px-3 py-2 bg-[#0e121e] border border-white/10 rounded-lg text-xs text-white"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:border-emerald-500"
                     />
                   </div>
                 </div>
@@ -659,7 +659,7 @@ export default function BotCanvasEditorPage() {
 
               {selectedBlock.type === 'add_label' && (
                 <div className="space-y-3">
-                  <label className="text-xs font-semibold text-slate-300 block">
+                  <label className="text-xs font-semibold text-slate-700 block">
                     Etiquetas a Inserir (separadas por vírgula)
                   </label>
                   <input
@@ -672,15 +672,15 @@ export default function BotCanvasEditorPage() {
                         },
                       })
                     }
-                    className="w-full px-3 py-2 bg-[#0e121e] border border-white/10 rounded-lg text-xs text-white"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:border-emerald-500"
                   />
                 </div>
               )}
 
-              <div className="pt-6 border-t border-white/5">
+              <div className="pt-6 border-t border-slate-100">
                 <button
                   onClick={() => deleteBlock(selectedGroup.id, selectedBlock.id)}
-                  className="w-full py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                  className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Excluir Este Bloco
                 </button>
@@ -690,7 +690,7 @@ export default function BotCanvasEditorPage() {
 
           {/* WhatsApp Live Simulator Drawer */}
           {isSimulating && (
-            <aside className="w-96 border-l border-white/10 bg-[#0b0e14] flex flex-col shrink-0 z-30 shadow-2xl animate-in slide-in-from-right">
+            <aside className="w-96 border-l border-slate-200 bg-slate-50 flex flex-col shrink-0 z-30 shadow-xl animate-in slide-in-from-right">
               {/* WhatsApp Simulator Header */}
               <div className="h-16 px-4 bg-[#075e54] text-white flex items-center justify-between shrink-0 shadow-md">
                 <div className="flex items-center gap-3">
@@ -721,7 +721,7 @@ export default function BotCanvasEditorPage() {
               </div>
 
               {/* Chat Messages Feed */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#0d1418] bg-[radial-gradient(#1b272f_1px,transparent_1px)] [background-size:16px_16px]">
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#efeae2] bg-[radial-gradient(#d1d7db_1px,transparent_1px)] [background-size:16px_16px]">
                 {simulationMessages.map((msg, index) => {
                   const isBot = msg.sender === 'bot';
 
@@ -731,10 +731,10 @@ export default function BotCanvasEditorPage() {
                       className={`flex flex-col ${isBot ? 'items-start' : 'items-end'}`}
                     >
                       <div
-                        className={`max-w-[85%] rounded-lg p-2.5 text-xs shadow ${
+                        className={`max-w-[85%] rounded-lg p-2.5 text-xs shadow-2xs ${
                           isBot
-                            ? 'bg-[#1f2c34] text-slate-100 rounded-tl-none'
-                            : 'bg-[#005c4b] text-white rounded-tr-none'
+                            ? 'bg-white text-slate-800 rounded-tl-none border border-slate-100'
+                            : 'bg-[#d9fdd3] text-slate-900 rounded-tr-none'
                         }`}
                       >
                         <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
@@ -748,7 +748,7 @@ export default function BotCanvasEditorPage() {
                             <button
                               key={choice}
                               onClick={() => sendSimulationMessage(choice)}
-                              className="w-full py-1.5 px-3 rounded-lg bg-[#2a3942] hover:bg-[#00a884] text-white text-xs font-semibold text-center border border-white/5 transition-colors active:scale-95 shadow"
+                              className="w-full py-1.5 px-3 rounded-lg bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-semibold text-center border border-emerald-200 transition-colors active:scale-95 shadow-2xs"
                             >
                               {choice}
                             </button>
@@ -763,18 +763,18 @@ export default function BotCanvasEditorPage() {
               {/* Simulator Input Bar */}
               <form
                 onSubmit={handleSendSim}
-                className="p-3 bg-[#1f2c34] border-t border-white/5 flex items-center gap-2"
+                className="p-3 bg-slate-100 border-t border-slate-200 flex items-center gap-2"
               >
                 <input
                   type="text"
                   value={simInput}
                   onChange={(e) => setSimInput(e.target.value)}
                   placeholder={currentInputRequest?.placeholder || 'Digite sua mensagem...'}
-                  className="flex-1 px-3 py-2 bg-[#2a3942] rounded-lg text-xs text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#00a884]"
+                  className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
                 <button
                   type="submit"
-                  className="w-9 h-9 bg-[#00a884] hover:bg-[#06cf9c] text-white rounded-full flex items-center justify-center shadow transition-all active:scale-95"
+                  className="w-9 h-9 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full flex items-center justify-center shadow-xs transition-all active:scale-95"
                 >
                   <Send className="w-4 h-4" />
                 </button>
