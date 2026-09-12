@@ -9,6 +9,7 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute =
     pathname.startsWith('/auth') ||
     pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/webhooks') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/static') ||
     pathname === '/favicon.ico';
