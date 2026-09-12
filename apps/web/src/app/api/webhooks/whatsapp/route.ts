@@ -64,21 +64,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Eventos SEM assinatura da Meta (ex.: Evolution API v2)
+    // CR-004 T3 (fail-closed, sem segredo hardcoded): eventos SEM assinatura da
+    // Meta (ex.: Evolution API) exigem um token compartilhado válido. Sem token
+    // fornecido — ou sem token configurado no ambiente — o ingress é rejeitado.
     if (!signatureHeader) {
       const expectedToken =
-        process.env.EVOLUTION_WEBHOOK_TOKEN ||
-        process.env.EVOLUTION_API_KEY ||
-        'aiviq_zap_secret_2026';
+        process.env.EVOLUTION_WEBHOOK_TOKEN || process.env.EVOLUTION_API_KEY;
       const providedToken =
         req.nextUrl.searchParams.get('token') ||
         req.headers.get('x-webhook-token') ||
         req.headers.get('apikey');
 
-      // Se um token foi fornecido na chamada, valida contra a chave esperada
-      if (providedToken && providedToken !== expectedToken) {
-        console.warn('[WhatsApp Webhook] Token inválido fornecido no webhook.');
-        return NextResponse.json({ error: 'Webhook não autorizado' }, { status: 401 });
+      if (isProduction || expectedToken) {
+        if (!expectedToken || !providedToken || providedToken !== expectedToken) {
+          console.warn('[WhatsApp Webhook] Ingress sem token válido — rejeitado (CR-004 T3).');
+          return NextResponse.json({ error: 'Webhook não autorizado' }, { status: 401 });
+        }
       }
     }
 
