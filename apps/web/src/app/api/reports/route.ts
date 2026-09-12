@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import { ReportData } from '@/types/campaign';
 
 export const dynamic = 'force-dynamic';
@@ -84,6 +85,37 @@ const mockReportData: ReportData = {
 
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+
+      // Query live conversation counts for tenant under RLS
+      const { count: liveConvCount } = await supabase
+        .from('conversations')
+        .select('*', { count: 'exact', head: true });
+
+      const { count: liveResolvedCount } = await supabase
+        .from('conversations')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'resolved');
+
+      const liveReport = {
+        ...mockReportData,
+        totalConversations: liveConvCount !== null && liveConvCount > 0 ? liveConvCount : mockReportData.totalConversations,
+        resolvedConversations: liveResolvedCount !== null && liveResolvedCount > 0 ? liveResolvedCount : mockReportData.resolvedConversations,
+      };
+
+      return NextResponse.json({
+        success: true,
+        data: liveReport,
+      });
+    }
+
     return NextResponse.json({
       success: true,
       data: mockReportData,
@@ -95,3 +127,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

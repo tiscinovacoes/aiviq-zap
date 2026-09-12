@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import { Message } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -107,14 +108,47 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const { id } = params;
-  const messages = conversationMessages[id] || [];
+  try {
+    const { id } = params;
+    const supabase = await createClient();
+    const isDev = process.env.NODE_ENV === 'development';
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
 
-  return NextResponse.json({
-    success: true,
-    count: messages.length,
-    messages,
-  });
+    let messages: Message[] = [];
+
+    if (!isPlaceholder) {
+      const { data: dbMessages, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        if (!isDev) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        messages = conversationMessages[id] || [];
+      } else {
+        messages = (dbMessages || []).map((m: any) => ({
+          ...m,
+          sender_name: m.sender_type === 'agent' ? 'Atendente' : 'Contato',
+        })) as unknown as Message[];
+      }
+    } else {
+      messages = conversationMessages[id] || [];
+    }
+
+    return NextResponse.json({
+      success: true,
+      count: messages.length,
+      messages,
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: 'Erro ao buscar mensagens', message: err.message },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(
@@ -130,6 +164,65 @@ export async function POST(
       return NextResponse.json({ error: 'Conteúdo da mensagem é obrigatório' }, { status: 400 });
     }
 
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+
+      // Query user profile to obtain organization_id
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile || !profile.organization_id) {
+        return NextResponse.json({ error: 'Organização não encontrada para o usuário' }, { status: 403 });
+      }
+
+      // Insert message into DB
+      const { data: insertedMessage, error: msgError } = await supabase
+        .from('messages')
+        .insert({
+          organization_id: profile.organization_id,
+          conversation_id: id,
+          sender_type: 'agent',
+          sender_id: user.id,
+          content: content.trim(),
+          message_type,
+          delivery_status: 'sent',
+        })
+        .select()
+        .single();
+
+      if (msgError) {
+        return NextResponse.json({ error: msgError.message }, { status: 500 });
+      }
+
+      // Update conversation last message preview & timestamp
+      await supabase
+        .from('conversations')
+        .update({
+          last_message_preview: content.trim(),
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      return NextResponse.json({
+        success: true,
+        message: {
+          ...insertedMessage,
+          sender_name,
+        },
+      }, { status: 201 });
+    }
+
+    // Fallback for dev mode without database connected
     const newMessage: Message = {
       id: `msg-${Date.now()}`,
       organization_id: '00000000-0000-0000-0000-000000000000',
@@ -149,6 +242,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
+      simulated: true,
       message: newMessage,
     }, { status: 201 });
   } catch (err: any) {
@@ -158,3 +252,4 @@ export async function POST(
     );
   }
 }
+

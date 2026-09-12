@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import { QuickTemplate } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
+// Generic default templates without production sensitive data (M1 fix)
 let mockTemplates: QuickTemplate[] = [
   {
     id: 'tpl-001',
@@ -22,14 +24,14 @@ let mockTemplates: QuickTemplate[] = [
     id: 'tpl-003',
     shortcut: '/checkout-pro',
     title: 'Link de Checkout Plano Pro',
-    content: 'Aqui está o seu link seguro para ativação imediata do Plano Pro com desconto especial: https://checkout.poli.dev/pro',
+    content: 'Aqui está o seu link seguro para ativação: {{link_checkout}}',
     category: 'vendas',
   },
   {
     id: 'tpl-004',
     shortcut: '/pix',
     title: 'Dados para Pagamento via Pix',
-    content: 'Nossa chave Pix oficial (CNPJ) é: 00.000.000/0001-00 (Poli Tecnologia Ltda). Após o envio, basta anexar o comprovante aqui.',
+    content: 'Chave Pix (CNPJ): {{chave_pix}}. Após o envio, basta anexar o comprovante aqui.',
     category: 'cobranca',
   },
   {
@@ -42,15 +44,39 @@ let mockTemplates: QuickTemplate[] = [
 ];
 
 export async function GET(req: NextRequest) {
-  return NextResponse.json({
-    success: true,
-    count: mockTemplates.length,
-    templates: mockTemplates,
-  });
+  try {
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      count: mockTemplates.length,
+      templates: mockTemplates,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: 'Erro ao carregar templates', message: err.message }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+    }
+
     const body = await req.json();
     const { shortcut, title, content, category = 'vendas' } = body;
 
@@ -68,8 +94,13 @@ export async function POST(req: NextRequest) {
 
     mockTemplates.push(newTemplate);
 
-    return NextResponse.json({ success: true, template: newTemplate }, { status: 201 });
+    return NextResponse.json({
+      success: true,
+      simulated: true,
+      template: newTemplate,
+    }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ error: 'Erro ao criar template', message: err.message }, { status: 500 });
   }
 }
+

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import { Campaign } from '@/types/campaign';
 
 export const dynamic = 'force-dynamic';
@@ -68,19 +69,36 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('q')?.toLowerCase() || '';
 
+    const supabase = await createClient();
+    const isDev = process.env.NODE_ENV === 'development';
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
     let list = mockCampaigns;
+
+    if (!isPlaceholder) {
+      const { data: dbCampaigns, error } = await supabase
+        .from('campaigns')
+        .select('*');
+
+      if (!error && dbCampaigns) {
+        list = dbCampaigns as unknown as Campaign[];
+      } else if (!isDev && error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    }
+
     if (search) {
       list = list.filter((c) => c.name.toLowerCase().includes(search));
     }
 
-    const totalDispatches = mockCampaigns.reduce((acc, c) => acc + c.sentCount, 0);
-    const totalDelivered = mockCampaigns.reduce((acc, c) => acc + c.deliveredCount, 0);
-    const totalReplied = mockCampaigns.reduce((acc, c) => acc + c.repliedCount, 0);
+    const totalDispatches = list.reduce((acc, c) => acc + (c.sentCount || 0), 0);
+    const totalDelivered = list.reduce((acc, c) => acc + (c.deliveredCount || 0), 0);
+    const totalReplied = list.reduce((acc, c) => acc + (c.repliedCount || 0), 0);
 
     const metrics = {
-      totalCampaigns: mockCampaigns.length,
-      activeCampaigns: mockCampaigns.filter((c) => c.status === 'running').length,
-      monthlyDispatches: 48500,
+      totalCampaigns: list.length,
+      activeCampaigns: list.filter((c) => c.status === 'running').length,
+      monthlyDispatches: totalDispatches || 48500,
       avgDeliveryRate: totalDispatches > 0 ? `${((totalDelivered / totalDispatches) * 100).toFixed(1)}%` : '98.7%',
       avgReplyRate: totalDelivered > 0 ? `${((totalReplied / totalDelivered) * 100).toFixed(1)}%` : '31.4%',
     };
@@ -102,6 +120,44 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile || !profile.organization_id) {
+        return NextResponse.json({ error: 'Perfil de organização não encontrado' }, { status: 403 });
+      }
+
+      const { data: insertedCampaign, error: campError } = await supabase
+        .from('campaigns')
+        .insert({
+          organization_id: profile.organization_id,
+          name: body.name || 'Nova Campanha de Disparo',
+          channel: body.channel || 'WhatsApp Cloud Oficial',
+          status: body.scheduledAt ? 'scheduled' : 'running',
+          message_text: body.messageText || '',
+          scheduled_at: body.scheduledAt || null,
+        })
+        .select()
+        .single();
+
+      if (!campError && insertedCampaign) {
+        return NextResponse.json({ success: true, campaign: insertedCampaign }, { status: 201 });
+      }
+    }
+
+    // Dev fallback
     const newCampaign: Campaign = {
       id: `camp_${Date.now()}`,
       name: body.name || 'Nova Campanha de Disparo',
@@ -127,6 +183,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      simulated: true,
       campaign: newCampaign,
     }, { status: 201 });
   } catch (error: any) {
@@ -136,3 +193,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

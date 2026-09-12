@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +53,16 @@ const mockBots: BotSummary[] = [
 
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+    }
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('q')?.toLowerCase() || '';
 
@@ -82,6 +93,16 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+    }
+
     const body = await request.json();
     const newBot: BotSummary = {
       id: `bot_${Date.now()}`,
@@ -100,6 +121,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
+        simulated: true,
         bot: newBot,
       },
       { status: 201 }
@@ -111,3 +133,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

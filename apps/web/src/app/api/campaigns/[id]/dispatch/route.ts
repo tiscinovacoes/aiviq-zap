@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,12 +10,32 @@ export async function POST(
   try {
     const body = await request.json().catch(() => ({}));
     const action = body.action || 'start'; // 'start' or 'pause'
+    const newStatus = action === 'pause' ? 'paused' : 'running';
+
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+
+      await supabase
+        .from('campaigns')
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', params.id);
+    }
 
     return NextResponse.json({
       success: true,
+      simulated: true,
       campaignId: params.id,
-      status: action === 'pause' ? 'paused' : 'running',
-      message: action === 'pause' ? 'Campanha pausada.' : 'Disparo iniciado com sucesso no WhatsApp Cloud.',
+      status: newStatus,
+      message: action === 'pause' ? 'Campanha pausada.' : 'Disparo simulado com sucesso (integração WhatsApp Cloud em fila simulada).',
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -23,3 +44,4 @@ export async function POST(
     );
   }
 }
+

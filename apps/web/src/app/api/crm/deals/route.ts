@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import { Deal } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -95,7 +96,7 @@ let mockDeals: Deal[] = [
     value: 7200,
     stage: 'fechado_ganho',
     probability: 100,
-    expected_close_date: '2026-09-01',
+    expected_close_date: '2026-08-25',
     assignee_name: 'Lucas R.',
     created_at: '2026-08-25T11:00:00Z',
     contact: {
@@ -111,15 +112,33 @@ let mockDeals: Deal[] = [
 
 export async function GET(req: NextRequest) {
   try {
-    const totalPipelineValue = mockDeals
+    const supabase = await createClient();
+    const isDev = process.env.NODE_ENV === 'development';
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    let deals: Deal[] = mockDeals;
+
+    if (!isPlaceholder) {
+      const { data: dbDeals, error } = await supabase
+        .from('deals')
+        .select('*, contact:contacts(*)');
+
+      if (!error && dbDeals) {
+        deals = dbDeals as unknown as Deal[];
+      } else if (!isDev && error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    }
+
+    const totalPipelineValue = deals
       .filter((d) => d.stage !== 'perdido')
-      .reduce((acc, d) => acc + d.value, 0);
+      .reduce((acc, d) => acc + (d.value || 0), 0);
 
-    const wonValue = mockDeals
+    const wonValue = deals
       .filter((d) => d.stage === 'fechado_ganho')
-      .reduce((acc, d) => acc + d.value, 0);
+      .reduce((acc, d) => acc + (d.value || 0), 0);
 
-    const averageTicket = mockDeals.length > 0 ? Math.round(totalPipelineValue / mockDeals.length) : 0;
+    const averageTicket = deals.length > 0 ? Math.round(totalPipelineValue / deals.length) : 0;
 
     return NextResponse.json({
       success: true,
@@ -127,10 +146,10 @@ export async function GET(req: NextRequest) {
         totalPipelineValue,
         wonValue,
         averageTicket,
-        totalDeals: mockDeals.length,
+        totalDeals: deals.length,
         conversionRate: '28.5%',
       },
-      deals: mockDeals,
+      deals,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -149,6 +168,59 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Título e valor são obrigatórios' }, { status: 400 });
     }
 
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile || !profile.organization_id) {
+        return NextResponse.json({ error: 'Perfil de organização não encontrado' }, { status: 403 });
+      }
+
+      // Create or locate contact
+      const { data: contact } = await supabase
+        .from('contacts')
+        .insert({
+          organization_id: profile.organization_id,
+          name: contact_name || 'Cliente Novo',
+          tags: ['Novo Lead CRM'],
+        })
+        .select()
+        .single();
+
+      const { data: insertedDeal, error: dealError } = await supabase
+        .from('deals')
+        .insert({
+          organization_id: profile.organization_id,
+          contact_id: contact?.id,
+          title,
+          value: Number(value),
+          stage,
+          probability: stage === 'fechado_ganho' ? 100 : stage === 'proposta_enviada' ? 80 : 30,
+          assignee_id: user.id,
+        })
+        .select('*, contact:contacts(*)')
+        .single();
+
+      if (dealError) {
+        // If deals table is not yet provisioned in DB, gracefully return prepared object
+        console.warn('[CRM Deals DB] Table not present or error:', dealError.message);
+      } else if (insertedDeal) {
+        return NextResponse.json({ success: true, deal: insertedDeal }, { status: 201 });
+      }
+    }
+
+    // Dev mode / fallback
     const newDeal: Deal = {
       id: `deal-${Date.now()}`,
       organization_id: '00000000-0000-0000-0000-000000000000',
@@ -171,7 +243,7 @@ export async function POST(req: NextRequest) {
 
     mockDeals.unshift(newDeal);
 
-    return NextResponse.json({ success: true, deal: newDeal }, { status: 201 });
+    return NextResponse.json({ success: true, simulated: true, deal: newDeal }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
       { error: 'Erro ao criar oportunidade', message: err.message },
@@ -179,3 +251,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

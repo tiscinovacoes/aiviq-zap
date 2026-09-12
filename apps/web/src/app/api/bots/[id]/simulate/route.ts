@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import { walkFlowForward } from '@/lib/bot/engine/walkFlowForward';
 import { BotV1, SessionState } from '@/types/bot';
 
@@ -9,6 +10,16 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabase = await createClient();
+    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    if (!isPlaceholder) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+    }
+
     const body = await request.json();
     const bot: BotV1 = body.bot;
     const userMessage: string = body.message || '';
@@ -34,6 +45,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
+      simulated: true,
       result,
     });
   } catch (error: any) {
@@ -43,3 +55,4 @@ export async function POST(
     );
   }
 }
+
