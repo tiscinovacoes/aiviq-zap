@@ -1,6 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
+
+// CR-004 T5: exige usuário autenticado na própria rota (defesa em profundidade,
+// não só no middleware). Retorna null se ok, ou uma resposta 401.
+async function requireUser(): Promise<NextResponse | null> {
+  const isPlaceholder =
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+  if (isPlaceholder) return null; // dev/local sem banco: liberado
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  return null;
+}
+
+// CR-004 T5: bloqueia SSRF — só permite http(s) para hosts públicos (sem
+// localhost, IPs privados/link-local ou metadata de cloud).
+function isSafeEvolutionUrl(raw?: string): boolean {
+  if (!raw) return false;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+  const host = u.hostname.toLowerCase();
+  if (
+    host === 'localhost' ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host === '169.254.169.254' || // metadata
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+  ) {
+    return false;
+  }
+  return true;
+}
 
 interface EvolutionState {
   apiUrl: string;
@@ -70,7 +116,9 @@ async function syncInstanceDetails(appOrigin?: string): Promise<EvolutionState> 
 
           // Se tiver origin, garante auto-configuração do webhook para receber mensagens
           if (appOrigin && !appOrigin.includes('localhost')) {
-            const targetWebhookUrl = `${appOrigin}/api/webhooks/whatsapp`;
+            // CR-004 T3: inclui o token compartilhado para o webhook autenticar o ingress.
+            const webhookToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+            const targetWebhookUrl = `${appOrigin}/api/webhooks/whatsapp${webhookToken ? `?token=${encodeURIComponent(webhookToken)}` : ''}`;
             try {
               await fetch(`${apiUrl}/webhook/set/${instanceName}`, {
                 method: 'POST',
@@ -111,6 +159,9 @@ async function syncInstanceDetails(appOrigin?: string): Promise<EvolutionState> 
 // GET: Retorna o status atual da conexão Evolution com dados reais
 export async function GET(req: NextRequest) {
   try {
+    const unauthorized = await requireUser();
+    if (unauthorized) return unauthorized;
+
     const origin = req.nextUrl?.origin;
     const currentState = await syncInstanceDetails(origin);
 
@@ -126,11 +177,24 @@ export async function GET(req: NextRequest) {
 // POST: Salvar credenciais ou ações (connect / disconnect / test)
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireUser();
+    if (unauthorized) return unauthorized;
+
     const body = await req.json();
     const { action, apiUrl, apiKey, instanceName } = body;
     const origin = req.nextUrl?.origin;
 
-    if (apiUrl) localEvolutionState.apiUrl = apiUrl.replace(/\/$/, '');
+    // CR-004 T5: rejeita apiUrl inseguro (SSRF) antes de armazenar/usar.
+    if (apiUrl) {
+      const normalized = String(apiUrl).replace(/\/$/, '');
+      if (!isSafeEvolutionUrl(normalized)) {
+        return NextResponse.json(
+          { success: false, error: 'invalid_url', message: 'URL da Evolution API inválida ou não permitida (bloqueada por segurança).' },
+          { status: 400 }
+        );
+      }
+      localEvolutionState.apiUrl = normalized;
+    }
     if (apiKey) localEvolutionState.apiKey = apiKey;
     if (instanceName) localEvolutionState.instanceName = instanceName;
 

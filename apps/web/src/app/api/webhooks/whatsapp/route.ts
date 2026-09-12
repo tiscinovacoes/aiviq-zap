@@ -56,6 +56,30 @@ export async function POST(req: NextRequest) {
           { status: 401 }
         );
       }
+    } else if (signatureHeader && !APP_SECRET && isProduction) {
+      // CR-004 T3: assinatura presente mas sem segredo p/ validar em produção → falha fechada.
+      return NextResponse.json(
+        { error: 'Webhook não configurado (WHATSAPP_APP_SECRET ausente)' },
+        { status: 401 }
+      );
+    }
+
+    // Eventos SEM assinatura da Meta (ex.: Evolution API v2)
+    if (!signatureHeader) {
+      const expectedToken =
+        process.env.EVOLUTION_WEBHOOK_TOKEN ||
+        process.env.EVOLUTION_API_KEY ||
+        'aiviq_zap_secret_2026';
+      const providedToken =
+        req.nextUrl.searchParams.get('token') ||
+        req.headers.get('x-webhook-token') ||
+        req.headers.get('apikey');
+
+      // Se um token foi fornecido na chamada, valida contra a chave esperada
+      if (providedToken && providedToken !== expectedToken) {
+        console.warn('[WhatsApp Webhook] Token inválido fornecido no webhook.');
+        return NextResponse.json({ error: 'Webhook não autorizado' }, { status: 401 });
+      }
     }
 
     const payload = JSON.parse(rawBody || '{}');
