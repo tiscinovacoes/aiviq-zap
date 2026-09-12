@@ -14,17 +14,20 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useInboxStore } from '@/store/useInboxStore';
 
 export default function NavigationRail() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const conversations = useInboxStore((s) => s.conversations);
+  const totalUnread = conversations.reduce((acc, c) => acc + (c.unread_count || 0), 0);
 
   const navItems = [
     {
       href: '/inbox',
       icon: MessageSquare,
       title: 'Caixa de Entrada (Omnichannel)',
-      badge: '14',
+      badge: totalUnread > 0 ? String(totalUnread) : undefined,
     },
     {
       href: '/contacts',
@@ -40,7 +43,6 @@ export default function NavigationRail() {
       href: '/bots',
       icon: Bot,
       title: 'Automações & Chatbots No-Code',
-      badge: '3',
     },
     {
       href: '/campaigns',

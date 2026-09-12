@@ -14,12 +14,11 @@ interface EvolutionState {
   pairingCode?: string;
 }
 
+// CR-004 T1: sem default de credencial/URL no código — exige env, falha fechada.
 let localEvolutionState: EvolutionState = {
-  apiUrl:
-    process.env.EVOLUTION_API_URL ||
-    'https://evolution-api-production-8ecf.up.railway.app',
-  apiKey: process.env.EVOLUTION_API_KEY || 'aiviq_zap_secret_2026',
-  instanceName: 'aiviq_inbox_01',
+  apiUrl: process.env.EVOLUTION_API_URL || '',
+  apiKey: process.env.EVOLUTION_API_KEY || '',
+  instanceName: process.env.EVOLUTION_INSTANCE || 'aiviq_inbox_01',
   status: 'disconnected',
 };
 

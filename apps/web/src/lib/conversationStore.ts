@@ -83,7 +83,12 @@ export function addInboundMessage(params: {
   }
 
   const contactName = name || `WhatsApp ${formattedPhone}`;
-  const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const nowIso = new Date().toISOString();
+  const nowTime = new Date().toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Campo_Grande',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   let conv = convs.find(
     (c) =>
@@ -104,7 +109,7 @@ export function addInboundMessage(params: {
       last_message_preview: text,
       last_message_at: nowTime,
       unread_count: 1,
-      created_at: new Date().toISOString(),
+      created_at: nowIso,
       contact: {
         id: `cont-${cleanPhone}`,
         organization_id: '00000000-0000-0000-0000-000000000000',
@@ -140,7 +145,7 @@ export function addInboundMessage(params: {
     message_type: 'text',
     delivery_status: 'delivered',
     external_message_id: externalId,
-    created_at: nowTime,
+    created_at: nowIso,
   };
 
   if (!msgs[conv.id]) {
@@ -163,7 +168,12 @@ export function addOutboundMessage(params: {
   const { conversationId, content, senderName = 'Luca Scandola', deliveryStatus = 'delivered' } = params;
   const convs = global.__aiviq_conversations || [];
   const msgs = global.__aiviq_messages || {};
-  const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const nowIso = new Date().toISOString();
+  const nowTime = new Date().toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Campo_Grande',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   const conv = convs.find((c) => c.id === conversationId);
   if (conv) {
@@ -185,7 +195,7 @@ export function addOutboundMessage(params: {
     content,
     message_type: 'text',
     delivery_status: deliveryStatus,
-    created_at: nowTime,
+    created_at: nowIso,
   };
 
   if (!msgs[conversationId]) {

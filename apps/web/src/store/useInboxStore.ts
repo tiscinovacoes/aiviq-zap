@@ -80,7 +80,8 @@ export const useInboxStore = create<InboxState>((set, get) => ({
   },
 
   selectConversation: async (conversation) => {
-    set({ activeConversation: conversation });
+    // Limpar mensagens imediatamente para evitar que mensagens de outra conversa vazem na tela
+    set({ activeConversation: conversation, messages: [], isLoadingMessages: true });
     await get().fetchMessages(conversation.id);
   },
 
@@ -88,9 +89,14 @@ export const useInboxStore = create<InboxState>((set, get) => ({
     set({ isLoadingMessages: true });
     try {
       const messages = await conversationService.getMessages(conversationId);
-      set({ messages, isLoadingMessages: false });
+      // Verificar se a conversa ativa ainda é a mesma antes de gravar no estado
+      if (get().activeConversation?.id === conversationId) {
+        set({ messages, isLoadingMessages: false });
+      }
     } catch (err: any) {
-      set({ error: err.message, isLoadingMessages: false });
+      if (get().activeConversation?.id === conversationId) {
+        set({ error: err.message, isLoadingMessages: false });
+      }
     }
   },
 
@@ -105,7 +111,9 @@ export const useInboxStore = create<InboxState>((set, get) => ({
       set({ conversations });
       if (activeConversation) {
         const messages = await conversationService.getMessages(activeConversation.id);
-        set({ messages });
+        if (get().activeConversation?.id === activeConversation.id) {
+          set({ messages });
+        }
       }
     } catch (e) {}
   },

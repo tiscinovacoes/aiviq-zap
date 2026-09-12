@@ -1,11 +1,9 @@
 import { Contact, Conversation, Message } from '@/types';
 
-const EVOLUTION_API_URL =
-  process.env.EVOLUTION_API_URL ||
-  'https://evolution-api-production-8ecf.up.railway.app';
-const EVOLUTION_API_KEY =
-  process.env.EVOLUTION_API_KEY || 'aiviq_zap_secret_2026';
-const EVOLUTION_INSTANCE = 'aiviq_inbox_01';
+// CR-004 T1: sem default de credencial/URL no código — exige env, falha fechada.
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
+const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'aiviq_inbox_01';
 
 export function formatCleanPhone(raw?: string | null): string {
   if (!raw) return '';
@@ -26,9 +24,18 @@ export function formatCleanPhone(raw?: string | null): string {
 
 export function formatTime(timestamp?: number | string): string {
   if (!timestamp) return '';
-  const d = typeof timestamp === 'number' ? new Date(timestamp * 1000) : new Date(timestamp);
+  const tsMs =
+    typeof timestamp === 'number' && timestamp < 1000000000000
+      ? timestamp * 1000
+      : Number(timestamp);
+  const d = !isNaN(tsMs) && tsMs > 0 ? new Date(tsMs) : new Date(timestamp);
   if (isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Usar fuso horário do Mato Grosso do Sul (UTC-4) no servidor
+  return d.toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Campo_Grande',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 // ================= 1. BUSCAR CHATS REAIS DO WHATSAPP =================
@@ -145,7 +152,23 @@ export async function getRealMessages(remoteJid: string): Promise<Message[]> {
     const records = data?.messages?.records || data?.records || [];
     if (!Array.isArray(records)) return [];
 
-    const messages: Message[] = records.map((m: any) => {
+    const messageMap = new Map<string, Message>();
+
+    for (const m of records) {
+      // 1. Isolamento estrito de conversa: ignorar mensagens pertencentes a outro remoteJid
+      const itemJid = m.key?.remoteJid;
+      if (itemJid && itemJid !== remoteJid) {
+        continue;
+      }
+
+      const msgId = m.key?.id;
+      if (!msgId) continue;
+
+      // 2. Deduplicação por ID: se já temos essa mensagem, descartar réplica de ACK/status
+      if (messageMap.has(msgId)) {
+        continue;
+      }
+
       const fromMe = Boolean(m.key?.fromMe);
       const text =
         m.message?.conversation ||
@@ -156,8 +179,20 @@ export async function getRealMessages(remoteJid: string): Promise<Message[]> {
         (m.message?.documentMessage ? '📄 [Documento]' : '') ||
         '';
 
-      return {
-        id: m.key?.id || `msg-${Date.now()}`,
+      let isoTime = new Date().toISOString();
+      if (m.messageTimestamp) {
+        const tsMs =
+          typeof m.messageTimestamp === 'number' && m.messageTimestamp < 1000000000000
+            ? m.messageTimestamp * 1000
+            : Number(m.messageTimestamp);
+        const d = new Date(tsMs);
+        if (!isNaN(d.getTime())) {
+          isoTime = d.toISOString();
+        }
+      }
+
+      messageMap.set(msgId, {
+        id: msgId,
         organization_id: '00000000-0000-0000-0000-000000000000',
         conversation_id: remoteJid,
         sender_type: fromMe ? 'agent' : 'contact',
@@ -165,13 +200,15 @@ export async function getRealMessages(remoteJid: string): Promise<Message[]> {
         content: text,
         message_type: 'text',
         delivery_status: fromMe ? 'delivered' : 'read',
-        external_message_id: m.key?.id,
-        created_at: formatTime(m.messageTimestamp),
-      };
-    });
+        external_message_id: msgId,
+        created_at: isoTime,
+      });
+    }
 
-    // Ordena do mais antigo para o mais recente para exibição no chat
-    return messages.reverse();
+    const messages = Array.from(messageMap.values());
+    // Ordena do mais antigo para o mais recente cronologicamente
+    messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    return messages;
   } catch (err: any) {
     console.error('[Evolution getRealMessages Error]:', err.message);
     return [];

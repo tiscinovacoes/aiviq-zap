@@ -49,7 +49,7 @@ export default function SettingsPage() {
   const [provider, setProvider] = useState<'evolution' | 'meta'>('evolution');
 
   // ================= Evolution API State (QR Code Direto Baileys) =================
-  const [evolutionUrl, setEvolutionUrl] = useState('https://evolution-api-production-8ecf.up.railway.app');
+  const [evolutionUrl, setEvolutionUrl] = useState('');
   const [evolutionKey, setEvolutionKey] = useState('');
   const [evolutionInstance, setEvolutionInstance] = useState('aiviq_inbox_01');
   const [evolutionStatus, setEvolutionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
