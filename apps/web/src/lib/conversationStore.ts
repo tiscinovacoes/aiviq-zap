@@ -1,119 +1,4 @@
-import { Conversation, Message } from '@/types';
-
-// Seed sample data strictly for local development inspection when database is unprovisioned
-const INITIAL_CONVERSATIONS: Conversation[] = [
-  {
-    id: 'conv-001',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    inbox_id: 'inbox-whatsapp',
-    contact_id: 'cont-001',
-    channel_type: 'whatsapp_cloud',
-    status: 'open',
-    priority: 'high',
-    last_message_preview: 'Perfeito, aguardo o link de pagamento do plano Pro!',
-    last_message_at: '14:32',
-    unread_count: 2,
-    created_at: new Date().toISOString(),
-    contact: {
-      id: 'cont-001',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      name: 'Mariana Silva',
-      phone: '+55 (11) 98765-4321',
-      email: 'mariana@techcorp.com.br',
-      tags: ['VIP', 'Lead Quente', 'Plano Pro'],
-      custom_attributes: {
-        empresa: 'TechCorp Soluções Digitais',
-        cargo: 'Head de Operações & CS',
-        deal_value: 'R$ 10.680/ano',
-      },
-    },
-    assignee: {
-      id: 'usr-001',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      email: 'admin@aiviqzap.dev',
-      full_name: 'Lucas R.',
-      role: 'admin',
-      is_active: true,
-      created_at: new Date().toISOString(),
-    },
-  },
-  {
-    id: 'conv-002',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    inbox_id: 'inbox-whatsapp',
-    contact_id: 'cont-002',
-    channel_type: 'whatsapp_cloud',
-    status: 'pending',
-    priority: 'medium',
-    last_message_preview: 'Vocês emitem nota fiscal para pessoa jurídica?',
-    last_message_at: '14:20',
-    unread_count: 0,
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-    contact: {
-      id: 'cont-002',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      name: 'Carlos Eduardo',
-      phone: '+55 (21) 99876-1234',
-      email: 'carlos@empresa.com.br',
-      tags: ['Aguardando Atendente', 'PJ'],
-      custom_attributes: {
-        empresa: 'Eduardo Logística Ltda',
-        deal_value: 'R$ 4.500/ano',
-      },
-    },
-  },
-];
-
-const INITIAL_MESSAGES: Record<string, Message[]> = {
-  'conv-001': [
-    {
-      id: 'msg-1',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      conversation_id: 'conv-001',
-      sender_type: 'contact',
-      sender_name: 'Mariana Silva',
-      content: 'Olá! Gostaria de saber mais sobre a integração com o WhatsApp e os planos.',
-      message_type: 'text',
-      delivery_status: 'read',
-      created_at: '14:28',
-    },
-    {
-      id: 'msg-2',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      conversation_id: 'conv-001',
-      sender_type: 'agent',
-      sender_name: 'Lucas R.',
-      content: 'Olá Mariana! Seja muito bem-vinda à AIVIQ-ZAP. A nossa plataforma permite atendimento simultâneo via Evolution API e Meta Cloud API.',
-      message_type: 'text',
-      delivery_status: 'read',
-      created_at: '14:29',
-    },
-    {
-      id: 'msg-3',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      conversation_id: 'conv-001',
-      sender_type: 'contact',
-      sender_name: 'Mariana Silva',
-      content: 'Perfeito, aguardo o link de pagamento do plano Pro!',
-      message_type: 'text',
-      delivery_status: 'delivered',
-      created_at: '14:32',
-    },
-  ],
-  'conv-002': [
-    {
-      id: 'msg-201',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      conversation_id: 'conv-002',
-      sender_type: 'contact',
-      sender_name: 'Carlos Eduardo',
-      content: 'Boa tarde! Vocês emitem nota fiscal para pessoa jurídica?',
-      message_type: 'text',
-      delivery_status: 'delivered',
-      created_at: '14:20',
-    },
-  ],
-};
+import { Contact, Conversation, Message } from '@/types';
 
 // Global singleton to persist across Next.js API requests in development and serverless invocations
 declare global {
@@ -121,18 +6,28 @@ declare global {
   var __aiviq_conversations: Conversation[] | undefined;
   // eslint-disable-next-line no-var
   var __aiviq_messages: Record<string, Message[]> | undefined;
+  // eslint-disable-next-line no-var
+  var __aiviq_custom_contacts: Contact[] | undefined;
 }
 
 if (!global.__aiviq_conversations) {
-  global.__aiviq_conversations = [...INITIAL_CONVERSATIONS];
+  global.__aiviq_conversations = [];
 }
 
 if (!global.__aiviq_messages) {
-  global.__aiviq_messages = { ...INITIAL_MESSAGES };
+  global.__aiviq_messages = {};
+}
+
+if (!global.__aiviq_custom_contacts) {
+  global.__aiviq_custom_contacts = [];
 }
 
 export function getAllConversations(): Conversation[] {
   return global.__aiviq_conversations || [];
+}
+
+export function setMemoryConversations(convs: Conversation[]) {
+  global.__aiviq_conversations = convs;
 }
 
 export function getMessagesByConversationId(conversationId: string): Message[] {
@@ -140,9 +35,29 @@ export function getMessagesByConversationId(conversationId: string): Message[] {
   return global.__aiviq_messages[conversationId] || [];
 }
 
+export function setMessagesByConversationId(conversationId: string, messages: Message[]) {
+  if (!global.__aiviq_messages) global.__aiviq_messages = {};
+  global.__aiviq_messages[conversationId] = messages;
+}
+
 export function getPhoneByConversationId(conversationId: string): string | undefined {
   const conv = (global.__aiviq_conversations || []).find((c) => c.id === conversationId);
-  return conv?.contact?.phone;
+  return conv?.contact?.phone || conversationId;
+}
+
+export function getCustomContacts(): Contact[] {
+  return global.__aiviq_custom_contacts || [];
+}
+
+export function addCustomContact(contact: Contact) {
+  if (!global.__aiviq_custom_contacts) global.__aiviq_custom_contacts = [];
+  // Evitar duplicados por telefone
+  const exists = global.__aiviq_custom_contacts.find(
+    (c) => c.phone && contact.phone && c.phone.replace(/\D/g, '') === contact.phone.replace(/\D/g, '')
+  );
+  if (!exists) {
+    global.__aiviq_custom_contacts.unshift(contact);
+  }
 }
 
 export function addInboundMessage(params: {
@@ -156,7 +71,6 @@ export function addInboundMessage(params: {
   const convs = global.__aiviq_conversations || [];
   const msgs = global.__aiviq_messages || {};
 
-  // Formatar telefone para exibição: +55 (DDD) 9XXXX-XXXX
   let formattedPhone = `+${cleanPhone}`;
   if (cleanPhone.length >= 12 && cleanPhone.startsWith('55')) {
     const ddd = cleanPhone.slice(2, 4);
@@ -171,19 +85,19 @@ export function addInboundMessage(params: {
   const contactName = name || `WhatsApp ${formattedPhone}`;
   const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  // Verificar se já existe conversa com este telefone
   let conv = convs.find(
     (c) =>
-      c.contact?.phone?.replace(/\D/g, '') === cleanPhone ||
-      c.id === `conv-evo-${cleanPhone}`
+      c.id === `${cleanPhone}@s.whatsapp.net` ||
+      c.id === fromPhone ||
+      c.contact?.phone?.replace(/\D/g, '') === cleanPhone
   );
 
   if (!conv) {
     conv = {
-      id: `conv-evo-${cleanPhone}`,
+      id: `${cleanPhone}@s.whatsapp.net`,
       organization_id: '00000000-0000-0000-0000-000000000000',
       inbox_id: 'inbox-whatsapp',
-      contact_id: `cont-evo-${cleanPhone}`,
+      contact_id: `cont-${cleanPhone}`,
       channel_type: 'whatsapp_cloud',
       status: 'open',
       priority: 'high',
@@ -192,7 +106,7 @@ export function addInboundMessage(params: {
       unread_count: 1,
       created_at: new Date().toISOString(),
       contact: {
-        id: `cont-evo-${cleanPhone}`,
+        id: `cont-${cleanPhone}`,
         organization_id: '00000000-0000-0000-0000-000000000000',
         name: contactName,
         phone: formattedPhone,
@@ -209,7 +123,6 @@ export function addInboundMessage(params: {
     if (name && (!conv.contact?.name || conv.contact.name.startsWith('WhatsApp'))) {
       if (conv.contact) conv.contact.name = name;
     }
-    // Mover para o topo da lista
     const index = convs.indexOf(conv);
     if (index > 0) {
       convs.splice(index, 1);
@@ -218,7 +131,7 @@ export function addInboundMessage(params: {
   }
 
   const message: Message = {
-    id: externalId || `msg-evo-${Date.now()}`,
+    id: externalId || `msg-${Date.now()}`,
     organization_id: '00000000-0000-0000-0000-000000000000',
     conversation_id: conv.id,
     sender_type: 'contact',
@@ -247,7 +160,7 @@ export function addOutboundMessage(params: {
   senderName?: string;
   deliveryStatus?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 }): Message {
-  const { conversationId, content, senderName = 'Lucas R.', deliveryStatus = 'delivered' } = params;
+  const { conversationId, content, senderName = 'Luca Scandola', deliveryStatus = 'delivered' } = params;
   const convs = global.__aiviq_conversations || [];
   const msgs = global.__aiviq_messages || {};
   const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -256,7 +169,6 @@ export function addOutboundMessage(params: {
   if (conv) {
     conv.last_message_preview = content;
     conv.last_message_at = nowTime;
-    // Mover para o topo
     const index = convs.indexOf(conv);
     if (index > 0) {
       convs.splice(index, 1);

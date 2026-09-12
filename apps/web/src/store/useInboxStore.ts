@@ -20,6 +20,7 @@ interface InboxState {
   setChannelFilter: (channel: string) => void;
   setSearchQuery: (query: string) => void;
   fetchConversations: () => Promise<void>;
+  syncConversations: () => Promise<void>;
   selectConversation: (conversation: Conversation) => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
@@ -91,6 +92,22 @@ export const useInboxStore = create<InboxState>((set, get) => ({
     } catch (err: any) {
       set({ error: err.message, isLoadingMessages: false });
     }
+  },
+
+  syncConversations: async () => {
+    const { statusFilter, channelFilter, searchQuery, activeConversation } = get();
+    try {
+      const conversations = await conversationService.getConversations({
+        status: statusFilter,
+        channel: channelFilter,
+        q: searchQuery,
+      });
+      set({ conversations });
+      if (activeConversation) {
+        const messages = await conversationService.getMessages(activeConversation.id);
+        set({ messages });
+      }
+    } catch (e) {}
   },
 
   sendMessage: async (content: string) => {

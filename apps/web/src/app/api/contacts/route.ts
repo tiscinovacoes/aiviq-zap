@@ -1,87 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { Contact } from '@/types';
+import { getRealContacts } from '@/lib/evolutionService';
+import { getCustomContacts, addCustomContact } from '@/lib/conversationStore';
 
 export const dynamic = 'force-dynamic';
-
-const DEV_SAMPLE_CONTACTS: Contact[] = [
-  {
-    id: 'cont-001',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    name: 'Mariana Silva',
-    phone: '+55 (11) 98765-4321',
-    email: 'mariana@techcorp.com.br',
-    company: 'TechCorp Soluções Digitais',
-    tags: ['VIP', 'Lead Quente', 'Plano Pro'],
-    assigned_to: 'Lucas R.',
-    custom_attributes: {
-      cargo: 'Head de Operações & CS',
-      cidade: 'São Paulo - SP',
-      segmento: 'Tecnologia B2B',
-    },
-    created_at: '2026-08-15T10:00:00Z',
-  },
-  {
-    id: 'cont-002',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    name: 'Carlos Eduardo',
-    phone: '+55 (21) 99876-1234',
-    email: 'carlos@empresa.com.br',
-    company: 'Eduardo Logística Ltda',
-    tags: ['Aguardando Atendente', 'PJ'],
-    assigned_to: 'Lucas R.',
-    custom_attributes: {
-      cargo: 'Diretor Financeiro',
-      cidade: 'Rio de Janeiro - RJ',
-    },
-    created_at: '2026-08-20T14:30:00Z',
-  },
-  {
-    id: 'cont-003',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    name: 'Juliana Mendes',
-    phone: '+55 (31) 97654-8901',
-    email: 'juliana@mendesadv.com',
-    company: 'Mendes Advocacia Associada',
-    tags: ['Novo Lead', 'Instagram'],
-    assigned_to: 'Ana Paula',
-    custom_attributes: {
-      cargo: 'Sócia Fundadora',
-      cidade: 'Belo Horizonte - MG',
-    },
-    created_at: '2026-09-01T09:15:00Z',
-  },
-  {
-    id: 'cont-004',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    name: 'Roberto Almeida',
-    phone: '+55 (41) 98456-7890',
-    email: 'roberto@devlab.io',
-    company: 'DevLab Software & AI',
-    tags: ['Suporte N2', 'Cliente Ativo'],
-    assigned_to: 'Lucas R.',
-    custom_attributes: {
-      cargo: 'CTO',
-      cidade: 'Curitiba - PR',
-    },
-    created_at: '2026-07-10T11:45:00Z',
-  },
-  {
-    id: 'cont-005',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    name: 'Fernanda Rocha',
-    phone: '+55 (19) 99123-4567',
-    email: 'fernanda@agroforte.com.br',
-    company: 'AgroForte Distribuidora',
-    tags: ['Enterprise', 'Lead Quente'],
-    assigned_to: 'Lucas R.',
-    custom_attributes: {
-      cargo: 'Gerente Comercial',
-      cidade: 'Campinas - SP',
-    },
-    created_at: '2026-09-05T16:20:00Z',
-  },
-];
 
 export async function GET(req: NextRequest) {
   try {
@@ -91,42 +14,63 @@ export async function GET(req: NextRequest) {
     const query = searchParams.get('q')?.toLowerCase();
 
     const supabase = await createClient();
-    const isDev = process.env.NODE_ENV === 'development';
-    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder =
+      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
 
     let contacts: Contact[] = [];
 
+    // 1. Se houver banco Supabase conectado, tenta buscar
     if (!isPlaceholder) {
-      const { data: dbContacts, error } = await supabase
-        .from('contacts')
-        .select('*');
+      try {
+        const { data: dbContacts } = await supabase
+          .from('contacts')
+          .select('*, assigned_user:profiles(*)');
 
-      if (error) {
-        if (!isDev) {
-          return NextResponse.json({ error: error.message }, { status: 500 });
+        if (dbContacts && dbContacts.length > 0) {
+          contacts = dbContacts as unknown as Contact[];
         }
-        contacts = [...DEV_SAMPLE_CONTACTS];
-      } else {
-        contacts = (dbContacts || []) as Contact[];
+      } catch (e) {}
+    }
+
+    // 2. Se não houver contatos no banco, busca contatos REAIS do WhatsApp via Evolution API
+    if (contacts.length === 0) {
+      const realContacts = await getRealContacts();
+      const customContacts = getCustomContacts();
+
+      const map = new Map<string, Contact>();
+      for (const c of customContacts) {
+        map.set(c.id, c);
       }
+      for (const r of realContacts) {
+        if (!map.has(r.id)) {
+          map.set(r.id, r);
+        }
+      }
+      contacts = Array.from(map.values());
     } else {
-      contacts = isDev ? [...DEV_SAMPLE_CONTACTS] : [];
+      // Mescla contatos manuais
+      const customContacts = getCustomContacts();
+      contacts = [...customContacts, ...contacts];
     }
 
+    // Filtros
     if (tag && tag !== 'all') {
-      contacts = contacts.filter((c) => c.tags?.includes(tag));
+      contacts = contacts.filter((c) =>
+        c.tags?.some((t) => t.toLowerCase() === tag.toLowerCase())
+      );
     }
-
     if (assigned && assigned !== 'all') {
-      contacts = contacts.filter((c) => c.assigned_to === assigned);
+      contacts = contacts.filter(
+        (c) => c.assigned_to === assigned || c.assigned_user?.full_name === assigned
+      );
     }
-
     if (query) {
       contacts = contacts.filter(
         (c) =>
           c.name.toLowerCase().includes(query) ||
-          c.email?.toLowerCase().includes(query) ||
           c.phone?.includes(query) ||
+          c.email?.toLowerCase().includes(query) ||
           c.company?.toLowerCase().includes(query)
       );
     }
@@ -147,64 +91,73 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, email, company, tags = [], assigned_to = 'Lucas R.' } = body;
+    const { name, phone, email, company, tags = [], assigned_to = 'Luca Scandola' } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Nome do contato é obrigatório' }, { status: 400 });
     }
 
     const supabase = await createClient();
-    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder =
+      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+
+    let dbContact: any = null;
 
     if (!isPlaceholder) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        let organizationId = '00000000-0000-0000-0000-000000000000';
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('organization_id')
+            .eq('id', user.id)
+            .single();
+          if (profile?.organization_id) {
+            organizationId = profile.organization_id;
+          }
+        }
+
+        const { data: inserted, error } = await supabase
+          .from('contacts')
+          .insert({
+            organization_id: organizationId,
+            name: name.trim(),
+            phone: phone ? phone.trim() : null,
+            email: email ? email.trim() : null,
+            tags: tags.length > 0 ? tags : ['Novo Lead'],
+            custom_attributes: { company: company || '' },
+          })
+          .select()
+          .single();
+
+        if (!error && inserted) {
+          dbContact = inserted;
+        }
+      } catch (dbErr) {
+        console.warn('[Supabase Insert Contact Warn]:', dbErr);
       }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('organization_id')
-        .eq('id', user.id)
-        .single();
-
-      if (!profile) {
-        return NextResponse.json({ error: 'Perfil não encontrado' }, { status: 404 });
-      }
-
-      const { data: contact, error } = await supabase
-        .from('contacts')
-        .insert({
-          organization_id: profile.organization_id,
-          name,
-          phone: phone || null,
-          email: email || null,
-          tags: tags.length > 0 ? tags : ['Novo Lead'],
-          custom_attributes: { company },
-        })
-        .select()
-        .single();
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
-      return NextResponse.json({ success: true, contact }, { status: 201 });
     }
 
-    // Dev mode fallback
-    const newContact: Contact = {
+    const newContact: Contact = dbContact || {
       id: `cont-${Date.now()}`,
       organization_id: '00000000-0000-0000-0000-000000000000',
-      name,
-      phone: phone || '',
-      email: email || '',
-      company: company || '',
+      name: name.trim(),
+      phone: phone ? phone.trim() : '',
+      email: email ? email.trim() : '',
+      company: company ? company.trim() : '',
       tags: tags.length > 0 ? tags : ['Novo Lead'],
       assigned_to,
-      custom_attributes: {},
+      custom_attributes: { company: company || '' },
       created_at: new Date().toISOString(),
     };
+
+    // Sempre salva no repositório em memória para persistência imediata na interface
+    addCustomContact(newContact);
 
     return NextResponse.json({ success: true, contact: newContact }, { status: 201 });
   } catch (err: any) {

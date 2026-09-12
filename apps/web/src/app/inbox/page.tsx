@@ -20,13 +20,20 @@ import NavigationRail from '@/components/layout/NavigationRail';
 
 export default function InboxPage() {
   const { user, logout, fetchUser } = useAuth();
-  const { activeConversation, fetchConversations } = useInboxStore();
+  const { activeConversation, fetchConversations, syncConversations } = useInboxStore();
   const [inputText, setInputText] = useState('');
 
   useEffect(() => {
     fetchUser();
     fetchConversations();
-  }, [fetchUser, fetchConversations]);
+
+    // Sincronização em tempo real suave (polling a cada 4s) com a Evolution API
+    const interval = setInterval(() => {
+      syncConversations();
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [fetchUser, fetchConversations, syncConversations]);
 
   return (
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
