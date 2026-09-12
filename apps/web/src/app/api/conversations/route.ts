@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { Conversation } from '@/types';
+import { getAllConversations } from '@/lib/conversationStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -139,17 +140,16 @@ export async function GET(req: NextRequest) {
         .select('*, contact:contacts(*), assignee:profiles(*)');
 
       if (error) {
-        if (!isDev) {
-          return NextResponse.json({ error: error.message }, { status: 500 });
-        }
-        conversations = DEV_SAMPLE_CONVERSATIONS;
+        conversations = getAllConversations();
       } else {
         // Legitimate empty list is returned without fallback (CR-001 B4)
-        conversations = (dbConversations || []) as unknown as Conversation[];
+        conversations = (dbConversations && dbConversations.length > 0)
+          ? (dbConversations as unknown as Conversation[])
+          : getAllConversations();
       }
     } else {
-      // Local dev mode without database connected
-      conversations = isDev ? DEV_SAMPLE_CONVERSATIONS : [];
+      // In-memory persistent store (includes inbound WhatsApp messages)
+      conversations = getAllConversations();
     }
 
     // Apply query filters

@@ -59,6 +59,8 @@ export default function SettingsPage() {
   const [testingServer, setTestingServer] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [connectedNumber, setConnectedNumber] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const [profilePicUrl, setProfilePicUrl] = useState<string | null>(null);
 
   // ================= Meta Cloud API State =================
   const [phoneNumberId, setPhoneNumberId] = useState('');
@@ -125,6 +127,8 @@ export default function SettingsPage() {
           if (data.data.instanceName) setEvolutionInstance(data.data.instanceName);
           if (data.data.status) setEvolutionStatus(data.data.status);
           if (data.data.phoneNumber) setConnectedNumber(data.data.phoneNumber);
+          if (data.data.profileName) setProfileName(data.data.profileName);
+          if (data.data.profilePicUrl) setProfilePicUrl(data.data.profilePicUrl);
           if (data.data.qrCodeBase64) setQrCodeData(data.data.qrCodeBase64);
           if (data.data.pairingCode) setPairingCode(data.data.pairingCode);
         }
@@ -171,6 +175,10 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success) {
         setServerError(null);
+        if (data.data?.phoneNumber) setConnectedNumber(data.data.phoneNumber);
+        if (data.data?.profileName) setProfileName(data.data.profileName);
+        if (data.data?.profilePicUrl) setProfilePicUrl(data.data.profilePicUrl);
+        if (data.data?.status) setEvolutionStatus(data.data.status);
         showToast(data.message, 'success');
       } else {
         setServerError(data.message);
@@ -231,7 +239,9 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success) {
         setEvolutionStatus('connected');
-        setConnectedNumber('+55 11 98765-4321');
+        if (data.data?.phoneNumber) setConnectedNumber(data.data.phoneNumber);
+        if (data.data?.profileName) setProfileName(data.data.profileName);
+        if (data.data?.profilePicUrl) setProfilePicUrl(data.data.profilePicUrl);
         setQrCodeData(null);
         setPairingCode(null);
         setServerError(null);
@@ -250,6 +260,8 @@ export default function SettingsPage() {
       });
       setEvolutionStatus('disconnected');
       setConnectedNumber(null);
+      setProfileName(null);
+      setProfilePicUrl(null);
       setQrCodeData(null);
       setPairingCode(null);
       showToast('WhatsApp desconectado com sucesso!', 'info');
@@ -521,9 +533,17 @@ export default function SettingsPage() {
                     {/* Status da Instância */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                          <QrCode className="w-6 h-6" />
-                        </div>
+                        {profilePicUrl ? (
+                          <img
+                            src={profilePicUrl}
+                            alt={profileName || 'WhatsApp'}
+                            className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-500 shadow-xs"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                            <QrCode className="w-6 h-6" />
+                          </div>
+                        )}
                         <div>
                           <div className="flex items-center gap-2">
                             <h2 className="text-sm font-bold text-slate-900">WhatsApp Evolution API</h2>
@@ -555,8 +575,14 @@ export default function SettingsPage() {
                           <p className="text-xs text-slate-500 mt-1">
                             {evolutionStatus === 'connected' ? (
                               <>
-                                Linha ativa: <b className="text-slate-900">{connectedNumber || '+55 11 98765-4321'}</b> • Instância:{' '}
-                                <b className="text-emerald-700">{evolutionInstance}</b>
+                                Linha ativa: <b className="text-slate-900">{connectedNumber || 'Identificando...'}</b>
+                                {profileName && (
+                                  <>
+                                    {' '}
+                                    (<span className="font-semibold text-emerald-800">{profileName}</span>)
+                                  </>
+                                )}{' '}
+                                • Instância: <b className="text-emerald-700">{evolutionInstance}</b>
                               </>
                             ) : (
                               'Conecte qualquer número escaneando o QR Code abaixo com o WhatsApp do seu celular.'

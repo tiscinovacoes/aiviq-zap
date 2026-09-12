@@ -115,7 +115,12 @@ export const useInboxStore = create<InboxState>((set, get) => ({
     set({ messages: [...messages, optimisticMessage] });
 
     try {
-      const sentMessage = await conversationService.sendMessage(activeConversation.id, content);
+      const sentMessage = await conversationService.sendMessage(
+        activeConversation.id,
+        content,
+        'text',
+        activeConversation.contact?.phone
+      );
 
       // Update message status in state
       set((state) => ({

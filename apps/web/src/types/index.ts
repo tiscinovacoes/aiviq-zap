@@ -75,6 +75,7 @@ export interface Message {
   content: string;
   message_type: 'text' | 'image' | 'audio' | 'video' | 'document' | 'template';
   delivery_status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+  external_message_id?: string;
   created_at: string;
 }
 

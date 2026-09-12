@@ -27,12 +27,13 @@ export const conversationService = {
   async sendMessage(
     conversationId: string,
     content: string,
-    messageType: string = 'text'
+    messageType: string = 'text',
+    phone?: string
   ): Promise<Message> {
     const res = await fetch(`/api/conversations/${conversationId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, message_type: messageType }),
+      body: JSON.stringify({ content, message_type: messageType, phone }),
     });
     if (!res.ok) throw new Error('Falha ao enviar mensagem');
     const data = await res.json();
