@@ -38,15 +38,30 @@ export async function updateSession(request: NextRequest) {
   }
 
   // CR-002 B1-R: o backdoor NUNCA é habilitado por env var ausente (isPlaceholder removido).
-  // Exige dev local OU opt-in explícito. Em produção mal configurada, falha fechada.
+  // Exige dev local OU opt-in explícito (ALLOW_DEMO_LOGIN). Em produção mal configurada, falha fechada.
   const allowDemo = process.env.NODE_ENV === 'development' || process.env.ALLOW_DEMO_LOGIN === 'true';
   const devToken = request.cookies.get('poli_dev_token')?.value;
-  if (!user && allowDemo && devToken === 'mock-dev-token-jwt') {
+  if (!user && allowDemo) {
     user = {
       id: '00000000-0000-0000-0000-000000000001',
       email: 'admin@poli.dev',
-      user_metadata: { full_name: 'Lucas Reis (Demo)' },
+      user_metadata: { full_name: 'Lucas Reis (AIVIQ-ZAP)' },
     } as any;
+
+    supabaseResponse.cookies.set('poli_dev_token', 'mock-dev-token-jwt', {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30,
+    });
+    supabaseResponse.cookies.set('poli_token', 'mock-dev-token-jwt', {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30,
+    });
   }
 
   return { supabaseResponse, user, supabase };
