@@ -53,7 +53,7 @@ export default function NavigationRail() {
       title: 'Métricas & Relatórios Executivos (BI)',
     },
     {
-      href: '#',
+      href: '/settings',
       icon: Settings,
       title: 'Configurações',
     },
