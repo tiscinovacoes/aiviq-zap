@@ -15,7 +15,7 @@ interface EvolutionState {
 }
 
 let localEvolutionState: EvolutionState = {
-  apiUrl: process.env.EVOLUTION_API_URL || 'http://localhost:8080',
+  apiUrl: process.env.EVOLUTION_API_URL || 'https://evolution-api-production-8ecf.up.railway.app',
   apiKey: process.env.EVOLUTION_API_KEY || 'aiviq_evolution_secret_key_2026',
   instanceName: 'aiviq_inbox_01',
   status: 'disconnected',
