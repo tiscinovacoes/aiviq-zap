@@ -167,7 +167,7 @@ export default function ConversationList() {
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span>WebSocket: Conectado (28ms)</span>
         </div>
-        <span className="text-slate-500 text-[10px]">Poli Realtime</span>
+        <span className="text-slate-500 text-[10px]">AIVIQ Realtime</span>
       </div>
     </section>
   );

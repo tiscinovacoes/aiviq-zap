@@ -48,7 +48,7 @@ export default function CampaignsPage() {
   const [formData, setFormData] = useState({
     name: '',
     channel: 'WhatsApp Cloud Oficial',
-    messageText: 'Olá {{nome}}! Temos uma condição exclusiva de renovação para o seu plano da Poli. Responda para saber mais.',
+    messageText: 'Olá {{nome}}! Temos uma condição exclusiva de renovação para o seu plano da AIVIQ-ZAP. Responda para saber mais.',
     tags: ['Cliente Ativo'],
     totalContacts: 1850,
     botToTriggerOnReply: 'Qualificação Comercial & Triagem Inteligente',

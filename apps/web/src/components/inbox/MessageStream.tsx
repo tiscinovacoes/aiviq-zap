@@ -86,7 +86,7 @@ export default function MessageStream({ onApplySuggestion }: MessageStreamProps)
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-indigo-400 text-xs font-semibold">
               <Sparkles className="w-4 h-4" />
-              <span>Sugestão de IA (Qwen / Poli Agent)</span>
+              <span>Sugestão de IA (AIVIQ Copilot)</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
                 98% de precisão
               </span>
@@ -99,7 +99,7 @@ export default function MessageStream({ onApplySuggestion }: MessageStreamProps)
             <button
               onClick={() =>
                 onApplySuggestion?.(
-                  'Perfeito, Mariana! Aqui está o link seguro para contratação imediata do Plano Pro: https://checkout.poli.dev/pro?org=techcorp'
+                  'Perfeito, Mariana! Aqui está o link seguro para contratação imediata do Plano Pro: https://checkout.aiviq-zap.dev/pro?org=techcorp'
                 )
               }
               className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition-colors"

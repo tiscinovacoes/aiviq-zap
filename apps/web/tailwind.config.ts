@@ -9,8 +9,20 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        background: "var(--bg)",
+        foreground: "var(--text)",
+        surface: "var(--surface)",
+        "surface-2": "var(--surface-2)",
+        border: "var(--border)",
+        primary: {
+          DEFAULT: "var(--primary)",
+          hover: "var(--primary-hover)",
+          weak: "var(--primary-weak)",
+        },
+        accent: "var(--accent)",
+      },
+      borderRadius: {
+        theme: "var(--radius)",
       },
     },
   },

@@ -10,7 +10,7 @@ const mockCampaigns: Campaign[] = [
     name: 'Oferta Especial de Renovação Anual (Pro)',
     channel: 'WhatsApp Cloud Oficial',
     status: 'running',
-    messageText: 'Olá {{nome}}! Seu plano anual da Poli possui 25% de desconto neste mês. Clique para resgatar!',
+    messageText: 'Olá {{nome}}! Seu plano anual da AIVIQ-ZAP possui 25% de desconto neste mês. Clique para resgatar!',
     totalContacts: 12500,
     sentCount: 11200,
     deliveredCount: 11040,

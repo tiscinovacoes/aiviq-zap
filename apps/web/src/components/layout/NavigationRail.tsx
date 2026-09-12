@@ -60,14 +60,15 @@ export default function NavigationRail() {
   ];
 
   return (
-    <nav className="w-[72px] h-full bg-[#0a0e17] border-r border-white/5 flex flex-col items-center justify-between py-5 z-20 shrink-0 select-none">
+    <nav className="w-[72px] h-full bg-white border-r border-[#E5E7EB] flex flex-col items-center justify-between py-5 z-20 shrink-0 select-none">
       <div className="flex flex-col items-center gap-6">
-        {/* Brand Logo */}
+        {/* Brand Logo - AIVIQ-ZAP */}
         <Link
           href="/inbox"
-          className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-lg text-white shadow-lg shadow-indigo-600/30 hover:scale-105 transition-transform"
+          title="AIVIQ-ZAP"
+          className="w-10 h-10 rounded-xl bg-[#12B76A] flex items-center justify-center font-bold text-base text-white shadow-sm hover:bg-[#0E9F6E] transition-colors"
         >
-          P
+          AZ
         </Link>
 
         {/* Navigation Items */}
@@ -83,13 +84,13 @@ export default function NavigationRail() {
                 title={item.title}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center relative transition-all ${
                   isActive
-                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    ? 'bg-[#ECFDF5] text-[#12B76A] border border-[#12B76A]/30 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >
                 <Icon className="w-5 h-5" />
                 {item.badge && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 text-black font-bold text-[9px] rounded-full flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#12B76A] text-white font-bold text-[9px] rounded-full flex items-center justify-center">
                     {item.badge}
                   </span>
                 )}
@@ -104,16 +105,16 @@ export default function NavigationRail() {
         <button
           onClick={() => logout()}
           title="Sair da Plataforma"
-          className="w-10 h-10 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 flex items-center justify-center transition-colors"
+          className="w-10 h-10 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors"
         >
           <LogOut className="w-4 h-4" />
         </button>
 
         <div className="relative" title={user?.full_name || 'Lucas R. (Online)'}>
-          <div className="w-9 h-9 rounded-full bg-slate-700 border border-white/10 flex items-center justify-center font-semibold text-xs text-white">
+          <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-semibold text-xs text-slate-700">
             {user?.full_name ? user.full_name.slice(0, 2).toUpperCase() : 'LR'}
           </div>
-          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0a0e17]" />
+          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#12B76A] border-2 border-white" />
         </div>
       </div>
     </nav>

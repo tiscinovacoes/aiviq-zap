@@ -82,7 +82,7 @@ const defaultMockBot: BotV1 = {
         {
           id: 'b_welcome_txt',
           type: 'text',
-          content: { text: 'Olá! 👋 Bem-vindo ao atendimento da *Poli.digital*.' },
+          content: { text: 'Olá! 👋 Bem-vindo ao atendimento da *AIVIQ-ZAP*.' },
         },
         {
           id: 'b_welcome_ask_name',

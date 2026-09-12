@@ -24,7 +24,7 @@ const conversationMessages: Record<string, Message[]> = {
       conversation_id: 'conv-001',
       sender_type: 'agent',
       sender_name: 'Lucas R.',
-      content: 'Olá Mariana! Seja muito bem-vinda à Poli. A nossa plataforma utiliza a API Oficial da Cloud API com isolamento multi-tenant e RLS completo.',
+      content: 'Olá Mariana! Seja muito bem-vinda à AIVIQ-ZAP. A nossa plataforma utiliza a API Oficial da Cloud API com isolamento multi-tenant e RLS completo.',
       message_type: 'text',
       delivery_status: 'read',
       created_at: '14:29',

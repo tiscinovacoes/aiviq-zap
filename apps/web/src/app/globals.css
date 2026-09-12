@@ -3,21 +3,60 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* superfícies */
+  --bg:            #FFFFFF;
+  --surface:       #F7F8FA;   /* cards, painéis */
+  --surface-2:     #EEF1F5;   /* hover/sutil */
+  --border:        #E5E7EB;   /* hairline */
+
+  /* texto */
+  --text:          #0F172A;   /* slate-900 */
+  --text-muted:    #64748B;   /* slate-500 */
+
+  /* acento (verde ZAP, equilibrado) */
+  --primary:       #12B76A;
+  --primary-hover: #0E9F6E;
+  --primary-weak:  #ECFDF5;   /* fundo de destaque suave */
+  --on-primary:    #FFFFFF;
+
+  /* apoio AI (usar com parcimônia) */
+  --accent:        #6366F1;   /* indigo */
+
+  /* semânticos */
+  --success:       #12B76A;
+  --warning:       #F59E0B;
+  --danger:        #EF4444;
+  --info:          #3B82F6;
+
+  /* forma */
+  --radius:        12px;
+  --shadow:        0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10);
+
+  --background:    #FFFFFF;
+  --foreground:    #0F172A;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root[data-theme="dark"] {
+  --bg:            #0B0F14;
+  --surface:       #111827;
+  --surface-2:     #1A2231;
+  --border:        #1F2937;
+  --text:          #E5E7EB;
+  --text-muted:    #94A3B8;
+  --primary:       #22C55E;
+  --primary-hover: #16A34A;
+  --primary-weak:  #0f2a1e;
+  --on-primary:    #06231A;
+  --accent:        #818CF8;
+
+  --background:    #0B0F14;
+  --foreground:    #E5E7EB;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 @layer utilities {
@@ -25,3 +64,4 @@ body {
     text-wrap: balance;
   }
 }
+

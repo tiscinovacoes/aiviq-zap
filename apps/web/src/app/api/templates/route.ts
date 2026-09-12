@@ -10,7 +10,7 @@ let mockTemplates: QuickTemplate[] = [
     id: 'tpl-001',
     shortcut: '/ola',
     title: 'Boas-vindas Padrão',
-    content: 'Olá! Seja muito bem-vindo(a) à Poli. Em que posso te ajudar hoje?',
+    content: 'Olá! Seja muito bem-vindo(a) à AIVIQ-ZAP. Em que posso te ajudar hoje?',
     category: 'saudacao',
   },
   {
