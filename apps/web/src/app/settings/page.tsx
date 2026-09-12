@@ -30,6 +30,9 @@ import {
   Bot,
   Sliders,
   CheckCheck,
+  Radio,
+  Server,
+  Key,
 } from 'lucide-react';
 import NavigationRail from '@/components/layout/NavigationRail';
 
@@ -51,7 +54,10 @@ export default function SettingsPage() {
   const [evolutionInstance, setEvolutionInstance] = useState('aiviq_inbox_01');
   const [evolutionStatus, setEvolutionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
+  const [testingServer, setTestingServer] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const [connectedNumber, setConnectedNumber] = useState<string | null>(null);
 
   // ================= Meta Cloud API State =================
@@ -99,6 +105,7 @@ export default function SettingsPage() {
   // UI Helpers
   const [copiedWebhookUrl, setCopiedWebhookUrl] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
+  const [copiedPairing, setCopiedPairing] = useState(false);
   const [banner, setBanner] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -119,6 +126,7 @@ export default function SettingsPage() {
           if (data.data.status) setEvolutionStatus(data.data.status);
           if (data.data.phoneNumber) setConnectedNumber(data.data.phoneNumber);
           if (data.data.qrCodeBase64) setQrCodeData(data.data.qrCodeBase64);
+          if (data.data.pairingCode) setPairingCode(data.data.pairingCode);
         }
       } catch (e) {}
     }
@@ -142,12 +150,44 @@ export default function SettingsPage() {
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
     setBanner({ text, type });
-    setTimeout(() => setBanner(null), 4000);
+    setTimeout(() => setBanner(null), 4500);
   };
 
-  // Gerar QR Code na Evolution API
+  // Testar Servidor Evolution API
+  const handleTestEvolutionServer = async () => {
+    setTestingServer(true);
+    setServerError(null);
+    try {
+      const res = await fetch('/api/settings/whatsapp/evolution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'test_server',
+          apiUrl: evolutionUrl,
+          apiKey: evolutionKey,
+          instanceName: evolutionInstance,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setServerError(null);
+        showToast(data.message, 'success');
+      } else {
+        setServerError(data.message);
+        showToast(data.message, 'error');
+      }
+    } catch (err: any) {
+      setServerError(`Erro de conexão com o servidor Evolution API em ${evolutionUrl}: ${err.message}`);
+      showToast(`Falha de conexão com a Evolution API`, 'error');
+    } finally {
+      setTestingServer(false);
+    }
+  };
+
+  // Gerar QR Code Real na Evolution API
   const handleGenerateQr = async () => {
     setLoadingQr(true);
+    setServerError(null);
     try {
       const res = await fetch('/api/settings/whatsapp/evolution', {
         method: 'POST',
@@ -162,13 +202,19 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success && data.qrCode) {
         setQrCodeData(data.qrCode);
+        if (data.pairingCode) setPairingCode(data.pairingCode);
         setEvolutionStatus('connecting');
-        showToast('QR Code gerado! Aponte o WhatsApp do celular para conectar.', 'info');
+        setServerError(null);
+        showToast('QR Code oficial gerado pela Evolution API! Aponte o WhatsApp.', 'success');
       } else {
-        showToast('Não foi possível gerar o QR Code. Verifique a URL do servidor.', 'error');
+        setQrCodeData(null);
+        setServerError(data.message || `Servidor Evolution API inacessível em ${evolutionUrl}`);
+        showToast(data.message || 'Servidor Evolution API offline', 'error');
       }
     } catch (err: any) {
-      showToast('Erro de conexão com o servidor Evolution: ' + err.message, 'error');
+      setQrCodeData(null);
+      setServerError(`Erro de rede ao contactar a Evolution API em ${evolutionUrl}: ${err.message}`);
+      showToast('Erro ao conectar com o servidor Evolution API', 'error');
     } finally {
       setLoadingQr(false);
     }
@@ -187,6 +233,8 @@ export default function SettingsPage() {
         setEvolutionStatus('connected');
         setConnectedNumber('+55 11 98765-4321');
         setQrCodeData(null);
+        setPairingCode(null);
+        setServerError(null);
         showToast('WhatsApp conectado com sucesso via Evolution API!');
       }
     } catch (e) {}
@@ -203,6 +251,7 @@ export default function SettingsPage() {
       setEvolutionStatus('disconnected');
       setConnectedNumber(null);
       setQrCodeData(null);
+      setPairingCode(null);
       showToast('WhatsApp desconectado com sucesso!', 'info');
     } catch (e) {}
   };
@@ -269,6 +318,13 @@ export default function SettingsPage() {
       setTimeout(() => setCopiedToken(false), 2000);
     }
     showToast('Copiado para a área de transferência!');
+  };
+
+  const handleCopyPairing = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedPairing(true);
+    setTimeout(() => setCopiedPairing(false), 2000);
+    showToast('Código de pareamento copiado!');
   };
 
   return (
@@ -431,7 +487,7 @@ export default function SettingsPage() {
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                          Conexão instantânea em 10 segundos via QR Code. <b>Sem necessidade de validação de empresa, CNPJ ou aprovação da Meta.</b>
+                          Conexão instantânea via QR Code direto. <b>Zero validação da Meta, sem necessidade de aprovação de empresa, CNPJ ou tokens.</b>
                         </p>
                       </div>
                     </button>
@@ -452,7 +508,7 @@ export default function SettingsPage() {
                       <div>
                         <h3 className="text-xs font-bold text-slate-900">Meta Cloud API Oficial</h3>
                         <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                          Indicado para contas corporativas com WhatsApp Business Account (WABA) já verificadas no Meta Business Manager.
+                          Indicado para contas com WhatsApp Business Account (WABA) já validadas no Meta Business Manager.
                         </p>
                       </div>
                     </button>
@@ -503,7 +559,7 @@ export default function SettingsPage() {
                                 <b className="text-emerald-700">{evolutionInstance}</b>
                               </>
                             ) : (
-                              'Gere o QR Code abaixo para sincronizar seu WhatsApp sem burocracia.'
+                              'Conecte qualquer número escaneando o QR Code abaixo com o WhatsApp do seu celular.'
                             )}
                           </p>
                         </div>
@@ -527,7 +583,7 @@ export default function SettingsPage() {
                             className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-xs transition-all disabled:opacity-50"
                           >
                             <RefreshCw className={`w-4 h-4 ${loadingQr ? 'animate-spin' : ''}`} />
-                            <span>{loadingQr ? 'Gerando QR Code...' : 'Gerar QR Code de Conexão'}</span>
+                            <span>{loadingQr ? 'Conectando ao Servidor...' : 'Gerar QR Code Oficial'}</span>
                           </button>
                         )}
                       </div>
@@ -540,14 +596,40 @@ export default function SettingsPage() {
                           {qrCodeData ? (
                             <div className="space-y-3 text-center">
                               <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-xs inline-block">
-                                <img src={qrCodeData} alt="WhatsApp QR Code" className="w-52 h-52 object-contain" />
+                                <img
+                                  src={qrCodeData}
+                                  alt="WhatsApp QR Code Real"
+                                  className="w-56 h-56 object-contain"
+                                />
                               </div>
                               <div className="space-y-1">
                                 <span className="text-xs font-bold text-slate-800 block">
-                                  Aponte a câmera do WhatsApp para escanear
+                                  QR Code Oficial do WhatsApp
                                 </span>
-                                <span className="text-[11px] text-slate-400">Atualiza automaticamente</span>
+                                <span className="text-[11px] text-slate-400">Escaneie pelo menu Aparelhos Conectados</span>
                               </div>
+
+                              {pairingCode && (
+                                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-center space-y-1">
+                                  <span className="text-[10px] uppercase font-bold text-emerald-800 block">
+                                    Ou Pareie por Código:
+                                  </span>
+                                  <div className="flex items-center justify-center gap-2">
+                                    <span className="font-mono text-xs font-bold text-emerald-950 bg-white px-2 py-1 rounded border border-emerald-200">
+                                      {pairingCode}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyPairing(pairingCode)}
+                                      className="p-1 hover:bg-emerald-100 rounded text-emerald-700"
+                                      title="Copiar código"
+                                    >
+                                      {copiedPairing ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={handleConfirmConnection}
@@ -556,22 +638,57 @@ export default function SettingsPage() {
                                 Já escaneei (Confirmar Conexão)
                               </button>
                             </div>
+                          ) : serverError ? (
+                            <div className="text-center py-6 px-2 space-y-3">
+                              <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto shadow-xs">
+                                <AlertCircle className="w-6 h-6" />
+                              </div>
+                              <div className="space-y-1">
+                                <h4 className="text-xs font-bold text-slate-800">Servidor Evolution API Inacessível</h4>
+                                <p className="text-[11px] text-rose-600 leading-relaxed max-w-xs mx-auto">
+                                  {serverError}
+                                </p>
+                              </div>
+                              <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
+                                Para gerar um QR Code real do WhatsApp, informe a URL e chave da sua Evolution API (VPS ou Local) no painel abaixo.
+                              </p>
+                              <div className="flex items-center justify-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={handleTestEvolutionServer}
+                                  disabled={testingServer}
+                                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
+                                >
+                                  {testingServer ? 'Testando...' : 'Testar Servidor'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleGenerateQr}
+                                  disabled={loadingQr}
+                                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs"
+                                >
+                                  Tentar Novamente
+                                </button>
+                              </div>
+                            </div>
                           ) : (
                             <div className="text-center py-10 space-y-3">
                               <div className="w-16 h-16 rounded-2xl bg-slate-200/60 flex items-center justify-center mx-auto text-slate-400">
                                 <QrCode className="w-8 h-8" />
                               </div>
                               <div>
-                                <h4 className="text-xs font-bold text-slate-700">Nenhum QR Code gerado</h4>
-                                <p className="text-[11px] text-slate-400 mt-0.5">Clique no botão para gerar o código</p>
+                                <h4 className="text-xs font-bold text-slate-700">QR Code Pronto para Geração</h4>
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                  Clique no botão abaixo para buscar o QR Code real da sua Evolution API.
+                                </p>
                               </div>
                               <button
                                 type="button"
                                 onClick={handleGenerateQr}
                                 disabled={loadingQr}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs"
+                                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-transform active:scale-95"
                               >
-                                Iniciar Conexão
+                                {loadingQr ? 'Carregando...' : 'Gerar QR Code Oficial'}
                               </button>
                             </div>
                           )}
@@ -590,7 +707,7 @@ export default function SettingsPage() {
                                 1
                               </span>
                               <div>
-                                <b>Abra o aplicativo do WhatsApp</b> no seu celular (qualquer número pessoal ou comercial).
+                                <b>Abra o aplicativo do WhatsApp</b> no seu celular (qualquer conta comercial ou pessoal).
                               </div>
                             </div>
 
@@ -616,7 +733,7 @@ export default function SettingsPage() {
                             <div className="flex items-start gap-3 p-3 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-emerald-900">
                               <Zap className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                               <div className="text-[11px] leading-relaxed">
-                                <b>Sincronização imediata:</b> Todas as conversas e mídias recebidas cairão diretamente na sua <b>Caixa de Entrada Omnichannel</b>, permitindo múltiplos atendentes simultâneos no mesmo número.
+                                <b>Zero aprovação da Meta:</b> A conexão é direta via protocolo Baileys. O seu WhatsApp fica sincronizado com a <b>Caixa de Entrada Omnichannel</b> para múltiplos atendentes responderem ao mesmo tempo.
                               </div>
                             </div>
                           </div>
@@ -626,44 +743,66 @@ export default function SettingsPage() {
 
                     {/* Configurações do Servidor Evolution API */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                            <SettingsIcon className="w-4 h-4 text-slate-500" />
+                            <Server className="w-4 h-4 text-slate-500" />
                             <span>Servidor Evolution API (Local ou VPS)</span>
                           </h3>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            Endpoints de conexão da sua instância Docker ou nuvem externa.
+                            Endereço onde a sua Evolution API está rodando (ex: Docker na VPS ou Localhost).
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => showToast('Configurações do servidor salvas com sucesso!')}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs"
-                        >
-                          <Save className="w-3.5 h-3.5" />
-                          <span>Salvar Servidor</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleTestEvolutionServer}
+                            disabled={testingServer}
+                            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                          >
+                            <Radio className={`w-3.5 h-3.5 text-emerald-600 ${testingServer ? 'animate-pulse' : ''}`} />
+                            <span>{testingServer ? 'Testando...' : 'Testar Conexão'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => showToast('Configurações salvas!')}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            <span>Salvar Servidor</span>
+                          </button>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
                         <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-slate-600">URL da Evolution API</label>
+                          <label className="text-xs font-bold text-slate-600 flex items-center gap-1">
+                            <span>URL da Evolution API</span>
+                          </label>
                           <input
                             type="text"
                             value={evolutionUrl}
-                            onChange={(e) => setEvolutionUrl(e.target.value)}
-                            placeholder="http://localhost:8080"
+                            onChange={(e) => {
+                              setEvolutionUrl(e.target.value);
+                              setServerError(null);
+                            }}
+                            placeholder="http://localhost:8080 ou https://evolution.seudominio.com"
                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
                           />
                         </div>
 
                         <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-slate-600">API Key Global</label>
+                          <label className="text-xs font-bold text-slate-600 flex items-center gap-1">
+                            <span>Chave de Autenticação (Global API Key)</span>
+                          </label>
                           <input
                             type="password"
                             value={evolutionKey}
-                            onChange={(e) => setEvolutionKey(e.target.value)}
+                            onChange={(e) => {
+                              setEvolutionKey(e.target.value);
+                              setServerError(null);
+                            }}
+                            placeholder="AUTHENTICATION_API_KEY do seu Docker"
                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
                           />
                         </div>

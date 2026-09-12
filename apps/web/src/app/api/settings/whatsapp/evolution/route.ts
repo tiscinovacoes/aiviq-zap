@@ -11,6 +11,7 @@ interface EvolutionState {
   profileName?: string;
   profilePicUrl?: string;
   qrCodeBase64?: string;
+  pairingCode?: string;
 }
 
 let localEvolutionState: EvolutionState = {
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST: Salvar credenciais ou ações (connect / disconnect)
+// POST: Salvar credenciais ou ações (connect / disconnect / test)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -71,11 +72,45 @@ export async function POST(req: NextRequest) {
     const currentKey = localEvolutionState.apiKey;
     const currentInstance = localEvolutionState.instanceName;
 
-    // Ação 1: Gerar QR Code (Conectar)
-    if (action === 'get_qr') {
+    // Ação 0: Testar se o servidor da Evolution API está acessível
+    if (action === 'test_server') {
       try {
-        // 1. Tenta criar a instância caso não exista
-        await fetch(`${currentUrl}/instance/create`, {
+        const res = await fetch(`${currentUrl}/instance/fetchInstances`, {
+          headers: { apikey: currentKey },
+          signal: AbortSignal.timeout(4000),
+        });
+
+        if (res.ok) {
+          const instances = await res.json();
+          return NextResponse.json({
+            success: true,
+            message: `Servidor Evolution API online e autenticado! (${instances.length || 0} instâncias ativas).`,
+            instances,
+          });
+        }
+
+        return NextResponse.json({
+          success: false,
+          error: 'auth_failed',
+          message: `Servidor Evolution API respondeu com status ${res.status}. Verifique se a Chave de API (Global API Key) está correta.`,
+        });
+      } catch (err: any) {
+        return NextResponse.json({
+          success: false,
+          error: 'unreachable',
+          message: `Não foi possível conectar ao servidor Evolution API em ${currentUrl}. Verifique se a API está em execução no Docker ou na sua VPS.`,
+        });
+      }
+    }
+
+    // Ação 1: Gerar QR Code Real (Baileys)
+    if (action === 'get_qr') {
+      let created = false;
+      let lastError = '';
+
+      // 1. Tenta criar a instância na Evolution API (modo Baileys)
+      try {
+        const createRes = await fetch(`${currentUrl}/instance/create`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -86,48 +121,57 @@ export async function POST(req: NextRequest) {
             qrcode: true,
             integration: 'WHATSAPP-BAILEYS',
           }),
-          signal: AbortSignal.timeout(4000),
+          signal: AbortSignal.timeout(5000),
         });
-      } catch (e) {
-        // pode já existir
+
+        if (createRes.ok) {
+          created = true;
+        }
+      } catch (e: any) {
+        lastError = e.message;
       }
 
+      // 2. Busca o QR code real gerado pelo Baileys
       try {
-        // 2. Busca o QR code da instância
         const qrRes = await fetch(`${currentUrl}/instance/connect/${currentInstance}`, {
           headers: { apikey: currentKey },
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(6000),
         });
 
         if (qrRes.ok) {
           const qrData = await qrRes.json();
-          const base64 = qrData.base64 || qrData.qrcode?.base64;
-          localEvolutionState.qrCodeBase64 = base64;
-          localEvolutionState.status = 'connecting';
+          let rawBase64 = qrData.base64 || qrData.qrcode?.base64;
+          
+          if (rawBase64) {
+            // Garante o prefixo data:image/png;base64, se necessário
+            const base64Clean = rawBase64.startsWith('data:')
+              ? rawBase64
+              : `data:image/png;base64,${rawBase64}`;
 
-          return NextResponse.json({
-            success: true,
-            qrCode: base64,
-            pairingCode: qrData.pairingCode,
-            status: 'connecting',
-          });
+            localEvolutionState.qrCodeBase64 = base64Clean;
+            localEvolutionState.pairingCode = qrData.pairingCode;
+            localEvolutionState.status = 'connecting';
+
+            return NextResponse.json({
+              success: true,
+              qrCode: base64Clean,
+              pairingCode: qrData.pairingCode,
+              status: 'connecting',
+              message: 'QR Code real gerado com sucesso pela Evolution API!',
+            });
+          }
         }
       } catch (err: any) {
-        console.warn('[Evolution API] Falha na chamada externa:', err.message);
+        lastError = err.message;
       }
 
-      // Fallback: Gera um QR Code demonstrativo com padrão SVG caso a Evolution API ainda não esteja rodando localmente
-      const mockSvgQr = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220"><rect width="220" height="220" fill="%23ffffff"/><rect x="20" y="20" width="60" height="60" fill="%23111827"/><rect x="30" y="30" width="40" height="40" fill="%23ffffff"/><rect x="40" y="40" width="20" height="20" fill="%2312b76a"/><rect x="140" y="20" width="60" height="60" fill="%23111827"/><rect x="150" y="30" width="40" height="40" fill="%23ffffff"/><rect x="160" y="40" width="20" height="20" fill="%2312b76a"/><rect x="20" y="140" width="60" height="60" fill="%23111827"/><rect x="30" y="150" width="40" height="40" fill="%23ffffff"/><rect x="40" y="160" width="20" height="20" fill="%2312b76a"/><circle cx="110" cy="110" r="14" fill="%2312b76a"/><text x="110" y="115" font-family="sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="white">ZAP</text><rect x="100" y="30" width="15" height="15" fill="%23111827"/><rect x="100" y="65" width="15" height="15" fill="%23111827"/><rect x="100" y="140" width="15" height="15" fill="%23111827"/><rect x="100" y="175" width="15" height="15" fill="%23111827"/><rect x="140" y="100" width="15" height="15" fill="%23111827"/><rect x="175" y="100" width="15" height="15" fill="%23111827"/><rect x="140" y="140" width="15" height="15" fill="%23111827"/><rect x="175" y="175" width="15" height="15" fill="%23111827"/></svg>`;
-      
-      localEvolutionState.qrCodeBase64 = mockSvgQr;
-      localEvolutionState.status = 'connecting';
-
+      // Se falhou e o servidor não respondeu, NÃO inventa QR code fictício! Retorna erro claro.
       return NextResponse.json({
-        success: true,
-        qrCode: mockSvgQr,
-        simulated: true,
-        message: 'QR Code pronto! Aponte o WhatsApp do seu celular para conectar.',
-      });
+        success: false,
+        error: 'server_offline',
+        message: `Servidor Evolution API inacessível em ${currentUrl}. Verifique se o container Docker ou VPS está ativo e se a Global API Key está correta.`,
+        details: lastError,
+      }, { status: 502 });
     }
 
     // Ação 2: Desconectar instância
@@ -143,6 +187,7 @@ export async function POST(req: NextRequest) {
       localEvolutionState.status = 'disconnected';
       localEvolutionState.qrCodeBase64 = undefined;
       localEvolutionState.phoneNumber = undefined;
+      localEvolutionState.pairingCode = undefined;
 
       return NextResponse.json({
         success: true,
@@ -150,7 +195,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Ação 3: Simular confirmação de conexão (para testes ou webhook)
+    // Ação 3: Simular / Confirmar conexão
     if (action === 'confirm_connection') {
       localEvolutionState.status = 'connected';
       localEvolutionState.phoneNumber = '+55 11 98765-4321';
