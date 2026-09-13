@@ -24,6 +24,17 @@ export const crmService = {
     return data.contact;
   },
 
+  async getCitizen(id: string): Promise<{
+    contact: Contact;
+    protocolos: Protocolo[];
+    resumo: { total: number; abertos: number; resolvidos: number };
+  }> {
+    const res = await fetch(`/api/contacts/${id}`);
+    if (!res.ok) throw new Error('Falha ao carregar a ficha do cidadão');
+    const data = await res.json();
+    return { contact: data.contact, protocolos: data.protocolos || [], resumo: data.resumo };
+  },
+
   async getProtocolos(): Promise<{ protocolos: Protocolo[]; metrics: any }> {
     const res = await fetch('/api/crm/protocolos');
     if (!res.ok) throw new Error('Falha ao obter protocolos da ouvidoria');

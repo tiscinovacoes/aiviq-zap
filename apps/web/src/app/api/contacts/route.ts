@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { Contact } from '@/types';
 import { getRealContacts } from '@/lib/evolutionService';
 import { getCustomContacts, addCustomContact } from '@/lib/conversationStore';
+import { mockCidadaos } from '@/lib/mockOuvidoria';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,10 @@ export async function GET(req: NextRequest) {
       const customContacts = getCustomContacts();
 
       const map = new Map<string, Contact>();
+      // Cidadãos de exemplo da ouvidoria (têm protocolos vinculados p/ o CRM 360º)
+      for (const c of mockCidadaos) {
+        map.set(c.id, c);
+      }
       for (const c of customContacts) {
         map.set(c.id, c);
       }

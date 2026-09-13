@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   FileText,
   Plus,
@@ -237,10 +238,14 @@ export default function CRMPage() {
 
                             {/* Cidadão / bairro / órgão */}
                             <div className="space-y-1 text-[11px] text-slate-500 mb-3">
-                              <div className="flex items-center gap-1.5 text-slate-700 font-medium">
+                              <Link
+                                href={`/contacts/${p.contact_id}`}
+                                className="flex items-center gap-1.5 text-slate-700 font-medium hover:text-emerald-700 transition-colors"
+                                title="Ver ficha do cidadão"
+                              >
                                 <Users className="w-3.5 h-3.5 text-slate-400" />
                                 <span className="line-clamp-1">{p.contact?.name || 'Cidadão não identificado'}</span>
-                              </div>
+                              </Link>
                               {(p.bairro || p.contact?.bairro) && (
                                 <div className="flex items-center gap-1.5">
                                   <MapPin className="w-3.5 h-3.5 text-slate-400" />

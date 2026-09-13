@@ -10,6 +10,7 @@ import {
   Mail,
   MapPin,
   MessageSquare,
+  FileText,
   Filter,
   Loader2,
 } from 'lucide-react';
@@ -164,15 +165,15 @@ export default function ContactsPage() {
                     <tr key={contact.id} className="hover:bg-slate-50 transition-colors">
                       {/* Name & Avatar */}
                       <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
+                        <Link href={`/contacts/${contact.id}`} className="flex items-center gap-3 group/name">
                           <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center font-bold text-xs text-emerald-700">
                             {contact.name.slice(0, 2).toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-semibold text-slate-900 text-sm">{contact.name}</p>
+                            <p className="font-semibold text-slate-900 text-sm group-hover/name:text-emerald-700 transition-colors">{contact.name}</p>
                             <p className="text-[11px] text-slate-500">{contact.email || 'Sem e-mail'}</p>
                           </div>
-                        </div>
+                        </Link>
                       </td>
 
                       {/* Bairro */}
@@ -227,13 +228,22 @@ export default function ContactsPage() {
 
                       {/* Actions */}
                       <td className="py-4 px-6 text-right">
-                        <Link
-                          href="/inbox"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold transition-colors shadow-2xs"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          <span>Atender</span>
-                        </Link>
+                        <div className="inline-flex items-center gap-1.5">
+                          <Link
+                            href={`/contacts/${contact.id}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold transition-colors shadow-2xs"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Ficha</span>
+                          </Link>
+                          <Link
+                            href="/inbox"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold transition-colors shadow-2xs"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Atender</span>
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))

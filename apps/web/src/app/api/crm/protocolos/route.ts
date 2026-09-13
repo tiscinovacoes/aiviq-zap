@@ -1,154 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { Protocolo } from '@/types';
+import { mockProtocolos, computeProtocoloMetrics } from '@/lib/mockOuvidoria';
 
 export const dynamic = 'force-dynamic';
-
-// Situações não-terminais (protocolo ainda em tramitação)
-const EM_ABERTO: Protocolo['status'][] = [
-  'aberto',
-  'em_analise',
-  'em_atendimento',
-  'aguardando_cidadao',
-];
-
-let mockProtocolos: Protocolo[] = [
-  {
-    id: 'prot-001',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    contact_id: 'cid-001',
-    protocol_number: '2026-000101',
-    title: 'Buraco na via causando acidentes na Rua das Acácias',
-    tipo_manifestacao: 'reclamacao',
-    categoria: 'Infraestrutura',
-    orgao_responsavel: 'Secretaria de Obras',
-    bairro: 'Centro',
-    prioridade: 'alta',
-    status: 'em_atendimento',
-    due_date: '2026-09-25',
-    assignee_name: 'Ana Paula',
-    created_at: '2026-09-10T14:00:00Z',
-    contact: {
-      id: 'cid-001',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      name: 'Mariana Silva',
-      phone: '+55 (11) 98765-4321',
-      bairro: 'Centro',
-      tags: ['Infraestrutura'],
-      custom_attributes: {},
-    },
-  },
-  {
-    id: 'prot-002',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    contact_id: 'cid-002',
-    protocol_number: '2026-000102',
-    title: 'Falta de medicamento na UBS do bairro',
-    tipo_manifestacao: 'denuncia',
-    categoria: 'Saúde',
-    orgao_responsavel: 'Secretaria de Saúde',
-    bairro: 'Jardim União',
-    prioridade: 'urgente',
-    status: 'em_analise',
-    due_date: '2026-09-18',
-    assignee_name: 'Carlos Eduardo',
-    created_at: '2026-09-11T10:30:00Z',
-    contact: {
-      id: 'cid-002',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      name: 'Carlos Eduardo',
-      bairro: 'Jardim União',
-      tags: ['Saúde'],
-      custom_attributes: {},
-    },
-  },
-  {
-    id: 'prot-003',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    contact_id: 'cid-003',
-    protocol_number: '2026-000103',
-    title: 'Solicitação de poda de árvore em frente à residência',
-    tipo_manifestacao: 'solicitacao',
-    categoria: 'Zeladoria Urbana',
-    orgao_responsavel: 'Secretaria de Meio Ambiente',
-    bairro: 'Vila Nova',
-    prioridade: 'media',
-    status: 'aberto',
-    due_date: '2026-10-05',
-    assignee_name: 'Ana Paula',
-    created_at: '2026-09-12T15:20:00Z',
-    contact: {
-      id: 'cid-003',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      name: 'Juliana Mendes',
-      bairro: 'Vila Nova',
-      tags: ['Zeladoria Urbana'],
-      custom_attributes: {},
-    },
-  },
-  {
-    id: 'prot-004',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    contact_id: 'cid-004',
-    protocol_number: '2026-000104',
-    title: 'Iluminação pública queimada há duas semanas',
-    tipo_manifestacao: 'reclamacao',
-    categoria: 'Iluminação',
-    orgao_responsavel: 'Secretaria de Obras',
-    bairro: 'Parque Industrial',
-    prioridade: 'media',
-    status: 'aguardando_cidadao',
-    due_date: '2026-09-20',
-    assignee_name: 'Lucas R.',
-    created_at: '2026-09-09T16:00:00Z',
-    contact: {
-      id: 'cid-004',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      name: 'Fernanda Rocha',
-      bairro: 'Parque Industrial',
-      tags: ['Iluminação'],
-      custom_attributes: {},
-    },
-  },
-  {
-    id: 'prot-005',
-    organization_id: '00000000-0000-0000-0000-000000000000',
-    contact_id: 'cid-005',
-    protocol_number: '2026-000098',
-    title: 'Elogio ao atendimento da equipe de vacinação',
-    tipo_manifestacao: 'elogio',
-    categoria: 'Saúde',
-    orgao_responsavel: 'Secretaria de Saúde',
-    bairro: 'Centro',
-    prioridade: 'baixa',
-    status: 'resolvido',
-    due_date: '2026-08-25',
-    assignee_name: 'Lucas R.',
-    created_at: '2026-08-20T11:00:00Z',
-    closed_at: '2026-08-24T09:00:00Z',
-    contact: {
-      id: 'cid-005',
-      organization_id: '00000000-0000-0000-0000-000000000000',
-      name: 'Roberto Almeida',
-      bairro: 'Centro',
-      tags: ['Saúde'],
-      custom_attributes: {},
-    },
-  },
-];
-
-function computeMetrics(protocolos: Protocolo[]) {
-  const hoje = new Date().toISOString().slice(0, 10);
-  const total = protocolos.length;
-  const resolvidos = protocolos.filter((p) => p.status === 'resolvido').length;
-  const abertos = protocolos.filter((p) => EM_ABERTO.includes(p.status)).length;
-  const foraDoPrazo = protocolos.filter(
-    (p) => EM_ABERTO.includes(p.status) && p.due_date && p.due_date < hoje
-  ).length;
-  const taxaResolucao = total > 0 ? `${((resolvidos / total) * 100).toFixed(1)}%` : '0%';
-
-  return { totalProtocolos: total, abertos, resolvidos, foraDoPrazo, taxaResolucao };
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -172,7 +27,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      metrics: computeMetrics(protocolos),
+      metrics: computeProtocoloMetrics(protocolos),
       protocolos,
     });
   } catch (err: any) {
@@ -263,10 +118,11 @@ export async function POST(req: NextRequest) {
     // Modo dev / fallback (número de protocolo simulado)
     const ano = new Date().getFullYear();
     const seq = String(mockProtocolos.length + 1).padStart(6, '0');
+    const cidId = `cid-${Date.now()}`;
     const newProtocolo: Protocolo = {
       id: `prot-${Date.now()}`,
       organization_id: '00000000-0000-0000-0000-000000000000',
-      contact_id: `cid-${Date.now()}`,
+      contact_id: cidId,
       protocol_number: `${ano}-${seq}`,
       title,
       tipo_manifestacao,
@@ -279,7 +135,7 @@ export async function POST(req: NextRequest) {
       assignee_name,
       created_at: new Date().toISOString(),
       contact: {
-        id: `cid-${Date.now()}`,
+        id: cidId,
         organization_id: '00000000-0000-0000-0000-000000000000',
         name: contact_name || 'Cidadão não identificado',
         bairro,
