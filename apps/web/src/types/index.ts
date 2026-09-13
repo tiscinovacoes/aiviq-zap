@@ -38,8 +38,10 @@ export interface Contact {
   name: string;
   phone?: string;
   email?: string;
+  cpf?: string; // documento do cidadão (opcional)
+  bairro?: string; // bairro/região do cidadão
   avatar_url?: string;
-  company?: string;
+  company?: string; // órgão/entidade, quando a manifestação vem de PJ
   tags: string[];
   assigned_to?: string; // Carteira do atendente
   assigned_user?: UserProfile;
@@ -47,6 +49,10 @@ export interface Contact {
   created_at?: string;
   updated_at?: string;
 }
+
+// No domínio de Ouvidoria, um Contact é sempre um Cidadão. Alias semântico
+// para deixar o código legível sem quebrar as referências existentes.
+export type Cidadao = Contact;
 
 export interface Conversation {
   id: string;
@@ -84,29 +90,53 @@ export interface QuickTemplate {
   shortcut: string;
   title: string;
   content: string;
-  category: 'saudacao' | 'vendas' | 'suporte' | 'cobranca';
+  category: 'saudacao' | 'informacao' | 'encaminhamento' | 'conclusao';
 }
 
-export type DealStage =
-  | 'lead_qualificado'
-  | 'contato_inicial'
-  | 'demonstracao'
-  | 'proposta_enviada'
-  | 'fechado_ganho'
-  | 'perdido';
+// =====================================================================
+// OUVIDORIA / PROTOCOLOS — atendimento ao cidadão. Substitui o modelo
+// comercial de "Deal / funil de vendas". Um Protocolo é cada
+// manifestação/pedido de um cidadão que tramita no CRM.
+// =====================================================================
 
-export interface Deal {
+// Situação do protocolo (fluxo de atendimento — substitui o funil de vendas)
+export type ProtocoloStatus =
+  | 'aberto'             // recebido, aguardando triagem
+  | 'em_analise'         // em triagem / classificação
+  | 'em_atendimento'     // encaminhado ao órgão responsável
+  | 'aguardando_cidadao' // pendência com o cidadão
+  | 'resolvido'          // concluído / respondido
+  | 'arquivado';         // encerrado sem tramitação (terminal)
+
+// Tipo de manifestação — Lei 13.460/2017 (Defesa do Usuário de Serviços Públicos)
+export type TipoManifestacao =
+  | 'denuncia'
+  | 'reclamacao'
+  | 'solicitacao'
+  | 'sugestao'
+  | 'elogio'
+  | 'informacao'; // pedido de acesso à informação (SIC)
+
+export type Prioridade = 'baixa' | 'media' | 'alta' | 'urgente';
+
+export interface Protocolo {
   id: string;
   organization_id: string;
   contact_id: string;
-  contact?: Contact;
-  title: string;
-  value: number; // Em centavos ou valor float em Reais
-  stage: DealStage;
-  probability: number; // 0 - 100%
-  expected_close_date?: string;
-  assignee_id?: string;
+  contact?: Cidadao; // cidadão que abriu o protocolo
+  protocol_number: string; // número público rastreável, ex: 2026-000123
+  title: string; // assunto / resumo da manifestação
+  tipo_manifestacao: TipoManifestacao;
+  categoria?: string; // área / tema: Saúde, Iluminação, Saneamento...
+  orgao_responsavel?: string; // secretaria / órgão que trata
+  bairro?: string;
+  prioridade: Prioridade;
+  status: ProtocoloStatus;
+  due_date?: string; // prazo legal / SLA (ISO date)
+  assignee_id?: string; // servidor responsável
   assignee_name?: string;
+  notes?: string;
   created_at: string;
   updated_at?: string;
+  closed_at?: string; // data de resolução / encerramento
 }

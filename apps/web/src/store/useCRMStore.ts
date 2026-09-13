@@ -1,17 +1,19 @@
 import { create } from 'zustand';
-import { Contact, Deal, DealStage } from '@/types';
+import { Contact, Protocolo, ProtocoloStatus } from '@/types';
 import { crmService } from '@/services/crmService';
+
+interface OuvidoriaMetrics {
+  totalProtocolos: number;
+  abertos: number;
+  resolvidos: number;
+  foraDoPrazo: number;
+  taxaResolucao: string;
+}
 
 interface CRMState {
   contacts: Contact[];
-  deals: Deal[];
-  metrics: {
-    totalPipelineValue: number;
-    wonValue: number;
-    averageTicket: number;
-    totalDeals: number;
-    conversionRate: string;
-  };
+  protocolos: Protocolo[];
+  metrics: OuvidoriaMetrics;
   isLoading: boolean;
   error: string | null;
   selectedTag: string;
@@ -21,21 +23,21 @@ interface CRMState {
   setSelectedTag: (tag: string) => void;
   setSearchQuery: (query: string) => void;
   fetchContacts: () => Promise<void>;
-  fetchDeals: () => Promise<void>;
-  moveDealStage: (dealId: string, newStage: DealStage) => Promise<void>;
-  addDeal: (dealData: Partial<Deal>) => Promise<void>;
+  fetchProtocolos: () => Promise<void>;
+  moveProtocoloStatus: (protocoloId: string, newStatus: ProtocoloStatus) => Promise<void>;
+  addProtocolo: (protocoloData: Partial<Protocolo> & { contact_name?: string }) => Promise<void>;
   addContact: (contactData: Partial<Contact>) => Promise<void>;
 }
 
 export const useCRMStore = create<CRMState>((set, get) => ({
   contacts: [],
-  deals: [],
+  protocolos: [],
   metrics: {
-    totalPipelineValue: 0,
-    wonValue: 0,
-    averageTicket: 0,
-    totalDeals: 0,
-    conversionRate: '0%',
+    totalProtocolos: 0,
+    abertos: 0,
+    resolvidos: 0,
+    foraDoPrazo: 0,
+    taxaResolucao: '0%',
   },
   isLoading: false,
   error: null,
@@ -65,38 +67,38 @@ export const useCRMStore = create<CRMState>((set, get) => ({
     }
   },
 
-  fetchDeals: async () => {
+  fetchProtocolos: async () => {
     set({ isLoading: true, error: null });
     try {
-      const { deals, metrics } = await crmService.getDeals();
-      set({ deals, metrics, isLoading: false });
+      const { protocolos, metrics } = await crmService.getProtocolos();
+      set({ protocolos, metrics, isLoading: false });
     } catch (err: any) {
       set({ error: err.message, isLoading: false });
     }
   },
 
-  moveDealStage: async (dealId, newStage) => {
-    // Optimistic update
-    const previousDeals = get().deals;
-    const updatedDeals = previousDeals.map((d) =>
-      d.id === dealId ? { ...d, stage: newStage } : d
+  moveProtocoloStatus: async (protocoloId, newStatus) => {
+    // Atualização otimista
+    const previous = get().protocolos;
+    const updated = previous.map((p) =>
+      p.id === protocoloId ? { ...p, status: newStatus } : p
     );
-    set({ deals: updatedDeals });
+    set({ protocolos: updated });
 
     try {
-      await crmService.updateDealStage(dealId, newStage);
-      // Refresh metrics
-      get().fetchDeals();
+      await crmService.updateProtocoloStatus(protocoloId, newStatus);
+      // Atualiza as métricas
+      get().fetchProtocolos();
     } catch (err: any) {
-      // Revert if error
-      set({ deals: previousDeals, error: err.message });
+      // Reverte em caso de erro
+      set({ protocolos: previous, error: err.message });
     }
   },
 
-  addDeal: async (dealData) => {
+  addProtocolo: async (protocoloData) => {
     try {
-      await crmService.createDeal(dealData);
-      get().fetchDeals();
+      await crmService.createProtocolo(protocoloData);
+      get().fetchProtocolos();
     } catch (err: any) {
       set({ error: err.message });
     }

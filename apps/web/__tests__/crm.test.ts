@@ -1,84 +1,105 @@
 import { describe, it, expect } from 'vitest';
-import { Deal, Contact } from '@/types';
+import { Protocolo, Cidadao } from '@/types';
 
-describe('CRM & Contacts Management (Unit Tests)', () => {
-  const mockDeals: Deal[] = [
+describe('Ouvidoria — Protocolos & Cidadãos (Unit Tests)', () => {
+  // Situações não-terminais (protocolo ainda em tramitação)
+  const EM_ABERTO = ['aberto', 'em_analise', 'em_atendimento', 'aguardando_cidadao'];
+
+  const mockProtocolos: Protocolo[] = [
     {
-      id: 'd1',
+      id: 'p1',
       organization_id: 'org-1',
       contact_id: 'c1',
-      title: 'Plano Pro 10 Usuários',
-      value: 10680,
-      stage: 'proposta_enviada',
-      probability: 80,
-      created_at: '2026-09-11T10:00:00Z',
+      protocol_number: '2026-000001',
+      title: 'Buraco na via causando acidentes',
+      tipo_manifestacao: 'reclamacao',
+      prioridade: 'alta',
+      status: 'em_atendimento',
+      due_date: '2026-09-01',
+      created_at: '2026-08-20T10:00:00Z',
     },
     {
-      id: 'd2',
+      id: 'p2',
       organization_id: 'org-1',
       contact_id: 'c2',
-      title: 'Plano Starter Anual',
-      value: 4500,
-      stage: 'fechado_ganho',
-      probability: 100,
-      created_at: '2026-09-11T11:00:00Z',
+      protocol_number: '2026-000002',
+      title: 'Elogio à equipe de vacinação',
+      tipo_manifestacao: 'elogio',
+      prioridade: 'baixa',
+      status: 'resolvido',
+      due_date: '2026-08-25',
+      created_at: '2026-08-10T11:00:00Z',
+      closed_at: '2026-08-24T09:00:00Z',
     },
     {
-      id: 'd3',
+      id: 'p3',
       organization_id: 'org-1',
       contact_id: 'c3',
-      title: 'Contrato Customizado',
-      value: 15000,
-      stage: 'perdido',
-      probability: 0,
-      created_at: '2026-09-11T12:00:00Z',
+      protocol_number: '2026-000003',
+      title: 'Solicitação de poda de árvore',
+      tipo_manifestacao: 'solicitacao',
+      prioridade: 'media',
+      status: 'aberto',
+      due_date: '2999-12-31',
+      created_at: '2026-09-12T12:00:00Z',
     },
   ];
 
-  it('deve calcular o valor total ativo no pipeline excluindo negócios perdidos', () => {
-    const activeDeals = mockDeals.filter((d) => d.stage !== 'perdido');
-    const totalPipeline = activeDeals.reduce((sum, d) => sum + d.value, 0);
-
-    expect(totalPipeline).toBe(15180);
+  it('conta corretamente os protocolos em aberto (situações não-terminais)', () => {
+    const abertos = mockProtocolos.filter((p) => EM_ABERTO.includes(p.status));
+    expect(abertos.length).toBe(2);
   });
 
-  it('deve calcular corretamente o ticket médio dos negócios ativos', () => {
-    const activeDeals = mockDeals.filter((d) => d.stage !== 'perdido');
-    const totalPipeline = activeDeals.reduce((sum, d) => sum + d.value, 0);
-    const avgTicket = Math.round(totalPipeline / activeDeals.length);
+  it('calcula a taxa de resolução dos protocolos', () => {
+    const total = mockProtocolos.length;
+    const resolvidos = mockProtocolos.filter((p) => p.status === 'resolvido').length;
+    const taxa = `${((resolvidos / total) * 100).toFixed(1)}%`;
 
-    expect(avgTicket).toBe(7590);
+    expect(resolvidos).toBe(1);
+    expect(taxa).toBe('33.3%');
   });
 
-  it('deve validar transição de estágio do deal para fechado_ganho', () => {
-    let deal = { ...mockDeals[0] };
-    deal.stage = 'fechado_ganho';
-    deal.probability = 100;
+  it('identifica protocolos fora do prazo (SLA vencido e ainda não resolvido)', () => {
+    const hoje = '2026-09-13';
+    const foraDoPrazo = mockProtocolos.filter(
+      (p) => EM_ABERTO.includes(p.status) && p.due_date && p.due_date < hoje
+    );
 
-    expect(deal.stage).toBe('fechado_ganho');
-    expect(deal.probability).toBe(100);
+    expect(foraDoPrazo.length).toBe(1);
+    expect(foraDoPrazo[0].id).toBe('p1');
   });
 
-  it('deve filtrar contatos por tag corporativa com sucesso', () => {
-    const contacts: Contact[] = [
+  it('valida a transição de situação do protocolo para resolvido', () => {
+    const p = { ...mockProtocolos[2] };
+    p.status = 'resolvido';
+    p.closed_at = '2026-09-13T10:00:00Z';
+
+    expect(p.status).toBe('resolvido');
+    expect(p.closed_at).toBeTruthy();
+  });
+
+  it('filtra cidadãos por bairro com sucesso', () => {
+    const cidadaos: Cidadao[] = [
       {
         id: 'c1',
         organization_id: 'org-1',
         name: 'Mariana Silva',
-        tags: ['VIP', 'Lead Quente'],
+        bairro: 'Centro',
+        tags: ['Saúde'],
         custom_attributes: {},
       },
       {
         id: 'c2',
         organization_id: 'org-1',
         name: 'Carlos Eduardo',
-        tags: ['PJ'],
+        bairro: 'Vila Nova',
+        tags: ['Infraestrutura'],
         custom_attributes: {},
       },
     ];
 
-    const vipContacts = contacts.filter((c) => c.tags.includes('VIP'));
-    expect(vipContacts.length).toBe(1);
-    expect(vipContacts[0].name).toBe('Mariana Silva');
+    const doCentro = cidadaos.filter((c) => c.bairro === 'Centro');
+    expect(doCentro.length).toBe(1);
+    expect(doCentro[0].name).toBe('Mariana Silva');
   });
 });

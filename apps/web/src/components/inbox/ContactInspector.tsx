@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Phone, Mail, Briefcase, Plus, Tag, FileText } from 'lucide-react';
+import { Phone, Mail, MapPin, Plus, FileText } from 'lucide-react';
 import { useInboxStore } from '@/store/useInboxStore';
 
 export default function ContactInspector() {
   const { activeConversation } = useInboxStore();
-  const [activeTab, setActiveTab] = useState<'details' | 'notes' | 'deals'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'notes' | 'protocolos'>('details');
   const [notes, setNotes] = useState<string[]>([
-    'Lead altamente interessada em fechar hoje antes do final do mês. Desconto autorizado de até 5% se for pagamento anual.',
+    'Cidadã relatou recorrência do problema há três semanas. Encaminhar prioridade à Secretaria responsável e retornar com previsão de atendimento.',
   ]);
   const [newNote, setNewNote] = useState('');
   const [isAddingNote, setIsAddingNote] = useState(false);
@@ -34,7 +34,7 @@ export default function ContactInspector() {
           {contact?.name.slice(0, 2).toUpperCase() || 'CX'}
         </div>
         <h4 className="font-bold text-slate-900 text-base">{contact?.name}</h4>
-        <p className="text-xs text-slate-500 mt-0.5">{custom.cargo || 'Cliente Cadastrado'}</p>
+        <p className="text-xs text-slate-500 mt-0.5">{custom.cargo || 'Cidadão cadastrado'}</p>
 
         {/* Tags */}
         <div className="flex justify-center gap-1.5 mt-3 flex-wrap">
@@ -42,9 +42,7 @@ export default function ContactInspector() {
             <span
               key={t}
               className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${
-                t === 'VIP'
-                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                  : t === 'Lead Quente'
+                t === 'Urgente'
                   ? 'bg-rose-50 text-rose-700 border-rose-200'
                   : 'bg-emerald-50 text-emerald-700 border-emerald-200'
               }`}
@@ -68,14 +66,14 @@ export default function ContactInspector() {
           Detalhes
         </button>
         <button
-          onClick={() => setActiveTab('deals')}
+          onClick={() => setActiveTab('protocolos')}
           className={`flex-1 py-2.5 text-center font-medium transition-colors ${
-            activeTab === 'deals'
+            activeTab === 'protocolos'
               ? 'text-emerald-700 border-b-2 border-emerald-600 bg-white font-semibold'
               : 'text-slate-500 hover:text-slate-900'
           }`}
         >
-          CRM / Deals
+          Protocolos
         </button>
         <button
           onClick={() => setActiveTab('notes')}
@@ -95,7 +93,7 @@ export default function ContactInspector() {
           <div className="space-y-4">
             <div>
               <h5 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                Informações de Contato
+                Informações do Cidadão
               </h5>
               <div className="space-y-2.5 text-xs text-slate-700">
                 <div className="flex items-center gap-2">
@@ -107,8 +105,8 @@ export default function ContactInspector() {
                   <span>{contact?.email || 'Não informado'}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Briefcase className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{custom.empresa || 'Pessoa Física'}</span>
+                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{contact?.bairro || custom.bairro || 'Bairro não informado'}</span>
                 </div>
               </div>
             </div>
@@ -121,24 +119,28 @@ export default function ContactInspector() {
           </div>
         )}
 
-        {activeTab === 'deals' && (
+        {activeTab === 'protocolos' && (
           <div className="space-y-4">
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-900">Upgrade Plano Pro (10 licenças)</span>
-                <span className="text-emerald-600 font-bold">{custom.deal_value || 'R$ 10.680/ano'}</span>
+                <span className="font-semibold text-slate-900 line-clamp-1">
+                  {custom.protocolo_assunto || 'Iluminação pública queimada'}
+                </span>
+                <span className="font-mono text-[10px] font-semibold text-slate-500 bg-white border border-slate-200 rounded px-1.5 py-0.5">
+                  {custom.protocolo_numero || '2026-000104'}
+                </span>
               </div>
               <p className="text-[11px] text-slate-500">
-                Fase: {custom.deal_stage || 'Proposta Enviada'} (4/5 etapas)
+                Situação: {custom.protocolo_status || 'Em Atendimento'} (3/5 etapas)
               </p>
               <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                <div className="w-4/5 h-full bg-emerald-600 rounded-full" />
+                <div className="w-3/5 h-full bg-emerald-600 rounded-full" />
               </div>
             </div>
 
             <div className="p-3 rounded-lg border border-dashed border-slate-300 text-center">
               <button className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold">
-                + Criar Nova Oportunidade
+                + Abrir Novo Protocolo
               </button>
             </div>
           </div>

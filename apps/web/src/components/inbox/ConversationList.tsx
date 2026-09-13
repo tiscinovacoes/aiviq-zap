@@ -120,7 +120,7 @@ export default function ConversationList() {
                 <div className="flex items-start justify-between mb-1">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-sm text-slate-900">
-                      {conv.contact?.name || 'Cliente'}
+                      {conv.contact?.name || 'Cidadão'}
                     </span>
                     {getChannelBadge(conv.channel_type)}
                   </div>
@@ -139,7 +139,7 @@ export default function ConversationList() {
                         className={`px-1.5 py-0.5 rounded font-medium ${
                           tag === 'VIP'
                             ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                            : tag === 'Lead Quente'
+                            : tag === 'Urgente'
                             ? 'bg-rose-50 text-rose-700 border border-rose-200'
                             : 'bg-slate-100 text-slate-600 border border-slate-200'
                         }`}

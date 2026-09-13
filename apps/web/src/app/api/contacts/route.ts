@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, email, company, tags = [], assigned_to = 'Luca Scandola' } = body;
+    const { name, phone, email, company, cpf, bairro, tags = [], assigned_to = 'Equipe de Ouvidoria' } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Nome do contato é obrigatório' }, { status: 400 });
@@ -129,7 +129,9 @@ export async function POST(req: NextRequest) {
             name: name.trim(),
             phone: phone ? phone.trim() : null,
             email: email ? email.trim() : null,
-            tags: tags.length > 0 ? tags : ['Novo Lead'],
+            tags: tags.length > 0 ? tags : ['Novo Cidadão'],
+            cpf: cpf ? cpf.trim() : null,
+            bairro: bairro ? bairro.trim() : null,
             custom_attributes: { company: company || '' },
           })
           .select()
@@ -150,7 +152,9 @@ export async function POST(req: NextRequest) {
       phone: phone ? phone.trim() : '',
       email: email ? email.trim() : '',
       company: company ? company.trim() : '',
-      tags: tags.length > 0 ? tags : ['Novo Lead'],
+      tags: tags.length > 0 ? tags : ['Novo Cidadão'],
+      cpf: cpf ? cpf.trim() : '',
+      bairro: bairro ? bairro.trim() : '',
       assigned_to,
       custom_attributes: { company: company || '' },
       created_at: new Date().toISOString(),

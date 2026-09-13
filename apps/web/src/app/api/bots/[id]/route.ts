@@ -21,7 +21,7 @@ export async function GET(
     return NextResponse.json({
       success: true,
       botId: params.id,
-      name: 'Qualificação Comercial & Triagem Inteligente',
+      name: 'Triagem de Manifestações da Ouvidoria',
       version: '1',
       updatedAt: new Date().toISOString(),
     });

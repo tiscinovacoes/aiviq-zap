@@ -153,7 +153,7 @@ export default function ReportsDashboardPage() {
 
             <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
               <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
-                <span>Satisfação do Cliente (CSAT)</span>
+                <span>Satisfação do Cidadão (CSAT)</span>
                 <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center">
                   <Star className="w-3.5 h-3.5 fill-current" />
                 </div>
@@ -233,7 +233,7 @@ export default function ReportsDashboardPage() {
               </div>
 
               <div className="text-[11px] text-slate-500">
-                Economia operacional equivalente a 5 atendentes adicionais em horário comercial.
+                Economia operacional equivalente a 5 atendentes adicionais em horário de expediente.
               </div>
             </div>
           </div>

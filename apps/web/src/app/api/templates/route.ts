@@ -9,37 +9,37 @@ let mockTemplates: QuickTemplate[] = [
   {
     id: 'tpl-001',
     shortcut: '/ola',
-    title: 'Boas-vindas Padrão',
-    content: 'Olá! Seja muito bem-vindo(a) à AIVIQ-ZAP. Em que posso te ajudar hoje?',
+    title: 'Boas-vindas da Ouvidoria',
+    content: 'Olá! Você está falando com a Ouvidoria. Em que podemos ajudar hoje?',
     category: 'saudacao',
   },
   {
     id: 'tpl-002',
-    shortcut: '/proposta',
-    title: 'Envio de Proposta Comercial',
-    content: 'Segue o link da proposta comercial personalizada para a sua empresa com vigência imediata e suporte prioritário:',
-    category: 'vendas',
+    shortcut: '/protocolo',
+    title: 'Confirmação de Abertura de Protocolo',
+    content: 'Sua manifestação foi registrada sob o protocolo {{numero_protocolo}}. Você pode acompanhar o andamento por este mesmo canal.',
+    category: 'informacao',
   },
   {
     id: 'tpl-003',
-    shortcut: '/checkout-pro',
-    title: 'Link de Checkout Plano Pro',
-    content: 'Aqui está o seu link seguro para ativação: {{link_checkout}}',
-    category: 'vendas',
+    shortcut: '/encaminhamento',
+    title: 'Encaminhamento ao Órgão Responsável',
+    content: 'Sua solicitação foi encaminhada à {{orgao_responsavel}}. O prazo estimado de retorno é de {{prazo}} dias úteis.',
+    category: 'encaminhamento',
   },
   {
     id: 'tpl-004',
-    shortcut: '/pix',
-    title: 'Dados para Pagamento via Pix',
-    content: 'Chave Pix (CNPJ): {{chave_pix}}. Após o envio, basta anexar o comprovante aqui.',
-    category: 'cobranca',
+    shortcut: '/documentos',
+    title: 'Solicitação de Documentos',
+    content: 'Para dar andamento ao seu protocolo, por favor envie {{documentos}} (foto ou PDF) por aqui.',
+    category: 'informacao',
   },
   {
     id: 'tpl-005',
     shortcut: '/encerrar',
     title: 'Encerramento de Atendimento',
-    content: 'Ficamos felizes em te atender! Caso precise de qualquer outra ajuda, estamos sempre à disposição. Tenha um excelente dia!',
-    category: 'suporte',
+    content: 'Seu protocolo foi concluído. Caso precise de qualquer outra coisa, a Ouvidoria está sempre à disposição. Tenha um excelente dia!',
+    category: 'conclusao',
   },
 ];
 
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { shortcut, title, content, category = 'vendas' } = body;
+    const { shortcut, title, content, category = 'informacao' } = body;
 
     if (!shortcut || !content || !title) {
       return NextResponse.json({ error: 'Atalho, título e conteúdo são obrigatórios' }, { status: 400 });

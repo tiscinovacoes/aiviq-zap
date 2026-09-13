@@ -15,10 +15,19 @@ export async function PATCH(
     const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
 
     // CR-004 T2/T6: whitelist de colunas — impede que `...body` injete
-    // organization_id (mover tenant) ou colunas inexistentes (que quebram o update).
-    const ALLOWED = ['title', 'value', 'stage', 'probability', 'expected_close_date', 'assignee_id', 'assignee_name', 'contact_id', 'notes'] as const;
+    // organization_id (mover tenant) ou colunas inexistentes.
+    const ALLOWED = [
+      'title', 'status', 'tipo_manifestacao', 'categoria', 'orgao_responsavel',
+      'bairro', 'prioridade', 'due_date', 'assignee_id', 'assignee_name',
+      'contact_id', 'notes', 'closed_at',
+    ] as const;
     const patch: Record<string, unknown> = {};
     for (const k of ALLOWED) if (k in body) patch[k] = body[k];
+
+    // Ao resolver, carimba a data de encerramento automaticamente.
+    if (patch.status === 'resolvido' && !('closed_at' in patch)) {
+      patch.closed_at = new Date().toISOString();
+    }
 
     if (!isPlaceholder) {
       const { data: { user } } = await supabase.auth.getUser();
@@ -26,8 +35,8 @@ export async function PATCH(
         return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
       }
 
-      const { data: updatedDeal, error } = await supabase
-        .from('deals')
+      const { data: updatedProtocolo, error } = await supabase
+        .from('protocolos')
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', id)
         .select()
@@ -36,20 +45,20 @@ export async function PATCH(
       // CR-004 T2: banco conectado → erro do banco é ERRO (não "simulado").
       if (error) {
         return NextResponse.json(
-          { error: 'Falha ao atualizar oportunidade', message: error.message },
+          { error: 'Falha ao atualizar protocolo', message: error.message },
           { status: 500 }
         );
       }
-      if (!updatedDeal) {
+      if (!updatedProtocolo) {
         return NextResponse.json(
-          { error: 'Oportunidade não encontrada' },
+          { error: 'Protocolo não encontrado' },
           { status: 404 }
         );
       }
       return NextResponse.json({
         success: true,
-        message: 'Oportunidade atualizada com sucesso',
-        updated: updatedDeal,
+        message: 'Protocolo atualizado com sucesso',
+        updated: updatedProtocolo,
       });
     }
 
@@ -57,14 +66,13 @@ export async function PATCH(
     return NextResponse.json({
       success: true,
       simulated: true,
-      message: 'Oportunidade atualizada (modo simulado — banco não configurado)',
+      message: 'Protocolo atualizado (modo simulado — banco não configurado)',
       updated: { id, ...patch, updated_at: new Date().toISOString() },
     });
   } catch (err: any) {
     return NextResponse.json(
-      { error: 'Erro ao atualizar oportunidade', message: err.message },
+      { error: 'Erro ao atualizar protocolo', message: err.message },
       { status: 500 }
     );
   }
 }
-

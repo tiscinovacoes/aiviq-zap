@@ -8,13 +8,10 @@ import {
   Plus,
   Phone,
   Mail,
-  Briefcase,
-  Tag,
+  MapPin,
   MessageSquare,
   Filter,
-  Download,
   Loader2,
-  Check,
 } from 'lucide-react';
 import NavigationRail from '@/components/layout/NavigationRail';
 import { useCRMStore } from '@/store/useCRMStore';
@@ -35,8 +32,9 @@ export default function ContactsPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [company, setCompany] = useState('');
-  const [tagInput, setTagInput] = useState('Lead Quente');
+  const [cpf, setCpf] = useState('');
+  const [bairro, setBairro] = useState('');
+  const [tagInput, setTagInput] = useState('Saúde');
 
   useEffect(() => {
     fetchContacts();
@@ -50,19 +48,21 @@ export default function ContactsPage() {
       name: name.trim(),
       phone: phone.trim(),
       email: email.trim(),
-      company: company.trim(),
+      cpf: cpf.trim(),
+      bairro: bairro.trim(),
       tags: [tagInput],
-      assigned_to: 'Lucas R.',
+      assigned_to: 'Equipe de Ouvidoria',
     });
 
     setName('');
     setPhone('');
     setEmail('');
-    setCompany('');
+    setCpf('');
+    setBairro('');
     setIsModalOpen(false);
   };
 
-  const allTags = ['all', 'VIP', 'Lead Quente', 'Enterprise', 'PJ', 'Cliente Ativo'];
+  const allTags = ['all', 'Urgente', 'Saúde', 'Infraestrutura', 'Iluminação', 'Zeladoria Urbana'];
 
   return (
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
@@ -78,9 +78,9 @@ export default function ContactsPage() {
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-bold text-base text-slate-900">Contatos & Carteiras</h1>
+              <h1 className="font-bold text-base text-slate-900">Cidadãos & Carteiras</h1>
               <p className="text-xs text-slate-500">
-                Base unificada de clientes e atendentes responsáveis
+                Base unificada de cidadãos e servidores responsáveis pelo atendimento
               </p>
             </div>
           </div>
@@ -91,7 +91,7 @@ export default function ContactsPage() {
               className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
             >
               <Plus className="w-4 h-4" />
-              <span>Novo Contato</span>
+              <span>Novo Cidadão</span>
             </button>
           </div>
         </header>
@@ -105,7 +105,7 @@ export default function ContactsPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar por nome, telefone, email ou empresa..."
+              placeholder="Buscar por nome, telefone, e-mail ou bairro..."
               className="w-full h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500 transition-colors"
             />
           </div>
@@ -117,7 +117,7 @@ export default function ContactsPage() {
               <button
                 key={tag}
                 onClick={() => setSelectedTag(tag)}
-                className={`px-3 py-1 rounded-full text-xs transition-colors capitalize ${
+                className={`px-3 py-1 rounded-full text-xs transition-colors capitalize whitespace-nowrap ${
                   selectedTag === tag
                     ? 'bg-emerald-600 text-white font-semibold shadow-xs'
                     : 'bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200'
@@ -129,17 +129,17 @@ export default function ContactsPage() {
           </div>
         </div>
 
-        {/* Contacts Table */}
+        {/* Citizens Table */}
         <div className="flex-1 overflow-y-auto p-6">
           <div className="w-full bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider font-semibold">
-                  <th className="py-3.5 px-6">Contato</th>
-                  <th className="py-3.5 px-6">Empresa</th>
+                  <th className="py-3.5 px-6">Cidadão</th>
+                  <th className="py-3.5 px-6">Bairro</th>
                   <th className="py-3.5 px-6">Telefone (WhatsApp)</th>
                   <th className="py-3.5 px-6">Tags</th>
-                  <th className="py-3.5 px-6">Carteira (Atendente)</th>
+                  <th className="py-3.5 px-6">Responsável</th>
                   <th className="py-3.5 px-6 text-right">Ações</th>
                 </tr>
               </thead>
@@ -149,14 +149,14 @@ export default function ContactsPage() {
                     <td colSpan={6} className="py-12 text-center text-slate-400">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
-                        <span>Carregando contatos...</span>
+                        <span>Carregando cidadãos...</span>
                       </div>
                     </td>
                   </tr>
                 ) : contacts.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-12 text-center text-slate-400">
-                      Nenhum contato encontrado.
+                      Nenhum cidadão encontrado.
                     </td>
                   </tr>
                 ) : (
@@ -170,17 +170,17 @@ export default function ContactsPage() {
                           </div>
                           <div>
                             <p className="font-semibold text-slate-900 text-sm">{contact.name}</p>
-                            <p className="text-[11px] text-slate-500">{contact.email || 'Sem email'}</p>
+                            <p className="text-[11px] text-slate-500">{contact.email || 'Sem e-mail'}</p>
                           </div>
                         </div>
                       </td>
 
-                      {/* Company */}
+                      {/* Bairro */}
                       <td className="py-4 px-6 text-slate-700">
-                        {contact.company ? (
+                        {contact.bairro ? (
                           <div className="flex items-center gap-1.5">
-                            <Briefcase className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{contact.company}</span>
+                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{contact.bairro}</span>
                           </div>
                         ) : (
                           <span className="text-slate-400">—</span>
@@ -206,11 +206,9 @@ export default function ContactsPage() {
                             <span
                               key={t}
                               className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                                t === 'VIP'
-                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                  : t === 'Lead Quente'
+                                t === 'Urgente'
                                   ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               }`}
                             >
                               {t}
@@ -219,11 +217,11 @@ export default function ContactsPage() {
                         </div>
                       </td>
 
-                      {/* Wallet Assignee */}
+                      {/* Assignee */}
                       <td className="py-4 px-6">
                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-xs text-slate-700 font-medium">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          <span>{contact.assigned_to || 'Geral'}</span>
+                          <span>{contact.assigned_to || 'Ouvidoria'}</span>
                         </div>
                       </td>
 
@@ -234,7 +232,7 @@ export default function ContactsPage() {
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold transition-colors shadow-2xs"
                         >
                           <MessageSquare className="w-3.5 h-3.5" />
-                          <span>Conversar</span>
+                          <span>Atender</span>
                         </Link>
                       </td>
                     </tr>
@@ -246,13 +244,13 @@ export default function ContactsPage() {
         </div>
       </main>
 
-      {/* Modal Novo Contato */}
+      {/* Modal Novo Cidadão */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
           <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl p-6 shadow-xl relative text-slate-900">
             <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
               <Users className="w-5 h-5 text-emerald-600" />
-              <span>Cadastrar Novo Contato</span>
+              <span>Cadastrar Novo Cidadão</span>
             </h3>
 
             <form onSubmit={handleCreateContact} className="space-y-4">
@@ -270,17 +268,31 @@ export default function ContactsPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Empresa / Organização
-                </label>
-                <input
-                  type="text"
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  placeholder="Ex: Tech Innovations Ltda"
-                  className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                    CPF
+                  </label>
+                  <input
+                    type="text"
+                    value={cpf}
+                    onChange={(e) => setCpf(e.target.value)}
+                    placeholder="000.000.000-00"
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                    Bairro
+                  </label>
+                  <input
+                    type="text"
+                    value={bairro}
+                    onChange={(e) => setBairro(e.target.value)}
+                    placeholder="Ex: Centro"
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -304,7 +316,7 @@ export default function ContactsPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="amanda@tech.com"
+                    placeholder="amanda@email.com"
                     className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500"
                   />
                 </div>
@@ -319,11 +331,11 @@ export default function ContactsPage() {
                   onChange={(e) => setTagInput(e.target.value)}
                   className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-emerald-500"
                 >
-                  <option value="Lead Quente">Lead Quente</option>
-                  <option value="VIP">VIP</option>
-                  <option value="Enterprise">Enterprise</option>
-                  <option value="PJ">PJ</option>
-                  <option value="Novo Lead">Novo Lead</option>
+                  <option value="Saúde">Saúde</option>
+                  <option value="Infraestrutura">Infraestrutura</option>
+                  <option value="Iluminação">Iluminação</option>
+                  <option value="Zeladoria Urbana">Zeladoria Urbana</option>
+                  <option value="Urgente">Urgente</option>
                 </select>
               </div>
 
@@ -339,7 +351,7 @@ export default function ContactsPage() {
                   type="submit"
                   className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors shadow-xs"
                 >
-                  Salvar Contato
+                  Salvar Cidadão
                 </button>
               </div>
             </form>

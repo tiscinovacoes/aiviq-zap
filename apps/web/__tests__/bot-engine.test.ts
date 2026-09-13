@@ -88,7 +88,7 @@ describe('Bot Execution Engine (walkFlowForward)', () => {
           blocks: [
             { id: 'b4', type: 'text', content: { text: 'Ótimo, {{nome}}, transferindo para nosso consultor comercial...' } },
             { id: 'b5', type: 'assign_to_agent', options: { strategy: 'round_robin', agentName: 'Consultor Enterprise' } },
-            { id: 'b6', type: 'add_label', options: { labels: ['Lead Quente', 'WhatsApp'] } },
+            { id: 'b6', type: 'add_label', options: { labels: ['Urgente', 'WhatsApp'] } },
           ],
         },
       ],
@@ -146,7 +146,7 @@ describe('Bot Execution Engine (walkFlowForward)', () => {
     });
     expect(step2.sideEffects[1]).toEqual({
       kind: 'add_label',
-      labels: ['Lead Quente', 'WhatsApp'],
+      labels: ['Urgente', 'WhatsApp'],
     });
     expect(step2.isCompleted).toBe(true);
   });

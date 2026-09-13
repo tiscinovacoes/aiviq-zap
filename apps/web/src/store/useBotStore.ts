@@ -64,7 +64,7 @@ const defaultMockBot: BotV1 = {
   version: '1',
   id: 'bot_qualifica_01',
   accountId: 1,
-  name: 'Qualificação Comercial & Triagem Inteligente',
+  name: 'Triagem de Manifestações da Ouvidoria',
   events: [
     {
       id: 'event_start_01',
@@ -82,7 +82,7 @@ const defaultMockBot: BotV1 = {
         {
           id: 'b_welcome_txt',
           type: 'text',
-          content: { text: 'Olá! 👋 Bem-vindo ao atendimento da *AIVIQ-ZAP*.' },
+          content: { text: 'Olá! 👋 Você está na *Ouvidoria Municipal*.' },
         },
         {
           id: 'b_welcome_ask_name',
@@ -112,7 +112,7 @@ const defaultMockBot: BotV1 = {
           type: 'choice_input',
           options: { isMultiple: false, variableId: 'departamento' },
           items: [
-            { id: 'opt_vendas', content: 'Quero Contratar / Planos', outgoingEdgeId: 'edge_choice_vendas' },
+            { id: 'opt_vendas', content: 'Registrar uma Manifestação', outgoingEdgeId: 'edge_choice_vendas' },
             { id: 'opt_suporte', content: 'Suporte Técnico', outgoingEdgeId: 'edge_choice_suporte' },
             { id: 'opt_duvidas', content: 'Tirar Dúvidas Gerais', outgoingEdgeId: 'edge_choice_duvidas' },
           ],
@@ -121,23 +121,23 @@ const defaultMockBot: BotV1 = {
     },
     {
       id: 'group_sales',
-      title: '3. Encaminhamento Comercial',
+      title: '3. Registro de Manifestação',
       graphCoordinates: { x: 980, y: 30 },
       blocks: [
         {
           id: 'b_sales_msg',
           type: 'text',
-          content: { text: 'Excelente, *{{nome}}*! Nossos planos começam com teste gratuito de 7 dias com WhatsApp oficial.' },
+          content: { text: 'Certo, *{{nome}}*! Vou registrar sua manifestação e gerar um número de protocolo para acompanhamento.' },
         },
         {
           id: 'b_sales_assign',
           type: 'assign_to_agent',
-          options: { strategy: 'round_robin', agentName: 'Consultor Comercial Sênior' },
+          options: { strategy: 'round_robin', agentName: 'Servidor da Ouvidoria' },
         },
         {
           id: 'b_sales_label',
           type: 'add_label',
-          options: { labels: ['Lead Quente', 'WhatsApp Cloud'] },
+          options: { labels: ['Urgente', 'WhatsApp Cloud'] },
         },
       ],
     },
@@ -149,12 +149,12 @@ const defaultMockBot: BotV1 = {
         {
           id: 'b_supp_msg',
           type: 'text',
-          content: { text: 'Entendido, *{{nome}}*. Estou transferindo sua conversa para nosso time de Engenharia e Suporte.' },
+          content: { text: 'Entendido, *{{nome}}*. Estou transferindo sua conversa para a equipe de atendimento.' },
         },
         {
           id: 'b_supp_assign',
           type: 'assign_to_agent',
-          options: { strategy: 'team', agentName: 'Equipe de Suporte Técnico N1' },
+          options: { strategy: 'team', agentName: 'Equipe de Atendimento' },
         },
         {
           id: 'b_supp_label',
@@ -328,14 +328,14 @@ export const useBotStore = create<BotEditorState>((set, get) => ({
         newBlock = {
           id: blockId,
           type: 'assign_to_agent',
-          options: { strategy: 'round_robin', agentName: 'Fila Comercial' },
+          options: { strategy: 'round_robin', agentName: 'Fila da Ouvidoria' },
         };
         break;
       case 'add_label':
         newBlock = {
           id: blockId,
           type: 'add_label',
-          options: { labels: ['Novo Lead'] },
+          options: { labels: ['Novo Protocolo'] },
         };
         break;
       case 'http_request':

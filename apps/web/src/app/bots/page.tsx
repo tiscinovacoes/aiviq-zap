@@ -309,7 +309,7 @@ export default function BotsDashboardPage() {
                   type="text"
                   value={newBotName}
                   onChange={(e) => setNewBotName(e.target.value)}
-                  placeholder="Ex: Triagem Comercial WhatsApp"
+                  placeholder="Ex: Triagem de Manifestações"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500"
                 />
               </div>
@@ -320,7 +320,7 @@ export default function BotsDashboardPage() {
                   {[
                     {
                       name: 'Qualificação SDR & Agendamento',
-                      desc: 'Pergunta nome, segmento, budget e transborda para comercial.',
+                      desc: 'Pergunta nome e assunto, gera o protocolo e encaminha ao órgão responsável.',
                     },
                     {
                       name: 'Triagem & Suporte N1',

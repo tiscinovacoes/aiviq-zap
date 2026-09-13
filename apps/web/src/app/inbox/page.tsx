@@ -60,7 +60,7 @@ export default function InboxPage() {
               Selecione uma conversa para iniciar o atendimento
             </h3>
             <p className="text-xs text-slate-500 max-w-sm">
-              Visualize o histórico em tempo real, responda clientes por WhatsApp, Instagram ou Webchat e acione copilotos de IA.
+              Visualize o histórico em tempo real, responda cidadãos por WhatsApp, Instagram ou Webchat e acione copilotos de IA.
             </p>
           </div>
         )}

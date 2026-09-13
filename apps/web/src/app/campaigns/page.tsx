@@ -48,10 +48,10 @@ export default function CampaignsPage() {
   const [formData, setFormData] = useState({
     name: '',
     channel: 'WhatsApp Cloud Oficial',
-    messageText: 'Olá {{nome}}! Temos uma condição exclusiva de renovação para o seu plano da AIVIQ-ZAP. Responda para saber mais.',
-    tags: ['Cliente Ativo'],
+    messageText: 'Olá {{nome}}! A Prefeitura informa: [escreva aqui o comunicado]. Em caso de dúvidas, responda por este canal.',
+    tags: ['Comunicado'],
     totalContacts: 1850,
-    botToTriggerOnReply: 'Qualificação Comercial & Triagem Inteligente',
+    botToTriggerOnReply: 'Triagem de Manifestações da Ouvidoria',
     scheduledAt: '',
     avoidDuplicates: true,
     ddiPlus55: true,
@@ -101,7 +101,7 @@ export default function CampaignsPage() {
             </div>
             <div>
               <h1 className="text-base font-bold text-slate-900 tracking-tight">
-                Disparo em Massa & Campanhas
+                Comunicados & Disparos
               </h1>
               <p className="text-xs text-slate-500">
                 Transmissão em escala no WhatsApp Cloud Oficial com gatilhos de chatbot
@@ -206,7 +206,7 @@ export default function CampaignsPage() {
                 <span className="text-2xl font-black text-slate-900">
                   {metrics?.avgReplyRate ?? '31.4%'}
                 </span>
-                <span className="text-xs text-indigo-700 font-medium">leads engajados</span>
+                <span className="text-xs text-indigo-700 font-medium">cidadãos engajados</span>
               </div>
               <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1">
                 <Bot className="w-3 h-3 text-indigo-600" /> Chatbot acionado automaticamente
@@ -449,7 +449,7 @@ export default function CampaignsPage() {
                       Segmentação por Etiquetas
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {['Cliente Ativo', 'Lead Inbound', 'SaaS', 'CRM', 'Ex-Cliente'].map((tag) => {
+                      {['Saúde', 'Infraestrutura', 'Iluminação', 'Zeladoria Urbana', 'Assistência Social'].map((tag) => {
                         const isSelected = formData.tags.includes(tag);
                         return (
                           <button
@@ -518,8 +518,8 @@ export default function CampaignsPage() {
                       }
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-emerald-500"
                     >
-                      <option value="Qualificação Comercial & Triagem Inteligente">
-                        🤖 Qualificação Comercial & Triagem Inteligente (Recomendado)
+                      <option value="Triagem de Manifestações da Ouvidoria">
+                        🤖 Triagem de Manifestações da Ouvidoria (Recomendado)
                       </option>
                       <option value="FAQ & Atendimento de Nível 1">
                         🤖 FAQ & Atendimento de Nível 1

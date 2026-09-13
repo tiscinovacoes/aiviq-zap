@@ -18,7 +18,7 @@ interface BotSummary {
 const mockBots: BotSummary[] = [
   {
     id: 'bot_qualifica_01',
-    name: 'Qualificação Comercial & Triagem Inteligente',
+    name: 'Triagem de Manifestações da Ouvidoria',
     status: 'active',
     channels: ['WhatsApp Cloud Oficial', 'Webchat'],
     groupsCount: 4,
@@ -29,7 +29,7 @@ const mockBots: BotSummary[] = [
   },
   {
     id: 'bot_suporte_n1',
-    name: 'FAQ & Atendimento de Nível 1',
+    name: 'FAQ & Informações ao Cidadão',
     status: 'active',
     channels: ['WhatsApp Cloud Oficial'],
     groupsCount: 6,
@@ -40,7 +40,7 @@ const mockBots: BotSummary[] = [
   },
   {
     id: 'bot_fora_expediente',
-    name: 'Atendimento Fora do Horário Comercial',
+    name: 'Atendimento Fora do Expediente',
     status: 'paused',
     channels: ['WhatsApp Cloud Oficial', 'Instagram Direct'],
     groupsCount: 3,

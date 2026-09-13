@@ -32,12 +32,12 @@ export default function NavigationRail() {
     {
       href: '/contacts',
       icon: Users,
-      title: 'Contatos & Carteiras',
+      title: 'Cidadãos & Carteiras',
     },
     {
       href: '/crm',
       icon: Briefcase,
-      title: 'CRM & Funil de Vendas (Kanban)',
+      title: 'CRM & Protocolos (Kanban)',
     },
     {
       href: '/bots',
@@ -47,7 +47,7 @@ export default function NavigationRail() {
     {
       href: '/campaigns',
       icon: Send,
-      title: 'Disparo em Massa & Campanhas',
+      title: 'Comunicados & Disparos',
     },
     {
       href: '/reports',

@@ -1,4 +1,4 @@
-import { Contact, Deal, DealStage } from '@/types';
+import { Contact, Protocolo, ProtocoloStatus } from '@/types';
 
 export const crmService = {
   async getContacts(params?: { tag?: string; assigned_to?: string; q?: string }): Promise<Contact[]> {
@@ -8,7 +8,7 @@ export const crmService = {
     if (params?.q) search.set('q', params.q);
 
     const res = await fetch(`/api/contacts?${search.toString()}`);
-    if (!res.ok) throw new Error('Falha ao obter contatos');
+    if (!res.ok) throw new Error('Falha ao obter cidadãos');
     const data = await res.json();
     return data.contacts || [];
   },
@@ -19,35 +19,35 @@ export const crmService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(contactData),
     });
-    if (!res.ok) throw new Error('Falha ao criar contato');
+    if (!res.ok) throw new Error('Falha ao cadastrar cidadão');
     const data = await res.json();
     return data.contact;
   },
 
-  async getDeals(): Promise<{ deals: Deal[]; metrics: any }> {
-    const res = await fetch('/api/crm/deals');
-    if (!res.ok) throw new Error('Falha ao obter pipeline do CRM');
+  async getProtocolos(): Promise<{ protocolos: Protocolo[]; metrics: any }> {
+    const res = await fetch('/api/crm/protocolos');
+    if (!res.ok) throw new Error('Falha ao obter protocolos da ouvidoria');
     const data = await res.json();
-    return { deals: data.deals || [], metrics: data.metrics || {} };
+    return { protocolos: data.protocolos || [], metrics: data.metrics || {} };
   },
 
-  async createDeal(dealData: Partial<Deal>): Promise<Deal> {
-    const res = await fetch('/api/crm/deals', {
+  async createProtocolo(protocoloData: Partial<Protocolo> & { contact_name?: string }): Promise<Protocolo> {
+    const res = await fetch('/api/crm/protocolos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dealData),
+      body: JSON.stringify(protocoloData),
     });
-    if (!res.ok) throw new Error('Falha ao criar oportunidade');
+    if (!res.ok) throw new Error('Falha ao abrir protocolo');
     const data = await res.json();
-    return data.deal;
+    return data.protocolo;
   },
 
-  async updateDealStage(dealId: string, stage: DealStage): Promise<void> {
-    const res = await fetch(`/api/crm/deals/${dealId}`, {
+  async updateProtocoloStatus(protocoloId: string, status: ProtocoloStatus): Promise<void> {
+    const res = await fetch(`/api/crm/protocolos/${protocoloId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage }),
+      body: JSON.stringify({ status }),
     });
-    if (!res.ok) throw new Error('Falha ao atualizar fase da oportunidade');
+    if (!res.ok) throw new Error('Falha ao atualizar situação do protocolo');
   },
 };

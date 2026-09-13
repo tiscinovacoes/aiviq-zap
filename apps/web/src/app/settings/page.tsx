@@ -77,7 +77,7 @@ export default function SettingsPage() {
   const [companyCnpj, setCompanyCnpj] = useState('48.912.304/0001-92');
   const [timeZone, setTimeZone] = useState('America/Sao_Paulo');
   const [businessHours, setBusinessHours] = useState('Segunda a Sexta: 08:00 às 18:00 • Sábado: 09:00 às 13:00');
-  const [awayMessage, setAwayMessage] = useState('Olá! No momento estamos fora do nosso horário de atendimento comercial. Deixe sua mensagem e retornaremos assim que iniciarmos o expediente!');
+  const [awayMessage, setAwayMessage] = useState('Olá! No momento estamos fora do nosso horário de expediente. Deixe sua mensagem e retornaremos assim que iniciarmos o expediente!');
 
   // ================= Team State =================
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([
@@ -96,7 +96,7 @@ export default function SettingsPage() {
   const [aiCreativity, setAiCreativity] = useState(0.4);
   const [autoTriage, setAutoTriage] = useState(true);
   const [aiPrompt, setAiPrompt] = useState(
-    `Você é a AIVIQ IA, assistente virtual inteligente da empresa. Seja cordial, direto, execute a triagem do cliente com brevidade e direcione os casos complexos para os atendentes humanos.`
+    `Você é a AIVIQ IA, assistente virtual da Ouvidoria Municipal. Seja cordial, direto, execute a triagem do cidadão com brevidade e direcione os casos complexos para os atendentes humanos.`
   );
 
   // ================= Notification State =================
@@ -1044,7 +1044,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700">Horário de Atendimento Comercial</label>
+                    <label className="text-xs font-bold text-slate-700">Horário de Expediente</label>
                     <input
                       type="text"
                       value={businessHours}
@@ -1066,7 +1066,7 @@ export default function SettingsPage() {
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none resize-none leading-relaxed"
                   />
                   <span className="text-[11px] text-slate-400">
-                    Disparada automaticamente no WhatsApp para clientes que entrarem em contato fora do horário comercial configurado.
+                    Disparada automaticamente no WhatsApp para cidadãos que entrarem em contato fora do horário de expediente configurado.
                   </span>
                 </div>
               </div>
@@ -1286,9 +1286,9 @@ export default function SettingsPage() {
 
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                   <div>
-                    <h5 className="text-xs font-bold text-slate-800">Triagem Automática de Novos Leads</h5>
+                    <h5 className="text-xs font-bold text-slate-800">Triagem Automática de Novos Protocolos</h5>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      A IA responde à primeira mensagem do cliente no WhatsApp e coleta nome e necessidade antes de passar a um atendente.
+                      A IA responde à primeira mensagem do cidadão no WhatsApp e coleta nome e necessidade antes de passar a um atendente.
                     </p>
                   </div>
                   <input
@@ -1354,7 +1354,7 @@ export default function SettingsPage() {
                     <div>
                       <h5 className="text-xs font-bold text-slate-800">Alerta de Estouro de SLA (Mais de 5 min sem resposta)</h5>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Destacar a conversa em vermelho quando o tempo máximo de espera do cliente for atingido.
+                        Destacar a conversa em vermelho quando o tempo máximo de espera do cidadão for atingido.
                       </p>
                     </div>
                     <input
