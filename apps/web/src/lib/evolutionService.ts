@@ -61,6 +61,7 @@ export function invalidateEvolutionCache(instanceName?: string) {
     conversationsCache.clear();
     contactsCache.clear();
     messagesCache.clear();
+    liveInstancesCache = null;
     return;
   }
   const inst = resolveInstanceName(instanceName);
@@ -454,24 +455,34 @@ function mapConnectionStatus(raw?: string): EvolutionLiveInstance['status'] {
   return 'disconnected';
 }
 
+let liveInstancesCache: CacheEntry<EvolutionLiveInstance[]> | null = null;
+
 /** Consulta o servidor Evolution e retorna TODAS as instâncias existentes nele. */
-export async function fetchLiveEvolutionInstances(): Promise<EvolutionLiveInstance[]> {
+export async function fetchLiveEvolutionInstances(forceRefresh = false): Promise<EvolutionLiveInstance[]> {
+  const now = Date.now();
+  if (!forceRefresh && liveInstancesCache && now - liveInstancesCache.timestamp < DATA_CACHE_TTL_MS) {
+    return liveInstancesCache.data;
+  }
+
   if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) return [];
   try {
     const res = await fetch(`${EVOLUTION_API_URL}/instance/fetchInstances`, {
       headers: { apikey: EVOLUTION_API_KEY },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(3500),
     });
     if (!res.ok) return [];
     const data = await res.json();
     if (!Array.isArray(data)) return [];
-    return data.map((i: any) => ({
+    const instances = data.map((i: any) => ({
       instanceName: i.name || i.instanceName || i.instance?.instanceName || '',
       status: mapConnectionStatus(i.connectionStatus || i.state || i.instance?.state),
       phoneNumber: formatCleanPhone(i.ownerJid || i.number || i.instance?.owner) || undefined,
       profileName: i.profileName || i.instance?.profileName || undefined,
       profilePicUrl: i.profilePicUrl || i.instance?.profilePicUrl || undefined,
     })).filter((i: EvolutionLiveInstance) => i.instanceName);
+
+    liveInstancesCache = { data: instances, timestamp: now };
+    return instances;
   } catch {
     return [];
   }
