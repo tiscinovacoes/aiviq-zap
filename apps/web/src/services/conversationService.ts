@@ -1,11 +1,16 @@
 import { Conversation, Message, QuickTemplate } from '@/types';
 
+export interface GetConversationsResult {
+  conversations: Conversation[];
+  whatsappConnected: boolean;
+}
+
 export const conversationService = {
   async getConversations(params?: {
     status?: string;
     channel?: string;
     q?: string;
-  }): Promise<Conversation[]> {
+  }): Promise<GetConversationsResult> {
     const search = new URLSearchParams();
     if (params?.status) search.set('status', params.status);
     if (params?.channel && params.channel !== 'all') search.set('channel', params.channel);
@@ -14,7 +19,10 @@ export const conversationService = {
     const res = await fetch(`/api/conversations?${search.toString()}`);
     if (!res.ok) throw new Error('Falha ao carregar conversas');
     const data = await res.json();
-    return data.conversations || [];
+    return {
+      conversations: data.conversations || [],
+      whatsappConnected: Boolean(data.whatsapp_connected),
+    };
   },
 
   async getMessages(conversationId: string): Promise<Message[]> {

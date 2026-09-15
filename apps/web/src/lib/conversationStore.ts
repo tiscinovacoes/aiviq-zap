@@ -30,6 +30,13 @@ export function setMemoryConversations(convs: Conversation[]) {
   global.__aiviq_conversations = convs;
 }
 
+export function clearWhatsAppConversations() {
+  global.__aiviq_conversations = (global.__aiviq_conversations || []).filter(
+    (c) => c.channel_type !== 'whatsapp_cloud'
+  );
+  global.__aiviq_messages = {};
+}
+
 export function getMessagesByConversationId(conversationId: string): Message[] {
   if (!global.__aiviq_messages) return [];
   return global.__aiviq_messages[conversationId] || [];

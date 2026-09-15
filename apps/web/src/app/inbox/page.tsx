@@ -27,12 +27,33 @@ export default function InboxPage() {
     fetchUser();
     fetchConversations();
 
-    // Sincronização em tempo real suave (polling a cada 4s) com a Evolution API
-    const interval = setInterval(() => {
-      syncConversations();
-    }, 4000);
+    let timeoutId: NodeJS.Timeout;
+    let isCancelled = false;
 
-    return () => clearInterval(interval);
+    const runSync = async () => {
+      // Poupa CPU e conexões de rede quando a aba estiver em segundo plano
+      if (document.visibilityState === 'visible') {
+        await syncConversations();
+      }
+      if (!isCancelled) {
+        timeoutId = setTimeout(runSync, 4500);
+      }
+    };
+
+    timeoutId = setTimeout(runSync, 4500);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncConversations();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timeoutId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [fetchUser, fetchConversations, syncConversations]);
 
   return (

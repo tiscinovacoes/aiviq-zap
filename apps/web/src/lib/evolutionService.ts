@@ -38,8 +38,73 @@ export function formatTime(timestamp?: number | string): string {
   });
 }
 
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+let connectionStateCache: CacheEntry<boolean> | null = null;
+let conversationsCache: CacheEntry<Conversation[]> | null = null;
+let contactsCache: CacheEntry<Contact[]> | null = null;
+const messagesCache = new Map<string, CacheEntry<Message[]>>();
+
+const CONNECTION_CACHE_TTL_MS = 5000; // 5s cache para status de conexão
+const DATA_CACHE_TTL_MS = 4000; // 4s cache de dados reais
+
+export async function isEvolutionConnected(forceRefresh = false): Promise<boolean> {
+  const now = Date.now();
+  if (!forceRefresh && connectionStateCache && now - connectionStateCache.timestamp < CONNECTION_CACHE_TTL_MS) {
+    return connectionStateCache.data;
+  }
+
+  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+    connectionStateCache = { data: false, timestamp: now };
+    return false;
+  }
+
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${EVOLUTION_INSTANCE}`, {
+      headers: { apikey: EVOLUTION_API_KEY },
+      signal: AbortSignal.timeout(3000),
+    });
+
+    if (!res.ok) {
+      connectionStateCache = { data: false, timestamp: now };
+      return false;
+    }
+
+    const data = await res.json();
+    const state = data?.instance?.state || data?.state;
+    const isConnected = state === 'open';
+
+    connectionStateCache = { data: isConnected, timestamp: now };
+    return isConnected;
+  } catch (err) {
+    connectionStateCache = { data: false, timestamp: now };
+    return false;
+  }
+}
+
+export function invalidateEvolutionCache() {
+  connectionStateCache = null;
+  conversationsCache = null;
+  contactsCache = null;
+  messagesCache.clear();
+}
+
 // ================= 1. BUSCAR CHATS REAIS DO WHATSAPP =================
 export async function getRealConversations(): Promise<Conversation[]> {
+  // CRÍTICO: Se o número não estiver conectado, NUNCA carrega chats antigos residuais da sessão anterior
+  const isConnected = await isEvolutionConnected();
+  if (!isConnected) {
+    return [];
+  }
+
+  const now = Date.now();
+  if (conversationsCache && now - conversationsCache.timestamp < DATA_CACHE_TTL_MS) {
+    return conversationsCache.data;
+  }
+
   try {
     const res = await fetch(`${EVOLUTION_API_URL}/chat/findChats/${EVOLUTION_INSTANCE}`, {
       method: 'POST',
@@ -48,7 +113,7 @@ export async function getRealConversations(): Promise<Conversation[]> {
         apikey: EVOLUTION_API_KEY,
       },
       body: JSON.stringify({}),
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(4000),
     });
 
     if (!res.ok) {
@@ -117,6 +182,7 @@ export async function getRealConversations(): Promise<Conversation[]> {
       };
     });
 
+    conversationsCache = { data: conversations, timestamp: now };
     return conversations;
   } catch (err: any) {
     console.error('[Evolution getRealConversations Error]:', err.message);
@@ -126,6 +192,17 @@ export async function getRealConversations(): Promise<Conversation[]> {
 
 // ================= 2. BUSCAR MENSAGENS REAIS DE UM CHAT =================
 export async function getRealMessages(remoteJid: string): Promise<Message[]> {
+  const isConnected = await isEvolutionConnected();
+  if (!isConnected) {
+    return [];
+  }
+
+  const now = Date.now();
+  const cached = messagesCache.get(remoteJid);
+  if (cached && now - cached.timestamp < DATA_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   try {
     const res = await fetch(`${EVOLUTION_API_URL}/chat/findMessages/${EVOLUTION_INSTANCE}`, {
       method: 'POST',
@@ -140,7 +217,7 @@ export async function getRealMessages(remoteJid: string): Promise<Message[]> {
           },
         },
       }),
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(4000),
     });
 
     if (!res.ok) {
@@ -208,6 +285,7 @@ export async function getRealMessages(remoteJid: string): Promise<Message[]> {
     const messages = Array.from(messageMap.values());
     // Ordena do mais antigo para o mais recente cronologicamente
     messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    messagesCache.set(remoteJid, { data: messages, timestamp: now });
     return messages;
   } catch (err: any) {
     console.error('[Evolution getRealMessages Error]:', err.message);
@@ -217,6 +295,16 @@ export async function getRealMessages(remoteJid: string): Promise<Message[]> {
 
 // ================= 3. BUSCAR CONTATOS REAIS DO WHATSAPP =================
 export async function getRealContacts(): Promise<Contact[]> {
+  const isConnected = await isEvolutionConnected();
+  if (!isConnected) {
+    return [];
+  }
+
+  const now = Date.now();
+  if (contactsCache && now - contactsCache.timestamp < DATA_CACHE_TTL_MS) {
+    return contactsCache.data;
+  }
+
   try {
     const res = await fetch(`${EVOLUTION_API_URL}/chat/findContacts/${EVOLUTION_INSTANCE}`, {
       method: 'POST',
@@ -225,7 +313,7 @@ export async function getRealContacts(): Promise<Contact[]> {
         apikey: EVOLUTION_API_KEY,
       },
       body: JSON.stringify({}),
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(4000),
     });
 
     if (!res.ok) return [];
@@ -266,6 +354,7 @@ export async function getRealContacts(): Promise<Contact[]> {
       });
     }
 
+    contactsCache = { data: contacts, timestamp: now };
     return contacts;
   } catch (err: any) {
     console.error('[Evolution getRealContacts Error]:', err.message);
@@ -275,6 +364,13 @@ export async function getRealContacts(): Promise<Contact[]> {
 
 // ================= 4. ENVIAR MENSAGEM REAL NO WHATSAPP =================
 export async function sendRealMessage(target: string, text: string): Promise<boolean> {
+  // Se não estiver conectado, rejeita imediatamente
+  const isConnected = await isEvolutionConnected();
+  if (!isConnected) {
+    console.warn('[Evolution Send Real] Tentativa de envio com WhatsApp desconectado.');
+    return false;
+  }
+
   try {
     const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
     if (!cleanNumber || cleanNumber.length < 8) return false;
@@ -296,6 +392,7 @@ export async function sendRealMessage(target: string, text: string): Promise<boo
 
     if (res.ok) {
       console.log(`[Evolution Send Real Success] Enviado para ${cleanNumber}: "${text}"`);
+      invalidateEvolutionCache();
       return true;
     }
 

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { Conversation } from '@/types';
-import { getAllConversations } from '@/lib/conversationStore';
-import { getRealConversations } from '@/lib/evolutionService';
+import { getAllConversations, clearWhatsAppConversations } from '@/lib/conversationStore';
+import { getRealConversations, isEvolutionConnected } from '@/lib/evolutionService';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
 
     let conversations: Conversation[] = [];
+    const isConnected = await isEvolutionConnected();
 
     // 1. Se houver banco Supabase conectado, tenta buscar
     if (!isPlaceholder) {
@@ -36,24 +37,31 @@ export async function GET(req: NextRequest) {
     }
 
     // 2. Se não houver conversas do banco, busca as conversas REAIS da Evolution API
+    // SOMENTE se houver número WhatsApp conectado (state === 'open')
     if (conversations.length === 0) {
-      const realChats = await getRealConversations();
-      const memoryChats = getAllConversations();
+      if (isConnected) {
+        const realChats = await getRealConversations();
+        const memoryChats = getAllConversations();
 
-      // Mescla chats em memória (mensagens recebidas recentes) com os chats reais da Evolution
-      const map = new Map<string, Conversation>();
+        // Mescla chats em memória (mensagens recebidas recentes) com os chats reais da Evolution
+        const map = new Map<string, Conversation>();
 
-      for (const m of memoryChats) {
-        map.set(m.id, m);
-      }
-
-      for (const r of realChats) {
-        if (!map.has(r.id)) {
-          map.set(r.id, r);
+        for (const m of memoryChats) {
+          map.set(m.id, m);
         }
-      }
 
-      conversations = Array.from(map.values());
+        for (const r of realChats) {
+          if (!map.has(r.id)) {
+            map.set(r.id, r);
+          }
+        }
+
+        conversations = Array.from(map.values());
+      } else {
+        // Se desconectado, expurga conversas antigas de WhatsApp da memória
+        clearWhatsAppConversations();
+        conversations = [];
+      }
     }
 
     // Apply query filters
@@ -76,6 +84,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       count: conversations.length,
+      whatsapp_connected: isConnected,
       conversations,
     });
   } catch (err: any) {

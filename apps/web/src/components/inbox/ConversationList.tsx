@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { Search, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { Search, Loader2, Smartphone, QrCode } from 'lucide-react';
 import { useInboxStore } from '@/store/useInboxStore';
 import { Conversation, ConversationStatus } from '@/types';
 
@@ -17,6 +18,7 @@ export default function ConversationList() {
     searchQuery,
     setSearchQuery,
     isLoading,
+    isWhatsAppConnected,
   } = useInboxStore();
 
   const getChannelBadge = (channel?: string) => {
@@ -100,6 +102,23 @@ export default function ConversationList() {
             <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
             <span>Carregando conversas...</span>
           </div>
+        ) : !isWhatsAppConnected && conversations.length === 0 ? (
+          <div className="p-6 text-center text-slate-500 text-xs flex flex-col items-center justify-center my-auto py-12">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center mb-3 text-amber-600 shadow-xs">
+              <Smartphone className="w-6 h-6" />
+            </div>
+            <p className="font-semibold text-slate-800 text-sm mb-1">WhatsApp Desconectado</p>
+            <p className="text-slate-500 text-xs mb-4 max-w-[240px] leading-relaxed">
+              Nenhum número conectado no momento. Conecte seu WhatsApp para carregar mensagens em tempo real.
+            </p>
+            <Link
+              href="/settings"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-xs transition-colors"
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              Conectar WhatsApp
+            </Link>
+          </div>
         ) : conversations.length === 0 ? (
           <div className="p-8 text-center text-slate-400 text-xs">
             Nenhuma conversa encontrada neste filtro.
@@ -164,10 +183,16 @@ export default function ConversationList() {
       {/* Realtime telemetry status bar */}
       <div className="p-2.5 border-t border-slate-200 bg-slate-50 text-[11px] text-slate-500 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>WebSocket: Conectado (28ms)</span>
+          <span
+            className={`w-2 h-2 rounded-full ${
+              isWhatsAppConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
+            }`}
+          />
+          <span className="font-medium text-slate-700">
+            {isWhatsAppConnected ? 'WhatsApp: Conectado' : 'WhatsApp: Desconectado'}
+          </span>
         </div>
-        <span className="text-slate-500 text-[10px] font-medium">AIVIQ Realtime</span>
+        <span className="text-slate-400 text-[10px] font-medium">Poli 2.0 Realtime</span>
       </div>
     </section>
   );
