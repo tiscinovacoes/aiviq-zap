@@ -7,9 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm --workspace=web run dev",
-    "build": "npm --workspace=web run build",
-    "start": "npm --workspace=web run start",
-    "test": "npm --workspace=web test"
+    "dev": "npm --workspace=apps/web run dev",
+    "build": "npm --workspace=apps/web run build",
+    "start": "npm --workspace=apps/web run start",
+    "test": "npm --workspace=apps/web test"
   }
 }
