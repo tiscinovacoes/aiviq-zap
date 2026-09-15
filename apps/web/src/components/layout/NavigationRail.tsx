@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useInboxStore } from '@/store/useInboxStore';
+import InstanceSwitcher from '@/components/layout/InstanceSwitcher';
 
 export default function NavigationRail() {
   const pathname = usePathname();
@@ -72,6 +73,9 @@ export default function NavigationRail() {
         >
           AZ
         </Link>
+
+        {/* Seletor de Número (multi-instância WhatsApp) */}
+        <InstanceSwitcher />
 
         {/* Navigation Items */}
         <div className="flex flex-col items-center gap-3">

@@ -22,19 +22,28 @@ if (!global.__aiviq_custom_contacts) {
   global.__aiviq_custom_contacts = [];
 }
 
-export function getAllConversations(): Conversation[] {
-  return global.__aiviq_conversations || [];
+export function getAllConversations(instanceName?: string): Conversation[] {
+  const all = global.__aiviq_conversations || [];
+  if (!instanceName) return all;
+  // Retorna as conversas da instância pedida. Conversas antigas sem instance_name
+  // (legado) são consideradas da instância pedida para não sumirem da tela.
+  return all.filter((c) => !c.instance_name || c.instance_name === instanceName);
 }
 
 export function setMemoryConversations(convs: Conversation[]) {
   global.__aiviq_conversations = convs;
 }
 
-export function clearWhatsAppConversations() {
-  global.__aiviq_conversations = (global.__aiviq_conversations || []).filter(
-    (c) => c.channel_type !== 'whatsapp_cloud'
-  );
-  global.__aiviq_messages = {};
+export function clearWhatsAppConversations(instanceName?: string) {
+  global.__aiviq_conversations = (global.__aiviq_conversations || []).filter((c) => {
+    if (c.channel_type !== 'whatsapp_cloud') return true;
+    // Só expurga as conversas da instância indicada (ou todas, se não indicada).
+    if (instanceName && c.instance_name && c.instance_name !== instanceName) return true;
+    return false;
+  });
+  if (!instanceName) {
+    global.__aiviq_messages = {};
+  }
 }
 
 export function getMessagesByConversationId(conversationId: string): Message[] {
@@ -72,8 +81,9 @@ export function addInboundMessage(params: {
   text: string;
   name?: string;
   externalId?: string;
+  instanceName?: string;
 }): { conversation: Conversation; message: Message } {
-  const { fromPhone, text, name, externalId } = params;
+  const { fromPhone, text, name, externalId, instanceName } = params;
   const cleanPhone = fromPhone.replace(/\D/g, '');
   const convs = global.__aiviq_conversations || [];
   const msgs = global.__aiviq_messages || {};
@@ -109,6 +119,7 @@ export function addInboundMessage(params: {
       id: `${cleanPhone}@s.whatsapp.net`,
       organization_id: '00000000-0000-0000-0000-000000000000',
       inbox_id: 'inbox-whatsapp',
+      instance_name: instanceName,
       contact_id: `cont-${cleanPhone}`,
       channel_type: 'whatsapp_cloud',
       status: 'open',
@@ -132,6 +143,7 @@ export function addInboundMessage(params: {
     conv.last_message_at = nowTime;
     conv.unread_count = (conv.unread_count || 0) + 1;
     conv.status = 'open';
+    if (instanceName && !conv.instance_name) conv.instance_name = instanceName;
     if (name && (!conv.contact?.name || conv.contact.name.startsWith('WhatsApp'))) {
       if (conv.contact) conv.contact.name = name;
     }

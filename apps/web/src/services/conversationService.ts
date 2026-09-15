@@ -5,6 +5,16 @@ export interface GetConversationsResult {
   whatsappConnected: boolean;
 }
 
+// Número (instância Evolution) atualmente selecionado — persistido no localStorage
+// pelo useInstanceStore. Todas as chamadas anexam ?instance= para operar no número certo.
+function currentInstance(): string | null {
+  try {
+    return localStorage.getItem('aiviq_selected_instance');
+  } catch {
+    return null;
+  }
+}
+
 export const conversationService = {
   async getConversations(params?: {
     status?: string;
@@ -15,6 +25,8 @@ export const conversationService = {
     if (params?.status) search.set('status', params.status);
     if (params?.channel && params.channel !== 'all') search.set('channel', params.channel);
     if (params?.q) search.set('q', params.q);
+    const inst = currentInstance();
+    if (inst) search.set('instance', inst);
 
     const res = await fetch(`/api/conversations?${search.toString()}`);
     if (!res.ok) throw new Error('Falha ao carregar conversas');
@@ -26,7 +38,9 @@ export const conversationService = {
   },
 
   async getMessages(conversationId: string): Promise<Message[]> {
-    const res = await fetch(`/api/conversations/${conversationId}/messages`);
+    const inst = currentInstance();
+    const qs = inst ? `?instance=${encodeURIComponent(inst)}` : '';
+    const res = await fetch(`/api/conversations/${conversationId}/messages${qs}`);
     if (!res.ok) throw new Error('Falha ao carregar histórico');
     const data = await res.json();
     return data.messages || [];
@@ -41,7 +55,7 @@ export const conversationService = {
     const res = await fetch(`/api/conversations/${conversationId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, message_type: messageType, phone }),
+      body: JSON.stringify({ content, message_type: messageType, phone, instance: currentInstance() || undefined }),
     });
     if (!res.ok) throw new Error('Falha ao enviar mensagem');
     const data = await res.json();

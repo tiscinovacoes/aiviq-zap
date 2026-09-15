@@ -49,10 +49,17 @@ export default function InboxPage() {
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
+    // Ao trocar o número ativo, recarrega as conversas do novo número.
+    const onInstanceChanged = () => {
+      fetchConversations();
+    };
+    window.addEventListener('aiviq:instance-changed', onInstanceChanged);
+
     return () => {
       isCancelled = true;
       clearTimeout(timeoutId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('aiviq:instance-changed', onInstanceChanged);
     };
   }, [fetchUser, fetchConversations, syncConversations]);
 

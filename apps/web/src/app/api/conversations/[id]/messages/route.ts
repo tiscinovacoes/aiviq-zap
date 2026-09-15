@@ -19,6 +19,7 @@ export async function GET(
     const { id } = params;
     // Decodifica o id caso venha URL encoded (ex: lid ou @s.whatsapp.net)
     const decodedId = decodeURIComponent(id);
+    const instance = req.nextUrl.searchParams.get('instance') || undefined;
 
     const supabase = await createClient();
     const isPlaceholder =
@@ -47,7 +48,7 @@ export async function GET(
 
     // 2. Se não houver mensagens no banco, busca mensagens REAIS da Evolution API
     if (messages.length === 0) {
-      const realMsgs = await getRealMessages(decodedId);
+      const realMsgs = await getRealMessages(decodedId, instance);
       const memoryMsgs = getMessagesByConversationId(decodedId);
 
       // Mescla mensagens da API com mensagens em memória (enviadas na sessão atual)
@@ -80,6 +81,7 @@ export async function POST(
     const decodedId = decodeURIComponent(id);
     const body = await req.json();
     const { content, message_type = 'text', sender_name = 'Luca Scandola' } = body;
+    const instance = body.instance || req.nextUrl.searchParams.get('instance') || undefined;
 
     if (!content || !content.trim()) {
       return NextResponse.json({ error: 'Conteúdo da mensagem é obrigatório' }, { status: 400 });
@@ -94,7 +96,7 @@ export async function POST(
     const targetPhone = body.phone || body.recipient_phone || getPhoneByConversationId(decodedId) || decodedId;
 
     // ================= DISPARO REAL PELA EVOLUTION API =================
-    const evoDispatched = await sendRealMessage(targetPhone, content.trim());
+    const evoDispatched = await sendRealMessage(targetPhone, content.trim(), instance);
 
     // Disparo para o banco de dados Supabase (se configurado)
     let insertedMessage: any = null;

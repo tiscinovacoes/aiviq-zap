@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get('status');
     const channel = searchParams.get('channel');
     const query = searchParams.get('q')?.toLowerCase();
+    const instance = searchParams.get('instance') || undefined;
 
     const supabase = await createClient();
     const isPlaceholder =
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
 
     let conversations: Conversation[] = [];
-    const isConnected = await isEvolutionConnected();
+    const isConnected = await isEvolutionConnected(instance);
 
     // 1. Se houver banco Supabase conectado, tenta buscar
     if (!isPlaceholder) {
@@ -40,8 +41,8 @@ export async function GET(req: NextRequest) {
     // SOMENTE se houver número WhatsApp conectado (state === 'open')
     if (conversations.length === 0) {
       if (isConnected) {
-        const realChats = await getRealConversations();
-        const memoryChats = getAllConversations();
+        const realChats = await getRealConversations(instance);
+        const memoryChats = getAllConversations(instance);
 
         // Mescla chats em memória (mensagens recebidas recentes) com os chats reais da Evolution
         const map = new Map<string, Conversation>();
@@ -58,8 +59,8 @@ export async function GET(req: NextRequest) {
 
         conversations = Array.from(map.values());
       } else {
-        // Se desconectado, expurga conversas antigas de WhatsApp da memória
-        clearWhatsAppConversations();
+        // Se desconectado, expurga conversas antigas de WhatsApp da memória (só desta instância)
+        clearWhatsAppConversations(instance);
         conversations = [];
       }
     }

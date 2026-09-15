@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { addInboundMessage } from '@/lib/conversationStore';
+import { invalidateEvolutionCache } from '@/lib/evolutionService';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,6 +90,10 @@ export async function POST(req: NextRequest) {
       payload.event || (payload.entry ? 'meta.event' : 'unknown')
     );
 
+    // Instância (número) de origem do evento — Evolution API envia em payload.instance.
+    const instanceName: string | undefined =
+      payload.instance || payload.instanceName || undefined;
+
     const incomingMessages: Array<{
       from: string;
       text: string;
@@ -161,11 +166,15 @@ export async function POST(req: NextRequest) {
             text: msg.text,
             name: msg.name,
             externalId: msg.externalId,
+            instanceName,
           });
         } catch (memErr) {
           console.error('[Memory Store Inbound Error]:', memErr);
         }
       }
+
+      // Invalida o cache desta instância para o novo recebido refletir de imediato.
+      invalidateEvolutionCache(instanceName);
 
       // 2. Registra no Supabase caso configurado
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -222,12 +231,29 @@ export async function POST(req: NextRequest) {
                   .single();
 
                 if (!conversation) {
-                  const { data: inbox } = await supabase
-                    .from('inboxes')
-                    .select('id')
-                    .eq('organization_id', organizationId)
-                    .limit(1)
-                    .single();
+                  // Resolve o inbox pela instância (número) de origem. Se a coluna
+                  // evolution_instance_name ainda não existir (migration 006 não
+                  // aplicada) ou não houver correspondência, cai no primeiro inbox.
+                  let inbox: { id: string } | null = null;
+                  if (instanceName) {
+                    const { data, error } = await supabase
+                      .from('inboxes')
+                      .select('id')
+                      .eq('organization_id', organizationId)
+                      .eq('evolution_instance_name', instanceName)
+                      .limit(1)
+                      .maybeSingle();
+                    if (!error && data) inbox = data as { id: string };
+                  }
+                  if (!inbox) {
+                    const { data } = await supabase
+                      .from('inboxes')
+                      .select('id')
+                      .eq('organization_id', organizationId)
+                      .limit(1)
+                      .maybeSingle();
+                    inbox = (data as { id: string } | null) || null;
+                  }
 
                   const { data: newConversation } = await supabase
                     .from('conversations')

@@ -1,9 +1,9 @@
 import { Contact, Conversation, Message } from '@/types';
+import { getDefaultInstanceName, resolveInstanceName } from '@/lib/instanceRegistry';
 
 // CR-004 T1: sem default de credencial/URL no código — exige env, falha fechada.
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
-const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'aiviq_inbox_01';
 
 export function formatCleanPhone(raw?: string | null): string {
   if (!raw) return '';
@@ -43,33 +43,59 @@ interface CacheEntry<T> {
   timestamp: number;
 }
 
-let connectionStateCache: CacheEntry<boolean> | null = null;
-let conversationsCache: CacheEntry<Conversation[]> | null = null;
-let contactsCache: CacheEntry<Contact[]> | null = null;
-const messagesCache = new Map<string, CacheEntry<Message[]>>();
+// ============================================================================
+// Caches POR INSTÂNCIA (multi-número). Antes eram singletons globais; agora cada
+// número tem seu próprio estado, evitando vazamento de dados entre instâncias.
+// ============================================================================
+const connectionStateCache = new Map<string, CacheEntry<boolean>>();
+const conversationsCache = new Map<string, CacheEntry<Conversation[]>>();
+const contactsCache = new Map<string, CacheEntry<Contact[]>>();
+const messagesCache = new Map<string, CacheEntry<Message[]>>(); // chave: `${instance}::${jid}`
 
 const CONNECTION_CACHE_TTL_MS = 5000; // 5s cache para status de conexão
 const DATA_CACHE_TTL_MS = 4000; // 4s cache de dados reais
 
-export async function isEvolutionConnected(forceRefresh = false): Promise<boolean> {
+export function invalidateEvolutionCache(instanceName?: string) {
+  if (!instanceName) {
+    connectionStateCache.clear();
+    conversationsCache.clear();
+    contactsCache.clear();
+    messagesCache.clear();
+    return;
+  }
+  const inst = resolveInstanceName(instanceName);
+  connectionStateCache.delete(inst);
+  conversationsCache.delete(inst);
+  contactsCache.delete(inst);
+  for (const key of Array.from(messagesCache.keys())) {
+    if (key.startsWith(`${inst}::`)) messagesCache.delete(key);
+  }
+}
+
+export async function isEvolutionConnected(
+  instanceName?: string,
+  forceRefresh = false
+): Promise<boolean> {
+  const inst = resolveInstanceName(instanceName);
   const now = Date.now();
-  if (!forceRefresh && connectionStateCache && now - connectionStateCache.timestamp < CONNECTION_CACHE_TTL_MS) {
-    return connectionStateCache.data;
+  const cached = connectionStateCache.get(inst);
+  if (!forceRefresh && cached && now - cached.timestamp < CONNECTION_CACHE_TTL_MS) {
+    return cached.data;
   }
 
   if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-    connectionStateCache = { data: false, timestamp: now };
+    connectionStateCache.set(inst, { data: false, timestamp: now });
     return false;
   }
 
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${EVOLUTION_INSTANCE}`, {
+    const res = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${inst}`, {
       headers: { apikey: EVOLUTION_API_KEY },
       signal: AbortSignal.timeout(3000),
     });
 
     if (!res.ok) {
-      connectionStateCache = { data: false, timestamp: now };
+      connectionStateCache.set(inst, { data: false, timestamp: now });
       return false;
     }
 
@@ -77,36 +103,31 @@ export async function isEvolutionConnected(forceRefresh = false): Promise<boolea
     const state = data?.instance?.state || data?.state;
     const isConnected = state === 'open';
 
-    connectionStateCache = { data: isConnected, timestamp: now };
+    connectionStateCache.set(inst, { data: isConnected, timestamp: now });
     return isConnected;
   } catch (err) {
-    connectionStateCache = { data: false, timestamp: now };
+    connectionStateCache.set(inst, { data: false, timestamp: now });
     return false;
   }
 }
 
-export function invalidateEvolutionCache() {
-  connectionStateCache = null;
-  conversationsCache = null;
-  contactsCache = null;
-  messagesCache.clear();
-}
-
 // ================= 1. BUSCAR CHATS REAIS DO WHATSAPP =================
-export async function getRealConversations(): Promise<Conversation[]> {
+export async function getRealConversations(instanceName?: string): Promise<Conversation[]> {
+  const inst = resolveInstanceName(instanceName);
   // CRÍTICO: Se o número não estiver conectado, NUNCA carrega chats antigos residuais da sessão anterior
-  const isConnected = await isEvolutionConnected();
+  const isConnected = await isEvolutionConnected(inst);
   if (!isConnected) {
     return [];
   }
 
   const now = Date.now();
-  if (conversationsCache && now - conversationsCache.timestamp < DATA_CACHE_TTL_MS) {
-    return conversationsCache.data;
+  const cached = conversationsCache.get(inst);
+  if (cached && now - cached.timestamp < DATA_CACHE_TTL_MS) {
+    return cached.data;
   }
 
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/chat/findChats/${EVOLUTION_INSTANCE}`, {
+    const res = await fetch(`${EVOLUTION_API_URL}/chat/findChats/${inst}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -117,7 +138,7 @@ export async function getRealConversations(): Promise<Conversation[]> {
     });
 
     if (!res.ok) {
-      console.warn(`[Evolution findChats HTTP ${res.status}]`);
+      console.warn(`[Evolution findChats HTTP ${res.status}] (${inst})`);
       return [];
     }
 
@@ -170,6 +191,7 @@ export async function getRealConversations(): Promise<Conversation[]> {
         id: c.remoteJid,
         organization_id: '00000000-0000-0000-0000-000000000000',
         inbox_id: 'inbox-whatsapp',
+        instance_name: inst,
         contact_id: contact.id,
         contact,
         status: 'open',
@@ -182,29 +204,34 @@ export async function getRealConversations(): Promise<Conversation[]> {
       };
     });
 
-    conversationsCache = { data: conversations, timestamp: now };
+    conversationsCache.set(inst, { data: conversations, timestamp: now });
     return conversations;
   } catch (err: any) {
-    console.error('[Evolution getRealConversations Error]:', err.message);
+    console.error(`[Evolution getRealConversations Error] (${inst}):`, err.message);
     return [];
   }
 }
 
 // ================= 2. BUSCAR MENSAGENS REAIS DE UM CHAT =================
-export async function getRealMessages(remoteJid: string): Promise<Message[]> {
-  const isConnected = await isEvolutionConnected();
+export async function getRealMessages(
+  remoteJid: string,
+  instanceName?: string
+): Promise<Message[]> {
+  const inst = resolveInstanceName(instanceName);
+  const isConnected = await isEvolutionConnected(inst);
   if (!isConnected) {
     return [];
   }
 
   const now = Date.now();
-  const cached = messagesCache.get(remoteJid);
+  const cacheKey = `${inst}::${remoteJid}`;
+  const cached = messagesCache.get(cacheKey);
   if (cached && now - cached.timestamp < DATA_CACHE_TTL_MS) {
     return cached.data;
   }
 
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/chat/findMessages/${EVOLUTION_INSTANCE}`, {
+    const res = await fetch(`${EVOLUTION_API_URL}/chat/findMessages/${inst}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -221,7 +248,7 @@ export async function getRealMessages(remoteJid: string): Promise<Message[]> {
     });
 
     if (!res.ok) {
-      console.warn(`[Evolution findMessages HTTP ${res.status}]`);
+      console.warn(`[Evolution findMessages HTTP ${res.status}] (${inst})`);
       return [];
     }
 
@@ -285,28 +312,30 @@ export async function getRealMessages(remoteJid: string): Promise<Message[]> {
     const messages = Array.from(messageMap.values());
     // Ordena do mais antigo para o mais recente cronologicamente
     messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    messagesCache.set(remoteJid, { data: messages, timestamp: now });
+    messagesCache.set(cacheKey, { data: messages, timestamp: now });
     return messages;
   } catch (err: any) {
-    console.error('[Evolution getRealMessages Error]:', err.message);
+    console.error(`[Evolution getRealMessages Error] (${inst}):`, err.message);
     return [];
   }
 }
 
 // ================= 3. BUSCAR CONTATOS REAIS DO WHATSAPP =================
-export async function getRealContacts(): Promise<Contact[]> {
-  const isConnected = await isEvolutionConnected();
+export async function getRealContacts(instanceName?: string): Promise<Contact[]> {
+  const inst = resolveInstanceName(instanceName);
+  const isConnected = await isEvolutionConnected(inst);
   if (!isConnected) {
     return [];
   }
 
   const now = Date.now();
-  if (contactsCache && now - contactsCache.timestamp < DATA_CACHE_TTL_MS) {
-    return contactsCache.data;
+  const cached = contactsCache.get(inst);
+  if (cached && now - cached.timestamp < DATA_CACHE_TTL_MS) {
+    return cached.data;
   }
 
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/chat/findContacts/${EVOLUTION_INSTANCE}`, {
+    const res = await fetch(`${EVOLUTION_API_URL}/chat/findContacts/${inst}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -354,20 +383,25 @@ export async function getRealContacts(): Promise<Contact[]> {
       });
     }
 
-    contactsCache = { data: contacts, timestamp: now };
+    contactsCache.set(inst, { data: contacts, timestamp: now });
     return contacts;
   } catch (err: any) {
-    console.error('[Evolution getRealContacts Error]:', err.message);
+    console.error(`[Evolution getRealContacts Error] (${inst}):`, err.message);
     return [];
   }
 }
 
 // ================= 4. ENVIAR MENSAGEM REAL NO WHATSAPP =================
-export async function sendRealMessage(target: string, text: string): Promise<boolean> {
+export async function sendRealMessage(
+  target: string,
+  text: string,
+  instanceName?: string
+): Promise<boolean> {
+  const inst = resolveInstanceName(instanceName);
   // Se não estiver conectado, rejeita imediatamente
-  const isConnected = await isEvolutionConnected();
+  const isConnected = await isEvolutionConnected(inst);
   if (!isConnected) {
-    console.warn('[Evolution Send Real] Tentativa de envio com WhatsApp desconectado.');
+    console.warn(`[Evolution Send Real] Tentativa de envio com WhatsApp desconectado (${inst}).`);
     return false;
   }
 
@@ -375,7 +409,7 @@ export async function sendRealMessage(target: string, text: string): Promise<boo
     const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
     if (!cleanNumber || cleanNumber.length < 8) return false;
 
-    const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
+    const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${inst}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -391,16 +425,56 @@ export async function sendRealMessage(target: string, text: string): Promise<boo
     });
 
     if (res.ok) {
-      console.log(`[Evolution Send Real Success] Enviado para ${cleanNumber}: "${text}"`);
-      invalidateEvolutionCache();
+      console.log(`[Evolution Send Real Success] (${inst}) Enviado para ${cleanNumber}: "${text}"`);
+      invalidateEvolutionCache(inst);
       return true;
     }
 
     const err = await res.text();
-    console.warn(`[Evolution Send Real Failed HTTP ${res.status}]:`, err);
+    console.warn(`[Evolution Send Real Failed HTTP ${res.status}] (${inst}):`, err);
     return false;
   } catch (err: any) {
-    console.error('[Evolution Send Real Error]:', err.message);
+    console.error(`[Evolution Send Real Error] (${inst}):`, err.message);
     return false;
   }
 }
+
+// ================= 5. LISTAR INSTÂNCIAS REAIS DO SERVIDOR EVOLUTION =================
+export interface EvolutionLiveInstance {
+  instanceName: string;
+  status: 'connected' | 'connecting' | 'disconnected';
+  phoneNumber?: string;
+  profileName?: string;
+  profilePicUrl?: string;
+}
+
+function mapConnectionStatus(raw?: string): EvolutionLiveInstance['status'] {
+  if (raw === 'open') return 'connected';
+  if (raw === 'connecting') return 'connecting';
+  return 'disconnected';
+}
+
+/** Consulta o servidor Evolution e retorna TODAS as instâncias existentes nele. */
+export async function fetchLiveEvolutionInstances(): Promise<EvolutionLiveInstance[]> {
+  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) return [];
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/instance/fetchInstances`, {
+      headers: { apikey: EVOLUTION_API_KEY },
+      signal: AbortSignal.timeout(4500),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+    return data.map((i: any) => ({
+      instanceName: i.name || i.instanceName || i.instance?.instanceName || '',
+      status: mapConnectionStatus(i.connectionStatus || i.state || i.instance?.state),
+      phoneNumber: formatCleanPhone(i.ownerJid || i.number || i.instance?.owner) || undefined,
+      profileName: i.profileName || i.instance?.profileName || undefined,
+      profilePicUrl: i.profilePicUrl || i.instance?.profilePicUrl || undefined,
+    })).filter((i: EvolutionLiveInstance) => i.instanceName);
+  } catch {
+    return [];
+  }
+}
+
+export { getDefaultInstanceName };

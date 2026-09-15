@@ -35,6 +35,7 @@ import {
   Key,
 } from 'lucide-react';
 import NavigationRail from '@/components/layout/NavigationRail';
+import MultiInstancePanel from '@/components/settings/MultiInstancePanel';
 
 interface TeamMember {
   id: string;
@@ -472,6 +473,9 @@ export default function SettingsPage() {
             {/* ================= ABA 1: CANAIS DE WHATSAPP ================= */}
             {activeTab === 'whatsapp' && (
               <div className="space-y-6">
+                {/* Gestão de múltiplos números (multi-instância) */}
+                <MultiInstancePanel />
+
                 {/* Seletor: Evolution API vs Meta Cloud */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-3">

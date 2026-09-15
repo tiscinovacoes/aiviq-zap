@@ -6,6 +6,10 @@ export const crmService = {
     if (params?.tag && params.tag !== 'all') search.set('tag', params.tag);
     if (params?.assigned_to && params.assigned_to !== 'all') search.set('assigned_to', params.assigned_to);
     if (params?.q) search.set('q', params.q);
+    try {
+      const inst = localStorage.getItem('aiviq_selected_instance');
+      if (inst) search.set('instance', inst);
+    } catch {}
 
     const res = await fetch(`/api/contacts?${search.toString()}`);
     if (!res.ok) throw new Error('Falha ao obter cidadãos');

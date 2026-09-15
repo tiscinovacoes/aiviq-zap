@@ -58,6 +58,7 @@ export interface Conversation {
   id: string;
   organization_id: string;
   inbox_id: string;
+  instance_name?: string;
   contact_id: string;
   contact?: Contact;
   assignee_id?: string;

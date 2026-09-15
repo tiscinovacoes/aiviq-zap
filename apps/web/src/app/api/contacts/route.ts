@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
     const tag = searchParams.get('tag');
     const assigned = searchParams.get('assigned_to');
     const query = searchParams.get('q')?.toLowerCase();
+    const instance = searchParams.get('instance') || undefined;
 
     const supabase = await createClient();
     const isPlaceholder =
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
 
     // 2. Se não houver contatos no banco, busca contatos REAIS do WhatsApp via Evolution API
     if (contacts.length === 0) {
-      const realContacts = await getRealContacts();
+      const realContacts = await getRealContacts(instance);
       const customContacts = getCustomContacts();
 
       const map = new Map<string, Contact>();
