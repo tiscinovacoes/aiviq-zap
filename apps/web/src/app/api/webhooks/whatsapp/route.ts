@@ -13,6 +13,14 @@ const VERIFY_TOKEN =
   (!isProduction ? 'aiviq_webhook_secret_token_2026' : undefined);
 const APP_SECRET = process.env.WHATSAPP_APP_SECRET;
 
+// Comparação em tempo constante para segredos (evita timing attacks).
+function safeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 // GET: Verificação de Webhook para a Meta Cloud API
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -71,13 +79,15 @@ export async function POST(req: NextRequest) {
     if (!signatureHeader) {
       const expectedToken =
         process.env.EVOLUTION_WEBHOOK_TOKEN || process.env.EVOLUTION_API_KEY;
+      // Preferir header (não vaza em logs de acesso); query mantida por compat
+      // com Evolution self-hosted, que ainda não reenvia headers customizados.
       const providedToken =
-        req.nextUrl.searchParams.get('token') ||
         req.headers.get('x-webhook-token') ||
-        req.headers.get('apikey');
+        req.headers.get('apikey') ||
+        req.nextUrl.searchParams.get('token');
 
       if (isProduction || expectedToken) {
-        if (!expectedToken || !providedToken || providedToken !== expectedToken) {
+        if (!expectedToken || !providedToken || !safeEqual(providedToken, expectedToken)) {
           console.warn('[WhatsApp Webhook] Ingress sem token válido — rejeitado (CR-004 T3).');
           return NextResponse.json({ error: 'Webhook não autorizado' }, { status: 401 });
         }

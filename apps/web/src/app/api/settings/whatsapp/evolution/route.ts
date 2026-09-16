@@ -147,6 +147,12 @@ async function syncInstanceDetails(appOrigin?: string): Promise<EvolutionState> 
                   webhook: {
                     enabled: true,
                     url: targetWebhookUrl,
+                    // Token também por header — usado onde a Evolution reenvia
+                    // headers (Cloud/versões recentes); a query segue como fallback
+                    // confiável no self-hosted. O receiver prefere o header.
+                    headers: webhookToken
+                      ? { 'x-webhook-token': webhookToken }
+                      : undefined,
                     byEvents: false,
                     base64: false,
                     events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
