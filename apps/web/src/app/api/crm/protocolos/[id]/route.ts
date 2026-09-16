@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { updateMockProtocolo } from '@/lib/mockOuvidoria';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,12 +63,22 @@ export async function PATCH(
       });
     }
 
-    // Sem banco configurado (placeholder/local) → resposta simulada explícita.
+    // Sem banco configurado (placeholder/local) → persiste in-memory para que
+    // a mudança de status "cole" entre re-fetches, como faria o banco real.
+    const updatedMock = updateMockProtocolo(id, {
+      ...patch,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (!updatedMock) {
+      return NextResponse.json({ error: 'Protocolo não encontrado' }, { status: 404 });
+    }
+
     return NextResponse.json({
       success: true,
       simulated: true,
       message: 'Protocolo atualizado (modo simulado — banco não configurado)',
-      updated: { id, ...patch, updated_at: new Date().toISOString() },
+      updated: updatedMock,
     });
   } catch (err: any) {
     return NextResponse.json(

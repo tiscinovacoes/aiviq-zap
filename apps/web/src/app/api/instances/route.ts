@@ -8,22 +8,39 @@ import {
 } from '@/lib/instanceRegistry';
 import { fetchLiveEvolutionInstances, EvolutionLiveInstance } from '@/lib/evolutionService';
 
+import { cookies } from 'next/headers';
+
 export const dynamic = 'force-dynamic';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
-// Defesa em profundidade: exige usuário autenticado (a não ser em modo placeholder/local).
-async function requireUser(): Promise<NextResponse | null> {
+// Defesa em profundidade: exige usuário autenticado (a não ser em modo placeholder/local ou demo autorizado).
+async function requireUser(req?: NextRequest): Promise<NextResponse | null> {
   const isPlaceholder =
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
   if (isPlaceholder) return null;
+
+  const allowDemo = process.env.NODE_ENV === 'development' || process.env.ALLOW_DEMO_LOGIN === 'true';
+  if (allowDemo) {
+    let token = req?.cookies?.get('poli_dev_token')?.value || req?.cookies?.get('poli_token')?.value;
+    if (!token) {
+      try {
+        const cookieStore = await cookies();
+        token = cookieStore.get('poli_dev_token')?.value || cookieStore.get('poli_token')?.value;
+      } catch {}
+    }
+    if (token === 'mock-dev-token-jwt') {
+      return null;
+    }
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!user) return NextResponse.json({ error: 'Não autorizado', message: 'Sessão expirada ou usuário não autenticado.' }, { status: 401 });
   return null;
 }
 

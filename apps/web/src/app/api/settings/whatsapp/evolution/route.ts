@@ -1,20 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
 // CR-004 T5: exige usuário autenticado na própria rota (defesa em profundidade,
 // não só no middleware). Retorna null se ok, ou uma resposta 401.
-async function requireUser(): Promise<NextResponse | null> {
+async function requireUser(req?: NextRequest): Promise<NextResponse | null> {
   const isPlaceholder =
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
   if (isPlaceholder) return null; // dev/local sem banco: liberado
+
+  // CR-002 B1-R: Suporte a usuário demo quando explicitamente habilitado (ALLOW_DEMO_LOGIN ou dev)
+  const allowDemo = process.env.NODE_ENV === 'development' || process.env.ALLOW_DEMO_LOGIN === 'true';
+  if (allowDemo) {
+    let token = req?.cookies?.get('poli_dev_token')?.value || req?.cookies?.get('poli_token')?.value;
+    if (!token) {
+      try {
+        const cookieStore = await cookies();
+        token = cookieStore.get('poli_dev_token')?.value || cookieStore.get('poli_token')?.value;
+      } catch {}
+    }
+    if (token === 'mock-dev-token-jwt') {
+      return null;
+    }
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  if (!user) return NextResponse.json({ error: 'Não autorizado', message: 'Sessão expirada ou usuário não autenticado.' }, { status: 401 });
   return null;
 }
 
@@ -159,7 +176,7 @@ async function syncInstanceDetails(appOrigin?: string): Promise<EvolutionState> 
 // GET: Retorna o status atual da conexão Evolution com dados reais
 export async function GET(req: NextRequest) {
   try {
-    const unauthorized = await requireUser();
+    const unauthorized = await requireUser(req);
     if (unauthorized) return unauthorized;
 
     const origin = req.nextUrl?.origin;
@@ -177,7 +194,7 @@ export async function GET(req: NextRequest) {
 // POST: Salvar credenciais ou ações (connect / disconnect / test)
 export async function POST(req: NextRequest) {
   try {
-    const unauthorized = await requireUser();
+    const unauthorized = await requireUser(req);
     if (unauthorized) return unauthorized;
 
     const body = await req.json();
@@ -204,10 +221,20 @@ export async function POST(req: NextRequest) {
 
     // Ação 0: Testar se o servidor da Evolution API está acessível
     if (action === 'test_server') {
+      if (!currentUrl || !currentKey) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'not_configured',
+            message: 'URL e Chave da Evolution API não informadas. Preencha os campos no painel abaixo.',
+          },
+          { status: 400 }
+        );
+      }
       try {
         const res = await fetch(`${currentUrl}/instance/fetchInstances`, {
           headers: { apikey: currentKey },
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(8000),
         });
 
         if (res.ok) {
@@ -230,13 +257,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           success: false,
           error: 'unreachable',
-          message: `Não foi possível conectar ao servidor Evolution API em ${currentUrl}. Verifique se a API está em execução no Docker ou na sua VPS.`,
+          message: `Não foi possível conectar ao servidor Evolution API em ${currentUrl}. Verifique se a API está em execução e acessível.`,
         });
       }
     }
 
     // Ação 1: Gerar QR Code Real (Baileys)
     if (action === 'get_qr') {
+      if (!currentUrl || !currentKey) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'not_configured',
+            message: 'URL e Chave da Evolution API não informadas. Preencha os campos no painel abaixo antes de gerar o QR Code.',
+          },
+          { status: 400 }
+        );
+      }
+
       let lastError = '';
 
       // 1. Tenta criar a instância na Evolution API (modo Baileys)
@@ -252,7 +290,7 @@ export async function POST(req: NextRequest) {
             qrcode: true,
             integration: 'WHATSAPP-BAILEYS',
           }),
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(6000),
         });
       } catch (e: any) {
         lastError = e.message;
@@ -262,12 +300,12 @@ export async function POST(req: NextRequest) {
       try {
         const qrRes = await fetch(`${currentUrl}/instance/connect/${currentInstance}`, {
           headers: { apikey: currentKey },
-          signal: AbortSignal.timeout(6000),
+          signal: AbortSignal.timeout(12000),
         });
 
         if (qrRes.ok) {
           const qrData = await qrRes.json();
-          let rawBase64 = qrData.base64 || qrData.qrcode?.base64;
+          let rawBase64 = qrData.base64 || qrData.qrcode?.base64 || (typeof qrData.qrcode === 'string' && qrData.qrcode.startsWith('data:') ? qrData.qrcode : null);
 
           if (rawBase64) {
             const base64Clean = rawBase64.startsWith('data:')
@@ -295,7 +333,7 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           error: 'server_offline',
-          message: `Servidor Evolution API inacessível em ${currentUrl}. Verifique se o container Docker ou VPS está ativo e se a Global API Key está correta.`,
+          message: `Servidor Evolution API inacessível em ${currentUrl}. Verifique se a instância está ativa e se a Global API Key está correta.`,
           details: lastError,
         },
         { status: 502 }

@@ -58,6 +58,7 @@ export default function SettingsPage() {
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
   const [testingServer, setTestingServer] = useState(false);
+  const [savingServer, setSavingServer] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [connectedNumber, setConnectedNumber] = useState<string | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -158,8 +159,46 @@ export default function SettingsPage() {
     setTimeout(() => setBanner(null), 4500);
   };
 
+  // Salvar Servidor Evolution API
+  const handleSaveEvolutionServer = async () => {
+    if (!evolutionUrl.trim() || !evolutionKey.trim()) {
+      showToast('Preencha a URL e a Chave da Evolution API.', 'error');
+      return;
+    }
+    setSavingServer(true);
+    try {
+      const res = await fetch('/api/settings/whatsapp/evolution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save',
+          apiUrl: evolutionUrl.trim(),
+          apiKey: evolutionKey.trim(),
+          instanceName: evolutionInstance.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setServerError(null);
+        showToast('Configurações da Evolution API salvas com sucesso!', 'success');
+      } else {
+        showToast(data.message || data.error || 'Erro ao salvar servidor', 'error');
+      }
+    } catch (err: any) {
+      showToast(`Erro ao salvar: ${err.message}`, 'error');
+    } finally {
+      setSavingServer(false);
+    }
+  };
+
   // Testar Servidor Evolution API
   const handleTestEvolutionServer = async () => {
+    if (!evolutionUrl.trim() || !evolutionKey.trim()) {
+      const msg = 'Informe a URL e a Chave da Evolution API no painel abaixo antes de testar.';
+      setServerError(msg);
+      showToast(msg, 'error');
+      return;
+    }
     setTestingServer(true);
     setServerError(null);
     try {
@@ -168,13 +207,13 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'test_server',
-          apiUrl: evolutionUrl,
-          apiKey: evolutionKey,
-          instanceName: evolutionInstance,
+          apiUrl: evolutionUrl.trim(),
+          apiKey: evolutionKey.trim(),
+          instanceName: evolutionInstance.trim(),
         }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setServerError(null);
         if (data.data?.phoneNumber) setConnectedNumber(data.data.phoneNumber);
         if (data.data?.profileName) setProfileName(data.data.profileName);
@@ -182,8 +221,9 @@ export default function SettingsPage() {
         if (data.data?.status) setEvolutionStatus(data.data.status);
         showToast(data.message, 'success');
       } else {
-        setServerError(data.message);
-        showToast(data.message, 'error');
+        const errMsg = data.message || data.error || 'Falha ao testar conexão';
+        setServerError(errMsg);
+        showToast(errMsg, 'error');
       }
     } catch (err: any) {
       setServerError(`Erro de conexão com o servidor Evolution API em ${evolutionUrl}: ${err.message}`);
@@ -195,6 +235,19 @@ export default function SettingsPage() {
 
   // Gerar QR Code Real na Evolution API
   const handleGenerateQr = async () => {
+    if (!evolutionUrl.trim()) {
+      const msg = 'Informe a URL da Evolution API no painel abaixo antes de gerar o QR Code.';
+      setServerError(msg);
+      showToast(msg, 'error');
+      return;
+    }
+    if (!evolutionKey.trim()) {
+      const msg = 'Informe a Chave de Autenticação (Global API Key) no painel abaixo.';
+      setServerError(msg);
+      showToast(msg, 'error');
+      return;
+    }
+
     setLoadingQr(true);
     setServerError(null);
     try {
@@ -203,13 +256,13 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'get_qr',
-          apiUrl: evolutionUrl,
-          apiKey: evolutionKey,
-          instanceName: evolutionInstance,
+          apiUrl: evolutionUrl.trim(),
+          apiKey: evolutionKey.trim(),
+          instanceName: evolutionInstance.trim(),
         }),
       });
       const data = await res.json();
-      if (data.success && data.qrCode) {
+      if (res.ok && data.success && data.qrCode) {
         setQrCodeData(data.qrCode);
         if (data.pairingCode) setPairingCode(data.pairingCode);
         setEvolutionStatus('connecting');
@@ -217,8 +270,9 @@ export default function SettingsPage() {
         showToast('QR Code oficial gerado pela Evolution API! Aponte o WhatsApp.', 'success');
       } else {
         setQrCodeData(null);
-        setServerError(data.message || `Servidor Evolution API inacessível em ${evolutionUrl}`);
-        showToast(data.message || 'Servidor Evolution API offline', 'error');
+        const errMsg = data.message || data.error || `Servidor Evolution API inacessível em ${evolutionUrl}`;
+        setServerError(errMsg);
+        showToast(errMsg, 'error');
       }
     } catch (err: any) {
       setQrCodeData(null);
@@ -795,11 +849,12 @@ export default function SettingsPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => showToast('Configurações salvas!')}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                            onClick={handleSaveEvolutionServer}
+                            disabled={savingServer}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors disabled:opacity-50"
                           >
                             <Save className="w-3.5 h-3.5" />
-                            <span>Salvar Servidor</span>
+                            <span>{savingServer ? 'Salvando...' : 'Salvar Servidor'}</span>
                           </button>
                         </div>
                       </div>

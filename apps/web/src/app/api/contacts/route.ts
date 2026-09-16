@@ -35,29 +35,36 @@ export async function GET(req: NextRequest) {
       } catch (e) {}
     }
 
-    // 2. Se não houver contatos no banco, busca contatos REAIS do WhatsApp via Evolution API
-    if (contacts.length === 0) {
-      const realContacts = await getRealContacts(instance);
-      const customContacts = getCustomContacts();
+    // Banco conectado COM contatos → a verdade é o banco: não mescla cidadãos
+    // de exemplo nem o store em memória (ambos são apenas de dev/fallback).
+    const usandoBancoReal = !isPlaceholder && contacts.length > 0;
 
-      const map = new Map<string, Contact>();
-      // Cidadãos de exemplo da ouvidoria (têm protocolos vinculados p/ o CRM 360º)
-      for (const c of mockCidadaos) {
-        map.set(c.id, c);
-      }
-      for (const c of customContacts) {
-        map.set(c.id, c);
-      }
-      for (const r of realContacts) {
-        if (!map.has(r.id)) {
-          map.set(r.id, r);
+    if (!usandoBancoReal) {
+      // 2. Sem banco (ou banco vazio): monta a lista de dev a partir dos
+      //    contatos REAIS do WhatsApp (Evolution) + store em memória + exemplos.
+      if (contacts.length === 0) {
+        const realContacts = await getRealContacts(instance);
+        const customContacts = getCustomContacts();
+
+        const map = new Map<string, Contact>();
+        // Cidadãos de exemplo da ouvidoria (têm protocolos vinculados p/ o CRM 360º)
+        for (const c of mockCidadaos) {
+          map.set(c.id, c);
         }
+        for (const c of customContacts) {
+          map.set(c.id, c);
+        }
+        for (const r of realContacts) {
+          if (!map.has(r.id)) {
+            map.set(r.id, r);
+          }
+        }
+        contacts = Array.from(map.values());
+      } else {
+        // Mescla contatos manuais
+        const customContacts = getCustomContacts();
+        contacts = [...customContacts, ...contacts];
       }
-      contacts = Array.from(map.values());
-    } else {
-      // Mescla contatos manuais
-      const customContacts = getCustomContacts();
-      contacts = [...customContacts, ...contacts];
     }
 
     // Filtros
@@ -166,8 +173,12 @@ export async function POST(req: NextRequest) {
       created_at: new Date().toISOString(),
     };
 
-    // Sempre salva no repositório em memória para persistência imediata na interface
-    addCustomContact(newContact);
+    // Só persiste em memória quando NÃO foi gravado no banco (modo dev/fallback).
+    // Com Supabase conectado, a fonte de verdade é o banco — evita duplicar o
+    // contato entre o store em memória e a linha real (RLS).
+    if (!dbContact) {
+      addCustomContact(newContact);
+    }
 
     return NextResponse.json({ success: true, contact: newContact }, { status: 201 });
   } catch (err: any) {

@@ -15,14 +15,18 @@ export async function GET(req: NextRequest) {
     if (!isPlaceholder) {
       const { data: dbProtocolos, error } = await supabase
         .from('protocolos')
-        .select('*, contact:contacts(*)');
+        .select('*, contact:contacts(*)')
+        .order('created_at', { ascending: false });
 
-      if (!error && dbProtocolos && dbProtocolos.length > 0) {
-        protocolos = dbProtocolos as unknown as Protocolo[];
-      } else {
-        // Fallback para os protocolos de exemplo (dá dados iniciais ao painel)
-        protocolos = mockProtocolos;
+      // Banco conectado → a verdade é o banco. Erro é erro (não vira mock);
+      // vazio é vazio (não mascaramos com dados de exemplo).
+      if (error) {
+        return NextResponse.json(
+          { error: 'Falha ao listar protocolos', message: error.message },
+          { status: 500 }
+        );
       }
+      protocolos = (dbProtocolos ?? []) as unknown as Protocolo[];
     }
 
     return NextResponse.json({
@@ -77,23 +81,40 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Perfil de organização não encontrado' }, { status: 403 });
       }
 
-      // Localiza ou cria o cidadão
-      const { data: contact } = await supabase
+      // Localiza ou cria o cidadão (find-or-create) — evita duplicar o mesmo
+      // cidadão a cada protocolo aberto. Busca por nome dentro da organização.
+      const nomeCidadao = contact_name || 'Cidadão não identificado';
+      let contactId: string | undefined;
+
+      const { data: existingContact } = await supabase
         .from('contacts')
-        .insert({
-          organization_id: profile.organization_id,
-          name: contact_name || 'Cidadão não identificado',
-          bairro: bairro || null,
-          tags: ['Ouvidoria'],
-        })
-        .select()
-        .single();
+        .select('id')
+        .eq('organization_id', profile.organization_id)
+        .eq('name', nomeCidadao)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingContact?.id) {
+        contactId = existingContact.id;
+      } else {
+        const { data: novoContato } = await supabase
+          .from('contacts')
+          .insert({
+            organization_id: profile.organization_id,
+            name: nomeCidadao,
+            bairro: bairro || null,
+            tags: ['Ouvidoria'],
+          })
+          .select('id')
+          .single();
+        contactId = novoContato?.id;
+      }
 
       const { data: insertedProtocolo, error: protocoloError } = await supabase
         .from('protocolos')
         .insert({
           organization_id: profile.organization_id,
-          contact_id: contact?.id,
+          contact_id: contactId,
           title,
           tipo_manifestacao,
           categoria: categoria || null,

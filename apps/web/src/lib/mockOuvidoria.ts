@@ -184,6 +184,18 @@ export function protocolosDoCidadao(contactId: string): Protocolo[] {
   return mockProtocolos.filter((p) => p.contact_id === contactId);
 }
 
+// Aplica uma atualização parcial in-memory (modo dev/sem banco), para que
+// mudanças de status (drag & drop / "Avançar") persistam entre re-fetches.
+export function updateMockProtocolo(
+  id: string,
+  patch: Record<string, unknown>
+): Protocolo | undefined {
+  const idx = mockProtocolos.findIndex((p) => p.id === id);
+  if (idx === -1) return undefined;
+  mockProtocolos[idx] = { ...mockProtocolos[idx], ...patch } as Protocolo;
+  return mockProtocolos[idx];
+}
+
 export function acharCidadaoMock(id: string): Cidadao | undefined {
   return mockCidadaos.find((c) => c.id === id);
 }
