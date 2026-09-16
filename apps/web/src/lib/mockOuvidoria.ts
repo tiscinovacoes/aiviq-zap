@@ -199,3 +199,15 @@ export function updateMockProtocolo(
 export function acharCidadaoMock(id: string): Cidadao | undefined {
   return mockCidadaos.find((c) => c.id === id);
 }
+
+// Atualiza um cidadão de exemplo in-memory (fallback dev), para que edições e
+// observações internas "colem" entre re-fetches como fariam no banco real.
+export function updateMockCidadao(
+  id: string,
+  patch: Partial<Cidadao>
+): Cidadao | undefined {
+  const idx = mockCidadaos.findIndex((c) => c.id === id);
+  if (idx === -1) return undefined;
+  mockCidadaos[idx] = { ...mockCidadaos[idx], ...patch } as Cidadao;
+  return mockCidadaos[idx];
+}

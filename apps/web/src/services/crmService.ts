@@ -65,4 +65,27 @@ export const crmService = {
     });
     if (!res.ok) throw new Error('Falha ao atualizar situação do protocolo');
   },
+
+  async updateContact(id: string, patch: Partial<Contact>): Promise<Contact> {
+    const res = await fetch(`/api/contacts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error('Falha ao atualizar cidadão');
+    const data = await res.json();
+    return data.contact;
+  },
+
+  // Registra uma observação interna (persistida em custom_attributes.notes).
+  async addContactNote(id: string, note: string): Promise<Contact> {
+    const res = await fetch(`/api/contacts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note }),
+    });
+    if (!res.ok) throw new Error('Falha ao registrar observação');
+    const data = await res.json();
+    return data.contact;
+  },
 };

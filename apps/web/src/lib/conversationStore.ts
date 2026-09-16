@@ -76,6 +76,20 @@ export function addCustomContact(contact: Contact) {
   }
 }
 
+// Atualiza um contato manual em memória (fallback dev, espelha o UPDATE do banco).
+// Retorna o contato atualizado, ou undefined se não existir no store.
+export function updateCustomContact(
+  id: string,
+  patch: Partial<Contact>
+): Contact | undefined {
+  const list = global.__aiviq_custom_contacts || [];
+  const idx = list.findIndex((c) => c.id === id);
+  if (idx === -1) return undefined;
+  const updated = { ...list[idx], ...patch } as Contact;
+  list[idx] = updated;
+  return updated;
+}
+
 export function addInboundMessage(params: {
   fromPhone: string;
   text: string;

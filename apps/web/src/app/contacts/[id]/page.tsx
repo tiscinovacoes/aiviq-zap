@@ -67,8 +67,11 @@ export default function CitizenCRMPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const [notes, setNotes] = useState<string[]>([]);
+  type NotaInterna = { text: string; at?: string; by?: string };
+  const [notes, setNotes] = useState<NotaInterna[]>([]);
   const [newNote, setNewNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +83,15 @@ export default function CitizenCRMPage() {
         setContact(data.contact);
         setProtocolos(data.protocolos);
         setResumo(data.resumo || { total: 0, abertos: 0, resolvidos: 0 });
+        // Observações internas persistidas em custom_attributes.notes.
+        const rawNotes = (data.contact as any)?.custom_attributes?.notes;
+        if (Array.isArray(rawNotes)) {
+          setNotes(
+            rawNotes.map((n: any) =>
+              typeof n === 'string' ? { text: n } : { text: n?.text ?? '', at: n?.at, by: n?.by }
+            )
+          );
+        }
       })
       .catch(() => active && setNotFound(true))
       .finally(() => active && setIsLoading(false));
@@ -88,11 +100,38 @@ export default function CitizenCRMPage() {
     };
   }, [id]);
 
-  const addNote = (e: React.FormEvent) => {
+  const addNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNote.trim()) return;
-    setNotes([newNote.trim(), ...notes]);
+    const text = newNote.trim();
+    if (!text || savingNote) return;
+
+    setSavingNote(true);
+    setNoteError(null);
+    // Atualização otimista.
+    const optimistic: NotaInterna = { text, at: new Date().toISOString() };
+    const previous = notes;
+    setNotes([optimistic, ...notes]);
     setNewNote('');
+
+    try {
+      const updated = await crmService.addContactNote(id, text);
+      // Sincroniza com o que o banco devolveu (autoridade), quando disponível.
+      const rawNotes = (updated as any)?.custom_attributes?.notes;
+      if (Array.isArray(rawNotes)) {
+        setNotes(
+          rawNotes.map((n: any) =>
+            typeof n === 'string' ? { text: n } : { text: n?.text ?? '', at: n?.at, by: n?.by }
+          )
+        );
+      }
+    } catch (err: any) {
+      // Rollback + restaura o texto para nova tentativa.
+      setNotes(previous);
+      setNewNote(text);
+      setNoteError('Não foi possível salvar a observação. Tente novamente.');
+    } finally {
+      setSavingNote(false);
+    }
   };
 
   return (
@@ -216,12 +255,17 @@ export default function CitizenCRMPage() {
                       placeholder="Registrar uma observação sobre o cidadão..."
                       className="w-full h-16 bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-900 placeholder-slate-400 resize-none focus:outline-none focus:border-emerald-500 focus:bg-white"
                     />
+                    {noteError && (
+                      <p className="text-[11px] text-rose-600">{noteError}</p>
+                    )}
                     <div className="flex justify-end">
                       <button
                         type="submit"
-                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-md shadow-xs"
+                        disabled={savingNote || !newNote.trim()}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-md shadow-xs flex items-center gap-1.5"
                       >
-                        Salvar
+                        {savingNote && <Loader2 className="w-3 h-3 animate-spin" />}
+                        <span>{savingNote ? 'Salvando...' : 'Salvar'}</span>
                       </button>
                     </div>
                   </form>
@@ -231,7 +275,12 @@ export default function CitizenCRMPage() {
                     <div className="space-y-2">
                       {notes.map((n, i) => (
                         <div key={i} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed">
-                          "{n}"
+                          <p>"{n.text}"</p>
+                          {n.at && (
+                            <p className="mt-1 text-[10px] text-slate-400">
+                              {new Date(n.at).toLocaleString('pt-BR')}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
