@@ -1,10 +1,22 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useBotStore } from '@/store/useBotStore';
 import { Block, BlockType, Group } from '@/types/bot';
+
+// Canvas React Flow — rota lazy, sem SSR (ADR-004 §Consequências/mitigação 2):
+// o bundle do editor (~120 KB) não pesa no inbox.
+const BotFlowCanvas = dynamic(() => import('@/components/bots/flow/BotFlowCanvas'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex-1 h-full flex items-center justify-center text-slate-400 text-xs">
+      Carregando editor visual...
+    </div>
+  ),
+});
 import {
   ArrowLeft,
   Play,
@@ -40,12 +52,9 @@ export default function BotCanvasEditorPage() {
     createGroup,
     updateGroup,
     deleteGroup,
-    moveGroup,
     addBlock,
     updateBlock,
     deleteBlock,
-    createEdge,
-    deleteEdge,
     undo,
     redo,
     canUndo,
@@ -65,8 +74,6 @@ export default function BotCanvasEditorPage() {
   const [publishing, setPublishing] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState(3);
   const [publishBanner, setPublishBanner] = useState<string | null>(null);
-  const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   // Currently selected block
   const selectedGroup = bot?.groups.find((g) => g.id === selectedGroupId);
@@ -97,28 +104,6 @@ export default function BotCanvasEditorPage() {
     }
   };
 
-  // Dragging group boxes on canvas
-  const handleMouseDownGroup = (e: React.MouseEvent, group: Group) => {
-    // Only drag from header
-    if ((e.target as HTMLElement).closest('.no-drag')) return;
-    setDraggingGroupId(group.id);
-    setDragOffset({
-      x: e.clientX - group.graphCoordinates.x,
-      y: e.clientY - group.graphCoordinates.y,
-    });
-  };
-
-  const handleMouseMoveCanvas = (e: React.MouseEvent) => {
-    if (!draggingGroupId) return;
-    const newX = Math.max(20, e.clientX - dragOffset.x);
-    const newY = Math.max(20, e.clientY - dragOffset.y);
-    moveGroup(draggingGroupId, { x: newX, y: newY });
-  };
-
-  const handleMouseUpCanvas = () => {
-    setDraggingGroupId(null);
-  };
-
   const handleSendSim = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!simInput.trim()) return;
@@ -129,11 +114,8 @@ export default function BotCanvasEditorPage() {
   if (!bot) return null;
 
   return (
-    <div
-      className="flex h-screen w-screen bg-slate-50 text-slate-900 antialiased overflow-hidden font-sans select-none"
-      onMouseMove={handleMouseMoveCanvas}
-      onMouseUp={handleMouseUpCanvas}
-    >
+    <div className="flex h-screen w-screen bg-slate-50 text-slate-900 antialiased overflow-hidden font-sans">
+
       {/* Main Canvas + Panels */}
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
         {/* Editor Topbar */}
@@ -300,199 +282,9 @@ export default function BotCanvasEditorPage() {
             </div>
           </aside>
 
-          {/* Canvas Area */}
-          <div
-            className="flex-1 h-full relative overflow-auto bg-slate-100/70 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:24px_24px]"
-            onClick={() => selectBlock(null, null)}
-          >
-            {/* SVG Connecting Edges */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
-              <defs>
-                <marker
-                  id="arrowhead"
-                  markerWidth="8"
-                  markerHeight="6"
-                  refX="7"
-                  refY="3"
-                  orient="auto"
-                >
-                  <polygon points="0 0, 8 3, 0 6" fill="#10b981" />
-                </marker>
-              </defs>
-              {bot.edges.map((edge) => {
-                const targetGroup = bot.groups.find((g) => g.id === edge.to.groupId);
-                if (!targetGroup) return null;
-
-                let sourceX = 90;
-                let sourceY = 170;
-
-                if ('eventId' in edge.from) {
-                  sourceX = bot.events[0].graphCoordinates.x + 80;
-                  sourceY = bot.events[0].graphCoordinates.y + 20;
-                } else if ('blockId' in edge.from) {
-                  const targetBlockId = edge.from.blockId;
-                  for (const g of bot.groups) {
-                    const blockIdx = g.blocks.findIndex((b) => b.id === targetBlockId);
-                    if (blockIdx !== -1) {
-                      sourceX = g.graphCoordinates.x + 300;
-                      sourceY = g.graphCoordinates.y + 60 + blockIdx * 65;
-                      break;
-                    }
-                  }
-                }
-
-                const targetX = targetGroup.graphCoordinates.x;
-                const targetY = targetGroup.graphCoordinates.y + 40;
-
-                const deltaX = Math.max(60, (targetX - sourceX) / 2);
-                const pathData = `M ${sourceX} ${sourceY} C ${sourceX + deltaX} ${sourceY}, ${targetX - deltaX} ${targetY}, ${targetX} ${targetY}`;
-
-                return (
-                  <path
-                    key={edge.id}
-                    d={pathData}
-                    stroke="#10b981"
-                    strokeWidth="2"
-                    strokeDasharray="4 2"
-                    fill="none"
-                    markerEnd="url(#arrowhead)"
-                    className="opacity-90"
-                  />
-                );
-              })}
-            </svg>
-
-            {/* Start Node */}
-            <div
-              style={{
-                left: `${bot.events[0].graphCoordinates.x}px`,
-                top: `${bot.events[0].graphCoordinates.y}px`,
-              }}
-              className="absolute z-10 w-24 p-3 bg-white border border-emerald-300 shadow-sm rounded-xl flex flex-col items-center gap-1 cursor-default text-center"
-            >
-              <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                ▶
-              </div>
-              <span className="text-[11px] font-bold text-emerald-800">Início</span>
-              <span className="text-[9px] text-slate-400 font-medium">Gatilho Chat</span>
-            </div>
-
-            {/* Render Groups on Canvas */}
-            {bot.groups.map((group) => {
-              const isGroupSelected = selectedGroupId === group.id;
-
-              return (
-                <div
-                  key={group.id}
-                  style={{
-                    left: `${group.graphCoordinates.x}px`,
-                    top: `${group.graphCoordinates.y}px`,
-                  }}
-                  onMouseDown={(e) => handleMouseDownGroup(e, group)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    selectBlock(group.id, group.blocks[0]?.id || null);
-                  }}
-                  className={`absolute z-10 w-[300px] bg-white border rounded-xl shadow-xs transition-shadow ${
-                    isGroupSelected
-                      ? 'border-emerald-500 shadow-sm ring-2 ring-emerald-500/20'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  {/* Group Header */}
-                  <div className="p-3 border-b border-slate-100 flex items-center justify-between cursor-move bg-slate-50/80 rounded-t-xl">
-                    <input
-                      type="text"
-                      value={group.title}
-                      onChange={(e) => updateGroup(group.id, { title: e.target.value })}
-                      className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none border-b border-transparent focus:border-emerald-500 no-drag w-48"
-                    />
-                    <div className="flex items-center gap-1 no-drag">
-                      <button
-                        onClick={() => deleteGroup(group.id)}
-                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                        title="Excluir grupo"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Group Blocks Stack */}
-                  <div className="p-2 space-y-2">
-                    {group.blocks.map((b) => {
-                      const isBlockSelected = selectedBlockId === b.id;
-
-                      return (
-                        <div
-                          key={b.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            selectBlock(group.id, b.id);
-                          }}
-                          className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all relative ${
-                            isBlockSelected
-                              ? 'bg-emerald-50/80 border-emerald-400 text-emerald-950 font-semibold shadow-2xs'
-                              : 'bg-slate-50/80 border-slate-200/80 text-slate-700 hover:bg-slate-100/80'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 overflow-hidden">
-                              {b.type === 'text' && <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
-                              {b.type === 'text_input' && <HelpCircle className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
-                              {b.type === 'choice_input' && <Split className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
-                              {b.type === 'assign_to_agent' && <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
-                              {b.type === 'add_label' && <Tag className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
-                              {b.type === 'condition' && <Split className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
-
-                              <span className="font-semibold truncate">
-                                {b.type === 'text' && (b.content.text || 'Texto vazio')}
-                                {b.type === 'text_input' && `Pergunta (${b.options.variableId || 'texto'})`}
-                                {b.type === 'choice_input' && `Opções (${b.items?.length || 0})`}
-                                {b.type === 'assign_to_agent' && `Atribuir: ${b.options.agentName || 'Atendente'}`}
-                                {b.type === 'add_label' && `Tags: ${b.options.labels?.join(', ') || ''}`}
-                                {b.type === 'condition' && 'Condição Lógica'}
-                              </span>
-                            </div>
-
-                            {/* Anchor connector */}
-                            <div
-                              title="Conector de saída"
-                              className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white shrink-0 -mr-1 shadow-2xs"
-                            />
-                          </div>
-
-                          {/* Choice input items preview */}
-                          {b.type === 'choice_input' && b.items && (
-                            <div className="mt-2 space-y-1 pl-4 border-l border-slate-200">
-                              {b.items.map((item) => (
-                                <div
-                                  key={item.id}
-                                  className="text-[10px] text-slate-500 flex items-center justify-between"
-                                >
-                                  <span>• {item.content}</span>
-                                  <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Add Block in Group Button */}
-                  <div className="p-2 pt-0 flex justify-center no-drag">
-                    <button
-                      onClick={() => addBlock(group.id, 'text')}
-                      className="w-full py-1.5 border border-dashed border-slate-300 hover:border-emerald-500 hover:text-emerald-700 bg-white rounded-lg text-[11px] text-slate-500 flex items-center justify-center gap-1 transition-colors"
-                    >
-                      <Plus className="w-3 h-3" /> Adicionar Bloco
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+          {/* Canvas Area — React Flow (ADR-004 §1) */}
+          <div className="flex-1 h-full relative min-w-0">
+            <BotFlowCanvas />
           </div>
 
           {/* Right Configuration Panel */}
