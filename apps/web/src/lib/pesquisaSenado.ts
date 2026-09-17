@@ -70,7 +70,25 @@ export function getSaudacaoPeriodo(data: Date = new Date()): { saudacao: string;
 
 export function extrairPrimeiroNome(nomeCompleto?: string): string {
   if (!nomeCompleto || !nomeCompleto.trim()) return '';
-  const clean = nomeCompleto.trim().split(' ')[0];
+  const trimmed = nomeCompleto.trim();
+  const lower = trimmed.toLowerCase();
+
+  // Se for placeholder genérico como "Eleitor", "Eleitor 1234", "WhatsApp", "Contato", ou apenas números
+  if (
+    lower === 'eleitor' ||
+    lower.startsWith('eleitor ') ||
+    lower.startsWith('eleitor_') ||
+    lower.startsWith('eleitor-') ||
+    lower === 'contato' ||
+    lower.startsWith('contato ') ||
+    lower === 'whatsapp' ||
+    lower.startsWith('whatsapp ') ||
+    /^\+?\d+$/.test(trimmed.replace(/[\s\-\(\)\.]/g, ''))
+  ) {
+    return '';
+  }
+
+  const clean = trimmed.split(' ')[0];
   return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
 }
 
@@ -85,7 +103,7 @@ export function gerarMensagem1(nome?: string): string {
   if (pNome) {
     return `Olá ${pNome}, ${saudacao}\ntudo bem?`;
   }
-  return `Olá, ${saudacao}!\nTudo bem?`;
+  return `Olá, ${saudacao}\ntudo bem?`;
 }
 
 // Mensagem 2: Contextualização da pesquisa

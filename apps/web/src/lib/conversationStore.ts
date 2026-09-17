@@ -472,7 +472,7 @@ export function ensurePesquisaConversation(params: {
       conversation_id: existing.id,
       sender_type: 'agent',
       sender_name: 'Robô Pesquisa Senado',
-      content: gerarMensagem1(contactName),
+      content: gerarMensagem1(params.name),
       message_type: 'text',
       delivery_status: 'read',
       created_at: new Date(baseTime).toISOString(),

@@ -244,7 +244,7 @@ export default function PesquisaSenadoKanban() {
         body: JSON.stringify({
           action: 'disparar',
           phone: novoTelefone.trim(),
-          name: novoNome.trim() || 'Eleitor',
+          name: novoNome.trim(),
           bairro: novoBairro.trim(),
           sendWhatsApp: true,
         }),
@@ -354,7 +354,7 @@ export default function PesquisaSenadoKanban() {
     try {
       const fila: ItemFilaDisparo[] = planilhaContatos.map((c, idx) => ({
         id: `fila-${Date.now()}-${idx}`,
-        name: c.name?.trim() || 'Eleitor',
+        name: c.name?.trim() || '',
         phone: c.phone.replace(/\D/g, ''),
         bairro: c.bairro || 'Mato Grosso do Sul',
         status: 'pendente',

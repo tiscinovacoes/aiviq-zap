@@ -56,7 +56,7 @@ export function sortearDelaySegundos(min = 35, max = 75): number {
 export function carregarFila(itens: Array<{ name: string; phone: string; bairro?: string }>): EstadoDisparador {
   const filaFormatada: ItemFilaDisparo[] = itens.map((it, idx) => {
     const cleanPhone = it.phone.replace(/\D/g, '');
-    const cleanName = it.name?.trim() || 'Eleitor';
+    const cleanName = it.name?.trim() || '';
     const bairro = it.bairro || 'Mato Grosso do Sul';
 
     // 1. Registra imediatamente o eleitor na sessão da Pesquisa para aparecer no Kanban
