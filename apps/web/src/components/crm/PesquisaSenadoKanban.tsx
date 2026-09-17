@@ -164,7 +164,8 @@ export default function PesquisaSenadoKanban() {
 
   const agendarProximoDisparo = () => {
     limparTimersDisparo();
-    const delay = Math.floor(Math.random() * (75 - 35 + 1)) + 35;
+    // Intervalo aleatório 40–90s (perfil anti-ban conservador).
+    const delay = Math.floor(Math.random() * (90 - 40 + 1)) + 40;
     commitEstado({ ...(filaRef.current as EstadoDisparador), segundosRestantesProximo: delay });
 
     countdownRef.current = setInterval(() => {
@@ -192,6 +193,8 @@ export default function PesquisaSenadoKanban() {
     commitEstado({ ...est, contatoAtual: { name: proximo.name, phone: proximo.phone } });
 
     let enviado = false;
+    let jaEmFluxo = false;
+    let gatedPausa: string | null = null;
     try {
       const res = await fetch('/api/pesquisa/senado', {
         method: 'POST',
@@ -205,16 +208,32 @@ export default function PesquisaSenadoKanban() {
         }),
       });
       const data = await res.json();
-      // "enviado" só quando o WhatsApp confirmou o envio; senão conta como falha.
-      enviado = data?.success === true && data?.dispatchedWhatsApp === true;
+      if (data?.gated) {
+        // 'ja_em_fluxo' = lead já respondeu; pula sem erro. Limite/horário = PAUSA.
+        if (data.reason === 'ja_em_fluxo') jaEmFluxo = true;
+        else gatedPausa = data.message || 'Disparo pausado pelo limite anti-bloqueio.';
+      } else {
+        // "enviado" só quando o WhatsApp confirmou; senão conta como falha.
+        enviado = data?.success === true && data?.dispatchedWhatsApp === true;
+      }
     } catch {
       enviado = false;
     }
 
+    // Teto diário / fora de horário → pausa a fila e MANTÉM o contato pendente
+    // (não queima o lead). O operador retoma quando puder.
+    if (gatedPausa) {
+      limparTimersDisparo();
+      commitEstado({ ...(filaRef.current as EstadoDisparador), pausado: true, segundosRestantesProximo: 0, contatoAtual: undefined });
+      setMensagemSucesso(`⏸️ ${gatedPausa}`);
+      return;
+    }
+
     const atual = filaRef.current as EstadoDisparador;
+    const ok = enviado || jaEmFluxo;
     const fila = atual.fila.map((it) =>
       it.id === proximo.id
-        ? ({ ...it, status: enviado ? 'enviado' : 'erro', enviadoEm: enviado ? new Date().toISOString() : undefined, erroMsg: enviado ? undefined : 'Falha no envio pelo WhatsApp' } as ItemFilaDisparo)
+        ? ({ ...it, status: ok ? 'enviado' : 'erro', enviadoEm: ok ? new Date().toISOString() : undefined, erroMsg: ok ? undefined : 'Falha no envio pelo WhatsApp' } as ItemFilaDisparo)
         : it
     );
     const enviados = fila.filter((f) => f.status === 'enviado').length;

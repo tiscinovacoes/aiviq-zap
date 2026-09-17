@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/server';
 import { addInboundMessage, addBotDispatchedMessage } from '@/lib/conversationStore';
-import { invalidateEvolutionCache, sendRealMessage } from '@/lib/evolutionService';
+import { invalidateEvolutionCache, sendRealMessageDetailed } from '@/lib/evolutionService';
+import { persistMessageByJid } from '@/lib/conversationRepo';
+import { isOptOut } from '@/lib/spintax';
 import {
   getPesquisaSessionByPhone,
   savePesquisaSession,
@@ -179,9 +179,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ================= INGESTÃO: MEMÓRIA / CACHE + SUPABASE =================
+    // ================= INGESTÃO + AUTOMAÇÃO =================
     if (incomingMessages.length > 0) {
-      // 1. Sempre registra no repositório em memória para refletir no Inbox imediatamente
+      // 1. Espelho em memória (Inbox instantâneo) + invalida o cache da instância.
       for (const msg of incomingMessages) {
         try {
           addInboundMessage({
@@ -195,242 +195,121 @@ export async function POST(req: NextRequest) {
           console.error('[Memory Store Inbound Error]:', memErr);
         }
       }
-
-      // Invalida o cache desta instância para o novo recebido refletir de imediato.
       invalidateEvolutionCache(instanceName);
 
-      // ================= PROCESSAMENTO AUTOMÁTICO: PESQUISA ELEITORAL SENADO MS =================
+      // 2. Persiste cada recebido no Supabase, keyed pelo JID canônico
+      //    (idempotente por external_message_id). É isto que faz a RESPOSTA do
+      //    lead aparecer na thread e sobreviver ao serverless.
+      for (const msg of incomingMessages) {
+        persistMessageByJid({
+          phoneOrJid: msg.from,
+          senderType: 'contact',
+          content: msg.text,
+          name: msg.name,
+          externalId: msg.externalId,
+          instanceName,
+        }).catch((e) => console.error('[Webhook persist inbound]:', e));
+      }
+
+      // Helper: resposta do bot ao vivo (delay 0), persistida no banco + espelhada.
+      const botReply = async (to: string, name: string, text: string) => {
+        const r = await sendRealMessageDetailed(to, text, instanceName, 0);
+        persistMessageByJid({
+          phoneOrJid: to,
+          senderType: 'agent',
+          content: text,
+          name,
+          externalId: r.messageId,
+          instanceName,
+        }).catch((e) => console.error('[Webhook persist bot reply]:', e));
+        try {
+          addBotDispatchedMessage({ toPhone: to, name, text, instanceName });
+        } catch {}
+        return r.ok;
+      };
+
+      // 3. AUTOMAÇÃO: Pesquisa Eleitoral Senado MS (spintax semeado pelo telefone)
       for (const msg of incomingMessages) {
         try {
           const session = await getPesquisaSessionByPhone(msg.from);
-          if (session && session.etapa !== 'concluido' && session.etapa !== 'recusado') {
-            const cleanText = msg.text.trim();
+          if (!session || session.etapa === 'concluido' || session.etapa === 'recusado') continue;
 
-            // Etapa 1: Lead respondeu à saudação inicial (Msg 1) -> Dispara Msg 2 e Msg 3
-            if (session.etapa === 'disparado') {
-              session.etapa = 'aguardando_voto1';
-              await savePesquisaSession(session);
-              sincronizarContatoEleitor({
-                name: session.name,
-                phone: msg.from,
-                bairro: session.bairro,
-                etapa: 'aguardando_voto1',
-              }).catch((e) => console.error('[Webhook] Erro sync contato:', e));
+          const cleanText = msg.text.trim();
+          const seed = msg.from.replace(/\D/g, '');
 
-              const msg2 = gerarMensagem2();
-              const msg3 = gerarMensagem3();
+          // Opt-out: encerra o fluxo educadamente (protege o chip e respeita o lead).
+          if (isOptOut(cleanText)) {
+            session.etapa = 'recusado';
+            await savePesquisaSession(session);
+            await botReply(msg.from, session.name, 'Tudo bem, não vamos mais te enviar mensagens. Obrigado! 🙏');
+            sincronizarContatoEleitor({
+              name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'recusado',
+            }).catch((e) => console.error('[Webhook] Erro sync opt-out:', e));
+            continue;
+          }
 
-              // Envia Msg 2
-              await sendRealMessage(msg.from, msg2, instanceName);
-              addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msg2, instanceName });
+          // Etapa 1: respondeu à saudação → Msg 2 + Msg 3
+          if (session.etapa === 'disparado') {
+            session.etapa = 'aguardando_voto1';
+            await savePesquisaSession(session);
+            sincronizarContatoEleitor({
+              name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'aguardando_voto1',
+            }).catch((e) => console.error('[Webhook] Erro sync contato:', e));
 
-              // Pequena pausa natural de leitura
-              await new Promise((r) => setTimeout(r, 600));
+            await botReply(msg.from, session.name, gerarMensagem2(seed));
+            await botReply(msg.from, session.name, gerarMensagem3(seed));
+            console.log(`[Pesquisa Senado MS] Saudação respondida — Msg 2 e 3 enviadas para ${msg.from}`);
+          }
 
-              // Envia Msg 3
-              await sendRealMessage(msg.from, msg3, instanceName);
-              addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msg3, instanceName });
+          // Etapa 2: aguardando 1º voto
+          else if (session.etapa === 'aguardando_voto1') {
+            const votoValido = validarVoto(cleanText);
+            if (!votoValido) {
+              await botReply(msg.from, session.name, 'Por favor, digite apenas o número correspondente à sua opção (de 1 a 12).');
+            } else {
+              const candidato1 = obterCandidatoPorId(votoValido);
+              if (candidato1) {
+                session.voto1Id = candidato1.id;
+                session.voto1Nome = candidato1.nome;
+                session.etapa = 'aguardando_voto2';
+                await savePesquisaSession(session);
+                sincronizarContatoEleitor({
+                  name: session.name, phone: msg.from, bairro: session.bairro,
+                  voto1Nome: candidato1.nome, etapa: 'aguardando_voto2',
+                }).catch((e) => console.error('[Webhook] Erro sync contato 1º voto:', e));
 
-              console.log(`[Pesquisa Senado MS] Respondeu saudação! Enviadas Msg 2 e Msg 3 para ${msg.from}`);
-            }
-
-            // Etapa 2: Aguardando 1º voto
-            else if (session.etapa === 'aguardando_voto1') {
-              const votoValido = validarVoto(cleanText);
-              if (!votoValido) {
-                const msgInvalida = `Por favor, digite apenas o número correspondente à sua opção (de 1 a 12).`;
-                await sendRealMessage(msg.from, msgInvalida, instanceName);
-                addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msgInvalida, instanceName });
-              } else {
-                const candidato1 = obterCandidatoPorId(votoValido);
-                if (candidato1) {
-                  session.voto1Id = candidato1.id;
-                  session.voto1Nome = candidato1.nome;
-                  session.etapa = 'aguardando_voto2';
-                  await savePesquisaSession(session);
-                  sincronizarContatoEleitor({
-                    name: session.name,
-                    phone: msg.from,
-                    bairro: session.bairro,
-                    voto1Nome: candidato1.nome,
-                    etapa: 'aguardando_voto2',
-                  }).catch((e) => console.error('[Webhook] Erro sync contato 1º voto:', e));
-
-                  // Envia Msg 4 com a lista atualizada (sem o candidato votado)
-                  const msg4 = gerarMensagemSegundoVoto(candidato1.id);
-                  await sendRealMessage(msg.from, msg4, instanceName);
-                  addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msg4, instanceName });
-                  console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) computado para ${msg.from}. Msg 4 enviada.`);
-                }
+                await botReply(msg.from, session.name, gerarMensagemSegundoVoto(candidato1.id, seed));
+                console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) — Msg 4 enviada para ${msg.from}`);
               }
             }
+          }
 
-            // Etapa 3: Aguardando 2º voto
-            else if (session.etapa === 'aguardando_voto2') {
-              const votoValido = validarVoto(cleanText);
-              if (!votoValido) {
-                const msgInvalida = `Por favor, digite apenas o número da sua escolha para o segundo voto.`;
-                await sendRealMessage(msg.from, msgInvalida, instanceName);
-                addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msgInvalida, instanceName });
-              } else if (
-                session.voto1Id &&
-                session.voto1Id === votoValido &&
-                votoValido <= 10
-              ) {
-                // Segundo voto deve ser diferente do primeiro (conforme instrução)
-                const msgRepetido = `O segundo voto deve ser diferente do primeiro.\nPor favor, escolha outro candidato da lista acima.`;
-                await sendRealMessage(msg.from, msgRepetido, instanceName);
-                addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msgRepetido, instanceName });
-              } else {
-                const candidato2 = obterCandidatoPorId(votoValido);
-                if (candidato2) {
-                  session.voto2Id = candidato2.id;
-                  session.voto2Nome = candidato2.nome;
-                  session.etapa = 'concluido';
-                  await savePesquisaSession(session);
-                  sincronizarContatoEleitor({
-                    name: session.name,
-                    phone: msg.from,
-                    bairro: session.bairro,
-                    voto1Nome: session.voto1Nome,
-                    voto2Nome: candidato2.nome,
-                    etapa: 'concluido',
-                  }).catch((e) => console.error('[Webhook] Erro sync contato 2º voto:', e));
+          // Etapa 3: aguardando 2º voto
+          else if (session.etapa === 'aguardando_voto2') {
+            const votoValido = validarVoto(cleanText);
+            if (!votoValido) {
+              await botReply(msg.from, session.name, 'Por favor, digite apenas o número da sua escolha para o segundo voto.');
+            } else if (session.voto1Id && session.voto1Id === votoValido && votoValido <= 10) {
+              await botReply(msg.from, session.name, 'O segundo voto deve ser diferente do primeiro.\nPor favor, escolha outro candidato da lista acima.');
+            } else {
+              const candidato2 = obterCandidatoPorId(votoValido);
+              if (candidato2) {
+                session.voto2Id = candidato2.id;
+                session.voto2Nome = candidato2.nome;
+                session.etapa = 'concluido';
+                await savePesquisaSession(session);
+                sincronizarContatoEleitor({
+                  name: session.name, phone: msg.from, bairro: session.bairro,
+                  voto1Nome: session.voto1Nome, voto2Nome: candidato2.nome, etapa: 'concluido',
+                }).catch((e) => console.error('[Webhook] Erro sync contato 2º voto:', e));
 
-                  // Envia Msg 5 com despedida de acordo com o período MS
-                  const msg5 = gerarMensagemAgradecimento();
-                  await sendRealMessage(msg.from, msg5, instanceName);
-                  addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msg5, instanceName });
-                  console.log(`[Pesquisa Senado MS] 2º Voto (${candidato2.nome}) computado para ${msg.from}. Pesquisa finalizada com sucesso!`);
-                }
+                await botReply(msg.from, session.name, gerarMensagemAgradecimento(seed));
+                console.log(`[Pesquisa Senado MS] 2º Voto (${candidato2.nome}) — pesquisa concluída para ${msg.from}`);
               }
             }
           }
         } catch (pesqErr) {
           console.error('[Pesquisa Senado Handler Error]:', pesqErr);
-        }
-      }
-
-      // 2. Registra no Supabase caso configurado
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      const isPlaceholder =
-        !supabaseUrl || supabaseUrl.includes('placeholder-project');
-
-      if (!isPlaceholder) {
-        try {
-          const supabase = serviceRoleKey
-            ? createSupabaseClient(supabaseUrl, serviceRoleKey)
-            : await createClient();
-
-          const { data: org } = await supabase
-            .from('organizations')
-            .select('id')
-            .limit(1)
-            .single();
-
-          if (org) {
-            const organizationId = org.id;
-
-            for (const msg of incomingMessages) {
-              // Localizar ou criar contato
-              let { data: contact } = await supabase
-                .from('contacts')
-                .select('id, organization_id')
-                .eq('phone', msg.from)
-                .limit(1)
-                .single();
-
-              if (!contact) {
-                const { data: newContact } = await supabase
-                  .from('contacts')
-                  .insert({
-                    organization_id: organizationId,
-                    name: msg.name || `WhatsApp ${msg.from.slice(-4)}`,
-                    phone: msg.from,
-                    tags: ['WhatsApp Inbound'],
-                  })
-                  .select('id, organization_id')
-                  .single();
-                contact = newContact;
-              }
-
-              if (contact) {
-                // Localizar ou criar conversa
-                let { data: conversation } = await supabase
-                  .from('conversations')
-                  .select('id')
-                  .eq('contact_id', contact.id)
-                  .eq('status', 'open')
-                  .limit(1)
-                  .single();
-
-                if (!conversation) {
-                  // Resolve o inbox pela instância (número) de origem. Se a coluna
-                  // evolution_instance_name ainda não existir (migration 006 não
-                  // aplicada) ou não houver correspondência, cai no primeiro inbox.
-                  let inbox: { id: string } | null = null;
-                  if (instanceName) {
-                    const { data, error } = await supabase
-                      .from('inboxes')
-                      .select('id')
-                      .eq('organization_id', organizationId)
-                      .eq('evolution_instance_name', instanceName)
-                      .limit(1)
-                      .maybeSingle();
-                    if (!error && data) inbox = data as { id: string };
-                  }
-                  if (!inbox) {
-                    const { data } = await supabase
-                      .from('inboxes')
-                      .select('id')
-                      .eq('organization_id', organizationId)
-                      .limit(1)
-                      .maybeSingle();
-                    inbox = (data as { id: string } | null) || null;
-                  }
-
-                  const { data: newConversation } = await supabase
-                    .from('conversations')
-                    .insert({
-                      organization_id: organizationId,
-                      inbox_id: inbox?.id,
-                      contact_id: contact.id,
-                      status: 'open',
-                      last_message_preview: msg.text,
-                      last_message_at: new Date().toISOString(),
-                    })
-                    .select('id')
-                    .single();
-
-                  conversation = newConversation;
-                }
-
-                if (conversation) {
-                  await supabase.from('messages').insert({
-                    organization_id: organizationId,
-                    conversation_id: conversation.id,
-                    sender_type: 'contact',
-                    content: msg.text,
-                    message_type: 'text',
-                    delivery_status: 'delivered',
-                    external_message_id: msg.externalId,
-                  });
-
-                  await supabase
-                    .from('conversations')
-                    .update({
-                      last_message_preview: msg.text,
-                      last_message_at: new Date().toISOString(),
-                      updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', conversation.id);
-                }
-              }
-            }
-          }
-        } catch (dbErr) {
-          console.warn('[Supabase Ingestion Warn]:', dbErr);
         }
       }
     }

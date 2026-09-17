@@ -23,6 +23,7 @@ interface InboxState {
   setSearchQuery: (query: string) => void;
   fetchConversations: () => Promise<void>;
   syncConversations: () => Promise<void>;
+  syncActiveMessages: () => Promise<void>;
   selectConversation: (conversation: Conversation) => Promise<void>;
   selectConversationByPhoneOrId: (idOrPhone: string) => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
@@ -191,12 +192,27 @@ export const useInboxStore = create<InboxState>((set, get) => ({
     }
   },
 
+  // Poll LEVE só da conversa ativa (near-real-time). Roda num intervalo mais
+  // curto que o da lista, sem recarregar todas as conversas.
+  syncActiveMessages: async () => {
+    const active = get().activeConversation;
+    if (!active) return;
+    try {
+      const messages = await conversationService.getMessages(active.id);
+      if (get().activeConversation?.id === active.id && !areMessagesEqual(get().messages, messages)) {
+        set({ messages });
+      }
+    } catch {
+      // silencioso em background
+    }
+  },
+
   syncConversations: async () => {
     // Evita chamadas concorrentes sobrepostas que sobrecarregam o servidor
     if (get().isSyncing) return;
     set({ isSyncing: true });
 
-    const { statusFilter, channelFilter, searchQuery, activeConversation, conversations: currentConvs, messages: currentMsgs } = get();
+    const { statusFilter, channelFilter, searchQuery, activeConversation, conversations: currentConvs } = get();
     try {
       const { conversations: fetchedConvs, whatsappConnected } = await conversationService.getConversations({
         status: statusFilter,
@@ -224,15 +240,8 @@ export const useInboxStore = create<InboxState>((set, get) => ({
           isWhatsAppConnected: whatsappConnected,
         });
       }
-
-      // Se houver conversa ativa válida, busca mensagens de forma suave sem causar re-render desnecessário
-      const currentActive = get().activeConversation;
-      if (currentActive) {
-        const messages = await conversationService.getMessages(currentActive.id);
-        if (get().activeConversation?.id === currentActive.id && !areMessagesEqual(currentMsgs, messages)) {
-          set({ messages });
-        }
-      }
+      // As mensagens da conversa ativa são atualizadas pelo poll dedicado
+      // (syncActiveMessages), em intervalo mais curto — não refazemos aqui.
     } catch (e) {
       // Falha silenciosa em background polling
     } finally {
@@ -281,6 +290,9 @@ export const useInboxStore = create<InboxState>((set, get) => ({
         ),
         isSending: false,
       }));
+
+      // Reconciliação rápida: puxa a thread persistida (Supabase) logo após enviar.
+      setTimeout(() => get().syncActiveMessages(), 800);
     } catch (err: any) {
       set((state) => ({
         messages: state.messages.map((m) =>

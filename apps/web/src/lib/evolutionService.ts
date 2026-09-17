@@ -424,11 +424,24 @@ export async function getRealContacts(instanceName?: string): Promise<Contact[]>
 }
 
 // ================= 4. ENVIAR MENSAGEM REAL NO WHATSAPP =================
-export async function sendRealMessage(
+export interface SendResult {
+  ok: boolean;
+  messageId?: string; // id do WhatsApp/Evolution (para dedupe na persistência)
+  instance: string;
+}
+
+/**
+ * Envia texto pela Evolution.
+ * @param delayMs presença "digitando..." antes de enviar. 0 (padrão) = envio
+ *   imediato (respostas ao vivo do atendente/bot, menor latência). O disparo em
+ *   massa passa um valor > 0 para humanizar (anti-ban).
+ */
+export async function sendRealMessageDetailed(
   target: string,
   text: string,
-  instanceName?: string
-): Promise<boolean> {
+  instanceName?: string,
+  delayMs = 0
+): Promise<SendResult> {
   let inst = resolveInstanceName(instanceName);
   let isConnected = await isEvolutionConnected(inst);
 
@@ -449,12 +462,12 @@ export async function sendRealMessage(
 
   if (!isConnected) {
     console.warn(`[Evolution Send Real] Nenhuma instância conectada para envio (tentada: ${inst}).`);
-    return false;
+    return { ok: false, instance: inst };
   }
 
   try {
     const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
-    if (!cleanNumber || cleanNumber.length < 8) return false;
+    if (!cleanNumber || cleanNumber.length < 8) return { ok: false, instance: inst };
 
     const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${inst}`, {
       method: 'POST',
@@ -465,25 +478,53 @@ export async function sendRealMessage(
       body: JSON.stringify({
         number: cleanNumber,
         text: text.trim(),
-        delay: 1000,
+        delay: delayMs,
         linkPreview: true,
       }),
       signal: AbortSignal.timeout(8000),
     });
 
     if (res.ok) {
-      console.log(`[Evolution Send Real Success] (${inst}) Enviado para ${cleanNumber}: "${text}"`);
+      let messageId: string | undefined;
+      try {
+        const data = await res.json();
+        messageId = data?.key?.id || data?.messageId || undefined;
+      } catch {}
       invalidateEvolutionCache(inst);
-      return true;
+      return { ok: true, messageId, instance: inst };
     }
 
     const err = await res.text();
     console.warn(`[Evolution Send Real Failed HTTP ${res.status}] (${inst}):`, err);
-    return false;
+    return { ok: false, instance: inst };
   } catch (err: any) {
     console.error(`[Evolution Send Real Error] (${inst}):`, err.message);
-    return false;
+    return { ok: false, instance: inst };
   }
+}
+
+/** Resolve a instância que REALMENTE será usada para enviar (a padrão se
+ *  conectada, senão a primeira conectada no servidor). Serve para gatear o
+ *  anti-ban e registrar o contador no MESMO chip que dispara. */
+export async function resolveSendInstance(instanceName?: string): Promise<string> {
+  const inst = resolveInstanceName(instanceName);
+  if (await isEvolutionConnected(inst)) return inst;
+  try {
+    const live = await fetchLiveEvolutionInstances();
+    const conectada = live.find((i) => i.status === 'connected');
+    if (conectada) return conectada.instanceName;
+  } catch {}
+  return inst;
+}
+
+/** Compat: mantém a API booleana usada pela maioria dos chamadores. */
+export async function sendRealMessage(
+  target: string,
+  text: string,
+  instanceName?: string,
+  delayMs = 0
+): Promise<boolean> {
+  return (await sendRealMessageDetailed(target, text, instanceName, delayMs)).ok;
 }
 
 // ================= 5. LISTAR INSTÂNCIAS REAIS DO SERVIDOR EVOLUTION =================

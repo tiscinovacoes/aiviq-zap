@@ -25,6 +25,7 @@ function InboxMain() {
     activeConversation,
     fetchConversations,
     syncConversations,
+    syncActiveMessages,
     selectConversationByPhoneOrId,
   } = useInboxStore();
   const [inputText, setInputText] = useState('');
@@ -55,24 +56,32 @@ function InboxMain() {
       fetchConversations();
     }
 
-    let timeoutId: NodeJS.Timeout;
+    let listTimeout: NodeJS.Timeout;
+    let msgTimeout: NodeJS.Timeout;
     let isCancelled = false;
 
-    const runSync = async () => {
-      // Poupa CPU e conexões de rede quando a aba estiver em segundo plano
+    // Poll da LISTA de conversas (mais pesado) — intervalo maior.
+    const runListSync = async () => {
       if (document.visibilityState === 'visible') {
         await syncConversations();
       }
-      if (!isCancelled) {
-        timeoutId = setTimeout(runSync, 4500);
+      if (!isCancelled) listTimeout = setTimeout(runListSync, 5000);
+    };
+    // Poll da CONVERSA ATIVA (leve) — near-real-time com o lead.
+    const runMsgSync = async () => {
+      if (document.visibilityState === 'visible') {
+        await syncActiveMessages();
       }
+      if (!isCancelled) msgTimeout = setTimeout(runMsgSync, 2500);
     };
 
-    timeoutId = setTimeout(runSync, 4500);
+    listTimeout = setTimeout(runListSync, 5000);
+    msgTimeout = setTimeout(runMsgSync, 2500);
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         syncConversations();
+        syncActiveMessages();
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -85,11 +94,12 @@ function InboxMain() {
 
     return () => {
       isCancelled = true;
-      clearTimeout(timeoutId);
+      clearTimeout(listTimeout);
+      clearTimeout(msgTimeout);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('aiviq:instance-changed', onInstanceChanged);
     };
-  }, [fetchUser, fetchConversations, syncConversations, searchParams, selectConversationByPhoneOrId]);
+  }, [fetchUser, fetchConversations, syncConversations, syncActiveMessages, searchParams, selectConversationByPhoneOrId]);
 
   // Se o query param mudar com a tela já aberta, sincroniza seleção imediatamente
   useEffect(() => {

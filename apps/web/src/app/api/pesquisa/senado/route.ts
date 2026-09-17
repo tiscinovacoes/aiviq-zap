@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getPesquisaSessions,
   getPesquisaStats,
+  getPesquisaSessionByPhone,
   createOrUpdateSessionByPhone,
   savePesquisaSession,
 } from '@/lib/pesquisaSenadoStore';
@@ -14,9 +15,11 @@ import {
   validarVoto,
   obterCandidatoPorId,
 } from '@/lib/pesquisaSenado';
-import { sendRealMessage } from '@/lib/evolutionService';
+import { sendRealMessageDetailed, resolveSendInstance } from '@/lib/evolutionService';
 import { addBotDispatchedMessage } from '@/lib/conversationStore';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
+import { persistMessageByJid } from '@/lib/conversationRepo';
+import { checkDispatchGate, recordDispatch, ANTIBAN } from '@/lib/antiBan';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +57,48 @@ export async function POST(req: NextRequest) {
 
     // Ação: Iniciar disparo da Pesquisa (Msg 1)
     if (!action || action === 'disparar') {
+      const instance = body.instance || undefined;
+
+      // ============ ANTI-BAN: não re-disparar a quem já está no fluxo ============
+      const existente = await getPesquisaSessionByPhone(cleanPhone);
+      if (
+        existente &&
+        existente.etapa !== 'disparado' &&
+        !body.forcar
+      ) {
+        return NextResponse.json({
+          success: true,
+          gated: true,
+          reason: 'ja_em_fluxo',
+          message: `Contato já está na etapa "${existente.etapa}" — disparo pulado para não re-enviar.`,
+          session: existente,
+          dispatchedWhatsApp: false,
+        });
+      }
+
+      // Instância que REALMENTE vai disparar — gate, envio e contador no mesmo chip.
+      const instAlvo = await resolveSendInstance(instance);
+
+      // ============ ANTI-BAN: janela de horário + teto diário/warmup ============
+      if (sendWhatsApp) {
+        const gate = await checkDispatchGate(instAlvo);
+        if (!gate.allowed) {
+          const motivo =
+            gate.reason === 'fora_horario'
+              ? `Fora da janela de disparo (${ANTIBAN.HORA_INICIO}h–${ANTIBAN.HORA_FIM}h MS).`
+              : `Teto diário do chip atingido (${gate.sentToday}/${gate.dailyCap}). Retome amanhã ou aumente o warmup.`;
+          return NextResponse.json({
+            success: true,
+            gated: true,
+            reason: gate.reason,
+            sentToday: gate.sentToday,
+            dailyCap: gate.dailyCap,
+            message: motivo,
+            dispatchedWhatsApp: false,
+          });
+        }
+      }
+
       const session = await createOrUpdateSessionByPhone(cleanPhone, name || `Eleitor ${cleanPhone.slice(-4)}`, {
         bairro,
         etapa: 'disparado',
@@ -63,20 +108,38 @@ export async function POST(req: NextRequest) {
         voto2Nome: undefined,
       });
 
-      const msg1 = gerarMensagem1(name);
+      // Spintax semeado pelo telefone → cada lead recebe uma abertura diferente.
+      const msg1 = gerarMensagem1(name, cleanPhone);
 
       let dispatched = false;
+      let instanciaUsada: string | undefined = instAlvo;
       if (sendWhatsApp) {
-        dispatched = await sendRealMessage(cleanPhone, msg1);
+        // Presença "digitando..." humaniza o disparo em massa (anti-ban).
+        const r = await sendRealMessageDetailed(cleanPhone, msg1, instAlvo, ANTIBAN.PRESENCA_MS);
+        dispatched = r.ok;
+        instanciaUsada = r.instance;
+        if (r.ok) {
+          await recordDispatch(r.instance);
+          // Persiste a Msg 1 no Supabase (keyed por JID) — grava a conversa de verdade.
+          persistMessageByJid({
+            phoneOrJid: cleanPhone,
+            senderType: 'agent',
+            content: msg1,
+            name: name || session.name,
+            externalId: r.messageId,
+            instanceName: r.instance,
+          }).catch((e) => console.error('[API Pesquisa] persist Msg1:', e));
+        }
       }
 
-      // Registra a mensagem enviada no Inbox para o atendente acompanhar e intervir
+      // Espelha no Inbox em memória (acompanhamento instantâneo do atendente).
       try {
         addBotDispatchedMessage({
           toPhone: cleanPhone,
           name: name || session.name,
           text: msg1,
           botName: 'Robô Pesquisa Senado',
+          instanceName: instanciaUsada,
         });
       } catch (err) {
         console.error('[Pesquisa Manual Inbox Sync Error]:', err);
@@ -92,7 +155,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: 'Pesquisa iniciada com sucesso (Msg 1 enviada)',
+        message: dispatched ? 'Pesquisa iniciada (Msg 1 enviada)' : 'Falha no envio pelo WhatsApp',
         session,
         dispatchedWhatsApp: dispatched,
       });

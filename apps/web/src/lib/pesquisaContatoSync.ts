@@ -66,7 +66,16 @@ export async function sincronizarContatoEleitor(eleitor: {
         ? createSupabaseClient(supabaseUrl, serviceRoleKey)
         : await createClient();
 
-      const { data: org } = await supabase.from('organizations').select('id').limit(1).maybeSingle();
+      // Mesma resolução determinística do getServiceContext (created_at, id) para
+      // NÃO gravar o contato numa org diferente da conversa/pesquisa quando há
+      // mais de uma organização.
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('id')
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(1)
+        .maybeSingle();
       if (org) {
         const organizationId = org.id;
 

@@ -1,6 +1,7 @@
 // ==============================================================================
 // Módulo Oficial: Pesquisa Eleitoral para o Senado Federal em Mato Grosso do Sul
 // ==============================================================================
+import { spin } from '@/lib/spintax';
 
 export interface CandidatoSenado {
   id: number;
@@ -94,31 +95,46 @@ export function extrairPrimeiroNome(nomeCompleto?: string): string {
 
 // ------------------------------------------------------------------------------
 // Geradores de Mensagens do Fluxo Oficial
+//
+// Anti-ban: o texto ao redor é variado por spintax `{a|b|c}` e SEMEADO pelo
+// telefone (`seed`) — cada eleitor recebe uma redação equivalente e estável
+// (mesma em retry), evitando a abertura byte-a-byte idêntica que dispara o
+// detector de spam do WhatsApp. A LISTA de candidatos é sempre idêntica
+// (integridade da pesquisa).
 // ------------------------------------------------------------------------------
 
 // Mensagem 1: Saudação inicial com nome e período
-export function gerarMensagem1(nome?: string): string {
+export function gerarMensagem1(nome?: string, seed?: string): string {
   const pNome = extrairPrimeiroNome(nome);
   const { saudacao } = getSaudacaoPeriodo();
-  if (pNome) {
-    return `Olá ${pNome}, ${saudacao}\ntudo bem?`;
-  }
-  return `Olá, ${saudacao}\ntudo bem?`;
+  const alvo = pNome ? `{Olá|Oi|Olá,|Oi,} ${pNome}` : `{Olá|Oi|Olá!|Oi!}`;
+  return spin(`${alvo}, ${saudacao}{!|,}\n{tudo bem|como vai|espero que esteja bem|tudo certo}?`, seed);
 }
 
 // Mensagem 2: Contextualização da pesquisa
-export function gerarMensagem2(): string {
-  return `Estou realizando uma pesquisa de opinião sobre a eleição para o Senado Federal em Mato Grosso do Sul.`;
+export function gerarMensagem2(seed?: string): string {
+  return spin(
+    `{Estou realizando|Estamos fazendo|Faço parte de} uma pesquisa {de opinião|rápida de opinião|de opinião pública} sobre a eleição para o Senado {Federal |}em Mato Grosso do Sul.`,
+    seed
+  );
 }
 
 // Mensagem 3: Opções do 1º voto
-export function gerarMensagem3(): string {
+export function gerarMensagem3(seed?: string): string {
   const lista = CANDIDATOS_SENADO_MS.map((c) => `${c.emoji} ${c.rotulo}`).join('\n');
-  return `Pensando no seu primeiro voto, em qual destes candidatos você votaria?\n\n${lista}\n\nDigite apenas o número da opção escolhida.`;
+  const intro = spin(
+    `{Pensando no seu primeiro voto|Considerando seu primeiro voto|No seu primeiro voto}, em qual destes candidatos você votaria?`,
+    seed
+  );
+  const closing = spin(
+    `{Digite apenas o número da opção escolhida.|Responda apenas com o número da opção.|Basta digitar o número correspondente à sua escolha.}`,
+    seed
+  );
+  return `${intro}\n\n${lista}\n\n${closing}`;
 }
 
 // Mensagem 4: Opções do 2º voto (com exclusão dinâmica do 1º voto)
-export function gerarMensagem4(voto1Id: number): string {
+export function gerarMensagem4(voto1Id: number, seed?: string): string {
   // Se o eleitor votou em um candidato específico (1 a 10), exclui do 2º voto
   const opcoesFiltradas = CANDIDATOS_SENADO_MS.filter((c) => {
     if (c.isEspecial) return true; // Branco/Nulo ou Não Sabe pode ser votado de novo
@@ -126,13 +142,20 @@ export function gerarMensagem4(voto1Id: number): string {
   });
 
   const lista = opcoesFiltradas.map((c) => `${c.emoji} ${c.rotulo}`).join('\n');
-  return `Agora, considerando seu segundo voto, em qual destes candidatos você votaria?\n\n${lista}\n\nDigite apenas o número da opção escolhida.\n\nO segundo voto deve ser diferente do primeiro.`;
+  const intro = spin(
+    `{Agora, considerando seu segundo voto|E no seu segundo voto|Agora, pensando no segundo voto}, em qual destes candidatos você votaria?`,
+    seed
+  );
+  return `${intro}\n\n${lista}\n\nDigite apenas o número da opção escolhida.\n\nO segundo voto deve ser diferente do primeiro.`;
 }
 
 // Mensagem 5: Agradecimento final
-export function gerarMensagem5(): string {
+export function gerarMensagem5(seed?: string): string {
   const { despedida } = getSaudacaoPeriodo();
-  return `Obrigado por participar da pesquisa! 🙏\n\nSua resposta foi registrada. Sua opinião é importante para o levantamento sobre a eleição para o Senado em Mato Grosso do Sul.\n\n${despedida}`;
+  return spin(
+    `{Obrigado|Muito obrigado|Agradecemos} por participar da pesquisa! 🙏\n\nSua resposta foi registrada. {Sua opinião é importante|Sua participação é muito importante|Contamos com a sua opinião} para o levantamento sobre a eleição para o Senado em Mato Grosso do Sul.\n\n${despedida}`,
+    seed
+  );
 }
 
 // ------------------------------------------------------------------------------

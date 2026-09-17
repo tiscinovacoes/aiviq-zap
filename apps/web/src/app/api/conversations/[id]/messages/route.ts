@@ -1,98 +1,108 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { Message } from '@/types';
 import {
   getMessagesByConversationId,
   getPhoneByConversationId,
   addOutboundMessage,
 } from '@/lib/conversationStore';
-import { getRealMessages, sendRealMessage } from '@/lib/evolutionService';
+import { getRealMessages, sendRealMessageDetailed } from '@/lib/evolutionService';
+import { getDbContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
+import { resolveOrCreateConversation, persistMessage, canonicalDigits } from '@/lib/conversationRepo';
 
 export const dynamic = 'force-dynamic';
 
-// GET: Buscar histórico de mensagens REAIS da conversa
+function dbRowToMessage(m: any): Message {
+  return {
+    ...m,
+    sender_name: m.sender_type === 'agent' ? 'Você (Atendente)' : 'Contato',
+  } as Message;
+}
+
+// GET: histórico da conversa = mensagens PERSISTIDAS (Supabase, keyed por JID) +
+// enriquecimento com o que a Evolution tem ao vivo, deduplicado por id externo.
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
-    // Decodifica o id caso venha URL encoded (ex: lid ou @s.whatsapp.net)
-    const decodedId = decodeURIComponent(id);
+    const decodedId = decodeURIComponent(params.id);
     const instance = req.nextUrl.searchParams.get('instance') || undefined;
 
-    const supabase = await createClient();
-    const isPlaceholder =
-      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
-
-    let messages: Message[] = [];
-
-    // 1. Tenta buscar do Supabase se configurado
-    if (!isPlaceholder) {
+    // Lê Supabase (fonte durável) e Evolution (histórico ao vivo) EM PARALELO
+    // para cortar latência — antes eram duas idas sequenciais.
+    const dbPromise: Promise<Message[]> = (async () => {
+      if (isPlaceholderEnv()) return [];
       try {
-        const { data: dbMessages } = await supabase
+        const ctx = await getDbContext();
+        if (!ctx) return [];
+        const conv = await resolveOrCreateConversation({
+          db: ctx.db,
+          organizationId: ctx.organizationId,
+          phoneOrJid: decodedId,
+          instanceName: instance,
+          createIfMissing: false,
+        });
+        if (!conv) return [];
+        const { data } = await ctx.db
           .from('messages')
           .select('*')
-          .eq('conversation_id', decodedId)
+          .eq('conversation_id', conv.id)
           .order('created_at', { ascending: true });
+        return (data || []).map(dbRowToMessage);
+      } catch (dbErr) {
+        console.warn('[API messages GET] leitura Supabase falhou:', dbErr);
+        return [];
+      }
+    })();
 
-        if (dbMessages && dbMessages.length > 0) {
-          messages = (dbMessages || []).map((m: any) => ({
-            ...m,
-            sender_name: m.sender_type === 'agent' ? 'Você (Atendente)' : 'Contato',
-          })) as unknown as Message[];
-        }
-      } catch (dbErr) {}
-    }
+    const [dbMessages, realMsgs] = await Promise.all([
+      dbPromise,
+      getRealMessages(decodedId, instance),
+    ]);
 
-    // 2. Se não houver mensagens no banco, busca mensagens REAIS da Evolution API
-    if (messages.length === 0) {
-      const realMsgs = await getRealMessages(decodedId, instance);
-      let memoryMsgs = getMessagesByConversationId(decodedId);
-
-      // Se não encontrou mensagens em memória, verifica se é uma sessão de pesquisa
-      if (memoryMsgs.length === 0) {
-        const cleanDigits = decodedId.replace(/\D/g, '');
-        if (cleanDigits) {
-          try {
-            const { getPesquisaSessionByPhone } = await import('@/lib/pesquisaSenadoStore');
-            const { ensurePesquisaConversation } = await import('@/lib/conversationStore');
-            const session = await getPesquisaSessionByPhone(cleanDigits);
-            if (session) {
-              ensurePesquisaConversation({
-                phone: session.phone,
-                name: session.name,
-                bairro: session.bairro,
-                etapa: session.etapa,
-                voto1Nome: session.voto1Nome,
-                voto1Id: session.voto1Id,
-                voto2Nome: session.voto2Nome,
-                voto2Id: session.voto2Id,
-              });
-              memoryMsgs = getMessagesByConversationId(decodedId);
-              if (memoryMsgs.length === 0) {
-                memoryMsgs = getMessagesByConversationId(`${cleanDigits}@s.whatsapp.net`);
-              }
+    // Mensagens da sessão de pesquisa em memória (fallback dev/instante).
+    let memoryMsgs = getMessagesByConversationId(decodedId);
+    if (memoryMsgs.length === 0) {
+      const cleanDigits = decodedId.replace(/\D/g, '');
+      if (cleanDigits) {
+        try {
+          const { getPesquisaSessionByPhone } = await import('@/lib/pesquisaSenadoStore');
+          const { ensurePesquisaConversation } = await import('@/lib/conversationStore');
+          const session = await getPesquisaSessionByPhone(cleanDigits);
+          if (session) {
+            ensurePesquisaConversation({
+              phone: session.phone,
+              name: session.name,
+              bairro: session.bairro,
+              etapa: session.etapa,
+              voto1Nome: session.voto1Nome,
+              voto1Id: session.voto1Id,
+              voto2Nome: session.voto2Nome,
+              voto2Id: session.voto2Id,
+            });
+            memoryMsgs = getMessagesByConversationId(decodedId);
+            if (memoryMsgs.length === 0) {
+              memoryMsgs = getMessagesByConversationId(`${cleanDigits}@s.whatsapp.net`);
             }
-          } catch (e) {
-            console.error('[API messages] Erro ao recuperar mensagens de pesquisa:', e);
           }
+        } catch (e) {
+          console.error('[API messages] Erro ao recuperar mensagens de pesquisa:', e);
         }
       }
-
-      // Mescla mensagens da API com mensagens em memória (enviadas na sessão atual)
-      const existingIds = new Set(realMsgs.map((m) => m.id));
-      const extraMemory = memoryMsgs.filter((m) => !existingIds.has(m.id));
-
-      messages = [...realMsgs, ...extraMemory];
     }
 
-    return NextResponse.json({
-      success: true,
-      count: messages.length,
-      messages,
-    });
+    // Merge deduplicado: DB (fonte durável) → Evolution → memória.
+    const byKey = new Map<string, Message>();
+    const keyOf = (m: any) => m.external_message_id || m.id;
+    for (const m of dbMessages) byKey.set(keyOf(m), m);
+    for (const m of realMsgs) if (!byKey.has(keyOf(m))) byKey.set(keyOf(m), m);
+    for (const m of memoryMsgs) if (!byKey.has(keyOf(m))) byKey.set(keyOf(m), m);
+
+    const messages = Array.from(byKey.values()).sort(
+      (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+    );
+
+    return NextResponse.json({ success: true, count: messages.length, messages });
   } catch (err: any) {
     return NextResponse.json(
       { error: 'Erro ao buscar mensagens', message: err.message },
@@ -101,98 +111,82 @@ export async function GET(
   }
 }
 
-// POST: Enviar nova mensagem & disparar de verdade para o WhatsApp via Evolution API
+// POST: envia de verdade pela Evolution E persiste no Supabase (keyed por JID).
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
-    const decodedId = decodeURIComponent(id);
+    const decodedId = decodeURIComponent(params.id);
     const body = await req.json();
-    const { content, message_type = 'text', sender_name = 'Luca Scandola' } = body;
+    const { content, message_type = 'text', sender_name = 'Atendente' } = body;
     const instance = body.instance || req.nextUrl.searchParams.get('instance') || undefined;
 
     if (!content || !content.trim()) {
       return NextResponse.json({ error: 'Conteúdo da mensagem é obrigatório' }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const isPlaceholder =
-      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const targetPhone =
+      body.phone || body.recipient_phone || getPhoneByConversationId(decodedId) || decodedId;
 
-    // Recuperar telefone ou JID de destino
-    const targetPhone = body.phone || body.recipient_phone || getPhoneByConversationId(decodedId) || decodedId;
+    // 1. DISPARO REAL (delay 0 = resposta ao vivo, menor latência).
+    const sendRes = await sendRealMessageDetailed(targetPhone, content.trim(), instance, 0);
 
-    // ================= DISPARO REAL PELA EVOLUTION API =================
-    const evoDispatched = await sendRealMessage(targetPhone, content.trim(), instance);
-
-    // Disparo para o banco de dados Supabase (se configurado)
-    let insertedMessage: any = null;
-
-    if (!isPlaceholder) {
+    // 2. PERSISTÊNCIA no Supabase (resolve/cria conversa pelo JID canônico).
+    let insertedMessage: Message | null = null;
+    if (!isPlaceholderEnv()) {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        const { data: profile } = user
-          ? await supabase
-              .from('profiles')
-              .select('organization_id')
-              .eq('id', user.id)
-              .single()
-          : { data: null };
-
-        const organizationId =
-          profile?.organization_id || '00000000-0000-0000-0000-000000000000';
-
-        const { data: dbMsg } = await supabase
-          .from('messages')
-          .insert({
-            organization_id: organizationId,
-            conversation_id: decodedId,
-            sender_type: 'agent',
-            sender_id: user?.id || null,
-            content: content.trim(),
-            message_type,
-            delivery_status: evoDispatched ? 'delivered' : 'sent',
-          })
-          .select()
-          .single();
-
-        insertedMessage = dbMsg;
-
-        await supabase
-          .from('conversations')
-          .update({
-            last_message_preview: content.trim(),
-            last_message_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', decodedId);
+        const ctx = await getDbContext();
+        if (ctx) {
+          const conv = await resolveOrCreateConversation({
+            db: ctx.db,
+            organizationId: ctx.organizationId,
+            phoneOrJid: targetPhone,
+            name: body.name,
+            instanceName: instance,
+          });
+          if (conv) {
+            await persistMessage({
+              db: ctx.db,
+              organizationId: ctx.organizationId,
+              conversationId: conv.id,
+              senderType: 'agent',
+              content: content.trim(),
+              externalId: sendRes.messageId, // dedupe vs eco da Evolution
+              senderId: ctx.isDemo ? null : ctx.userId,
+              deliveryStatus: sendRes.ok ? 'sent' : 'failed',
+            });
+            insertedMessage = {
+              id: sendRes.messageId || `db-${Date.now()}`,
+              organization_id: ctx.organizationId,
+              conversation_id: canonicalDigits(targetPhone),
+              sender_type: 'agent',
+              sender_name,
+              content: content.trim(),
+              message_type,
+              delivery_status: sendRes.ok ? 'sent' : 'failed',
+              external_message_id: sendRes.messageId,
+              created_at: new Date().toISOString(),
+            } as Message;
+          }
+        }
       } catch (dbErr) {
-        console.warn('[Supabase Insert Warn]:', dbErr);
+        console.warn('[API messages POST] persistência Supabase falhou:', dbErr);
       }
     }
 
-    // Salva no store persistente em memória
+    // 3. Espelho em memória (instantâneo no Inbox / fallback dev).
     const storeMessage = addOutboundMessage({
       conversationId: decodedId,
       content: content.trim(),
       senderName: sender_name,
-      deliveryStatus: evoDispatched ? 'delivered' : 'sent',
+      deliveryStatus: sendRes.ok ? 'sent' : 'failed',
     });
 
     const finalMessage: Message = insertedMessage || storeMessage;
 
     return NextResponse.json(
-      {
-        success: true,
-        evolutionDispatched: evoDispatched,
-        message: finalMessage,
-      },
+      { success: true, evolutionDispatched: sendRes.ok, message: finalMessage },
       { status: 201 }
     );
   } catch (err: any) {
