@@ -144,7 +144,7 @@ export default function PesquisaSenadoKanban() {
     }
   };
 
-  // Processamento de Arquivo Excel (.xlsx, .xls) ou CSV
+  // Processamento Inteligente de Arquivo Excel (.xlsx, .xls) ou CSV (com ou sem cabeçalho)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -157,38 +157,63 @@ export default function PesquisaSenadoKanban() {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
-
+        
+        // 1. Lê a planilha como matriz bruta de linhas para não depender de cabeçalhos
+        const rawRows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 });
         const contatosMapeados: Array<{ name: string; phone: string; bairro?: string }> = [];
 
-        for (const row of rows) {
-          const keys = Object.keys(row);
-          // Procura coluna de nome
-          const nameKey = keys.find((k) =>
-            /nome|name|eleitor|contato|cliente|cidad[aã]o/i.test(k)
-          );
-          // Procura coluna de telefone
-          const phoneKey = keys.find((k) =>
-            /tel|fone|cel|whats|phone|celular|numero|número/i.test(k)
-          );
-          // Procura coluna de bairro ou cidade
-          const bairroKey = keys.find((k) =>
-            /bairro|cidade|munic[ií]pio|regi[aã]o|local/i.test(k)
-          );
+        for (let i = 0; i < rawRows.length; i++) {
+          const row = rawRows[i];
+          if (!Array.isArray(row) || row.length === 0) continue;
 
-          const rawPhone = phoneKey ? String(row[phoneKey] || '') : '';
-          const cleanPhone = rawPhone.replace(/\D/g, '');
+          let nome = '';
+          let telefone = '';
+          let bairro = '';
 
-          if (cleanPhone.length >= 8) {
+          // Varre as colunas da linha procurando dados
+          for (let j = 0; j < row.length; j++) {
+            const cell = String(row[j] ?? '').trim();
+            const cleanDigits = cell.replace(/\D/g, '');
+
+            // Se tem de 8 a 13 dígitos numéricos, é telefone
+            if (cleanDigits.length >= 8 && cleanDigits.length <= 13 && !telefone) {
+              telefone = cleanDigits;
+            } 
+            // Se tem texto com letras alfabéticas (ao menos 2 letras), é o nome
+            else if (/[a-zA-ZÀ-ÿ]{2,}/.test(cell) && !nome) {
+              nome = cell;
+            }
+            // Se já achou nome e telefone, e tem outro texto, pode ser bairro/cidade
+            else if (cell && !bairro && !cell.includes('@')) {
+              bairro = cell;
+            }
+          }
+
+          // Se a linha for o cabeçalho textual (ex: "Nome", "Telefone"), pula
+          if (
+            nome &&
+            /^(nome|name|eleitor|cidad[aã]o|contato)$/i.test(nome.trim()) &&
+            (telefone.length < 8 || /tel|fone|cel/i.test(String(row[1] || '')))
+          ) {
+            continue;
+          }
+
+          // Se o telefone tem 10 ou 11 dígitos (ex: 67998532500), prefixa 55 (Brasil)
+          if (telefone.length === 10 || telefone.length === 11) {
+            telefone = '55' + telefone;
+          }
+
+          if (nome && telefone.length >= 10) {
             contatosMapeados.push({
-              name: nameKey ? String(row[nameKey] || 'Eleitor').trim() : 'Eleitor',
-              phone: cleanPhone,
-              bairro: bairroKey ? String(row[bairroKey] || '').trim() : undefined,
+              name: nome.trim(),
+              phone: telefone,
+              bairro: bairro ? bairro.trim() : 'Mato Grosso do Sul',
             });
           }
         }
 
         setPlanilhaContatos(contatosMapeados);
+        console.log(`[Importador Excel] ${contatosMapeados.length} contatos extraídos com sucesso de "${file.name}"`);
       } catch (err) {
         console.error('Erro ao processar planilha Excel:', err);
         alert('Não foi possível ler o arquivo Excel. Verifique a formatação.');

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { Contact } from '@/types';
 import { getRealContacts } from '@/lib/evolutionService';
 import { getCustomContacts, addCustomContact } from '@/lib/conversationStore';
 import { mockCidadaos } from '@/lib/mockOuvidoria';
+import { getDbContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
+import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,56 +16,42 @@ export async function GET(req: NextRequest) {
     const query = searchParams.get('q')?.toLowerCase();
     const instance = searchParams.get('instance') || undefined;
 
-    const supabase = await createClient();
-    const isPlaceholder =
-      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
-
+    const isPlaceholder = isPlaceholderEnv();
     let contacts: Contact[] = [];
 
-    // 1. Se houver banco Supabase conectado, tenta buscar
     if (!isPlaceholder) {
-      try {
-        const { data: dbContacts } = await supabase
-          .from('contacts')
-          .select('*, assigned_user:profiles(*)');
+      // Banco conectado → fonte de verdade. Começa do zero: NÃO injeta cidadãos
+      // de exemplo (mock) nem o store em memória. Mescla apenas contatos REAIS
+      // do WhatsApp (Evolution), que retorna [] quando desconectado.
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
-        if (dbContacts && dbContacts.length > 0) {
-          contacts = dbContacts as unknown as Contact[];
-        }
-      } catch (e) {}
-    }
+      const { data: dbContacts } = await ctx.db
+        .from('contacts')
+        .select('*, assigned_user:profiles(*)')
+        .eq('organization_id', ctx.organizationId);
+      contacts = (dbContacts ?? []) as unknown as Contact[];
 
-    // Banco conectado COM contatos → a verdade é o banco: não mescla cidadãos
-    // de exemplo nem o store em memória (ambos são apenas de dev/fallback).
-    const usandoBancoReal = !isPlaceholder && contacts.length > 0;
-
-    if (!usandoBancoReal) {
-      // 2. Sem banco (ou banco vazio): monta a lista de dev a partir dos
-      //    contatos REAIS do WhatsApp (Evolution) + store em memória + exemplos.
-      if (contacts.length === 0) {
-        const realContacts = await getRealContacts(instance);
-        const customContacts = getCustomContacts();
-
-        const map = new Map<string, Contact>();
-        // Cidadãos de exemplo da ouvidoria (têm protocolos vinculados p/ o CRM 360º)
-        for (const c of mockCidadaos) {
-          map.set(c.id, c);
+      const realContacts = await getRealContacts(instance);
+      const seen = new Set(
+        contacts.map((c) => c.phone?.replace(/\D/g, '')).filter(Boolean) as string[]
+      );
+      for (const r of realContacts) {
+        const key = r.phone?.replace(/\D/g, '');
+        if (!key || !seen.has(key)) {
+          contacts.push(r);
+          if (key) seen.add(key);
         }
-        for (const c of customContacts) {
-          map.set(c.id, c);
-        }
-        for (const r of realContacts) {
-          if (!map.has(r.id)) {
-            map.set(r.id, r);
-          }
-        }
-        contacts = Array.from(map.values());
-      } else {
-        // Mescla contatos manuais
-        const customContacts = getCustomContacts();
-        contacts = [...customContacts, ...contacts];
       }
+    } else {
+      // Dev/sem banco: Evolution + store em memória + cidadãos de exemplo.
+      const realContacts = await getRealContacts(instance);
+      const customContacts = getCustomContacts();
+      const map = new Map<string, Contact>();
+      for (const c of mockCidadaos) map.set(c.id, c);
+      for (const c of customContacts) map.set(c.id, c);
+      for (const r of realContacts) if (!map.has(r.id)) map.set(r.id, r);
+      contacts = Array.from(map.values());
     }
 
     // Filtros
