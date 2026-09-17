@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { getBotRecord, publishBotRecord } from '@/lib/botStore';
+import { getDbContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,18 +12,16 @@ export async function POST(
 ) {
   try {
     const { id } = params;
-    const supabase = await createClient();
-    const isPlaceholder =
-      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder = isPlaceholderEnv();
 
     if (!isPlaceholder) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
-      const { data: current, error: readErr } = await supabase
+      const { data: current, error: readErr } = await ctx.db
         .from('bots')
         .select('document, published_version')
+        .eq('organization_id', ctx.organizationId)
         .eq('id', id)
         .maybeSingle();
       if (readErr) {
@@ -35,13 +33,14 @@ export async function POST(
       if (!current) return NextResponse.json({ success: false, error: 'Fluxo não encontrado' }, { status: 404 });
 
       const newVersion = (current.published_version ?? 0) + 1;
-      const { error: updErr } = await supabase
+      const { error: updErr } = await ctx.db
         .from('bots')
         .update({
           published_document: current.document,
           published_version: newVersion,
           status: 'active',
         })
+        .eq('organization_id', ctx.organizationId)
         .eq('id', id);
       if (updErr) {
         return NextResponse.json(

@@ -97,52 +97,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Nome do contato é obrigatório' }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const isPlaceholder =
-      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
-
+    const isPlaceholder = isPlaceholderEnv();
     let dbContact: any = null;
 
     if (!isPlaceholder) {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
-        let organizationId = '00000000-0000-0000-0000-000000000000';
-        if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('organization_id')
-            .eq('id', user.id)
-            .single();
-          if (profile?.organization_id) {
-            organizationId = profile.organization_id;
-          }
-        }
+      const { data: inserted, error } = await ctx.db
+        .from('contacts')
+        .insert({
+          organization_id: ctx.organizationId,
+          name: name.trim(),
+          phone: phone ? phone.trim() : null,
+          email: email ? email.trim() : null,
+          tags: tags.length > 0 ? tags : ['Novo Cidadão'],
+          cpf: cpf ? cpf.trim() : null,
+          bairro: bairro ? bairro.trim() : null,
+          custom_attributes: { company: company || '' },
+        })
+        .select()
+        .single();
 
-        const { data: inserted, error } = await supabase
-          .from('contacts')
-          .insert({
-            organization_id: organizationId,
-            name: name.trim(),
-            phone: phone ? phone.trim() : null,
-            email: email ? email.trim() : null,
-            tags: tags.length > 0 ? tags : ['Novo Cidadão'],
-            cpf: cpf ? cpf.trim() : null,
-            bairro: bairro ? bairro.trim() : null,
-            custom_attributes: { company: company || '' },
-          })
-          .select()
-          .single();
-
-        if (!error && inserted) {
-          dbContact = inserted;
-        }
-      } catch (dbErr) {
-        console.warn('[Supabase Insert Contact Warn]:', dbErr);
+      if (error) {
+        return NextResponse.json(
+          { error: 'Falha ao cadastrar contato', message: error.message },
+          { status: 500 }
+        );
       }
+      dbContact = inserted;
     }
 
     const newContact: Contact = dbContact || {

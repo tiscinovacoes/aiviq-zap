@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import type { BotV1 } from '@/types/bot';
 import { listBotRecords, createBotRecord } from '@/lib/botStore';
 import { makeBlankBot } from '@/lib/bot/blankBot';
+import { getDbContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,28 +40,21 @@ function summaryFrom(
   };
 }
 
-function isPlaceholderEnv() {
-  return (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project')
-  );
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
     const isPlaceholder = isPlaceholderEnv();
     const search = new URL(request.url).searchParams.get('q')?.toLowerCase() || '';
 
     let bots: BotSummary[] = [];
 
     if (!isPlaceholder) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
-      const { data, error } = await supabase
+      const { data, error } = await ctx.db
         .from('bots')
         .select('id, name, status, document, published_version, updated_at')
+        .eq('organization_id', ctx.organizationId)
         .order('updated_at', { ascending: false });
 
       if (error) {
@@ -99,28 +92,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
     const isPlaceholder = isPlaceholderEnv();
     const body = await request.json();
     const name = (body?.name && String(body.name).trim()) || 'Novo Fluxo de Automação';
 
     if (!isPlaceholder) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('organization_id')
-        .eq('id', user.id)
-        .single();
-      if (!profile?.organization_id) {
-        return NextResponse.json({ error: 'Perfil de organização não encontrado' }, { status: 403 });
-      }
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
       // Insere primeiro para obter o UUID e então grava o documento com o id real.
-      const { data: inserted, error: insErr } = await supabase
+      const { data: inserted, error: insErr } = await ctx.db
         .from('bots')
-        .insert({ organization_id: profile.organization_id, name, status: 'draft', document: {} })
+        .insert({ organization_id: ctx.organizationId, name, status: 'draft', document: {} })
         .select('id, name, status, published_version, updated_at')
         .single();
 
@@ -132,7 +115,7 @@ export async function POST(request: NextRequest) {
       }
 
       const document: BotV1 = makeBlankBot(inserted.id, name);
-      const { error: updErr } = await supabase
+      const { error: updErr } = await ctx.db
         .from('bots')
         .update({ document })
         .eq('id', inserted.id);

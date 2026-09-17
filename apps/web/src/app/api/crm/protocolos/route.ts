@@ -1,21 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { Protocolo } from '@/types';
 import { mockProtocolos, computeProtocoloMetrics } from '@/lib/mockOuvidoria';
+import { getDbContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createClient();
-    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder = isPlaceholderEnv();
 
-    let protocolos: Protocolo[] = mockProtocolos;
+    let protocolos: Protocolo[] = isPlaceholder ? mockProtocolos : [];
 
     if (!isPlaceholder) {
-      const { data: dbProtocolos, error } = await supabase
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
+      const { data: dbProtocolos, error } = await ctx.db
         .from('protocolos')
         .select('*, contact:contacts(*)')
+        .eq('organization_id', ctx.organizationId)
         .order('created_at', { ascending: false });
 
       // Banco conectado → a verdade é o banco. Erro é erro (não vira mock);
@@ -62,34 +65,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'O assunto do protocolo é obrigatório' }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder = isPlaceholderEnv();
 
     if (!isPlaceholder) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-      }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('organization_id')
-        .eq('id', user.id)
-        .single();
-
-      if (!profile || !profile.organization_id) {
-        return NextResponse.json({ error: 'Perfil de organização não encontrado' }, { status: 403 });
-      }
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
       // Localiza ou cria o cidadão (find-or-create) — evita duplicar o mesmo
       // cidadão a cada protocolo aberto. Busca por nome dentro da organização.
       const nomeCidadao = contact_name || 'Cidadão não identificado';
       let contactId: string | undefined;
 
-      const { data: existingContact } = await supabase
+      const { data: existingContact } = await ctx.db
         .from('contacts')
         .select('id')
-        .eq('organization_id', profile.organization_id)
+        .eq('organization_id', ctx.organizationId)
         .eq('name', nomeCidadao)
         .limit(1)
         .maybeSingle();
@@ -97,10 +87,10 @@ export async function POST(req: NextRequest) {
       if (existingContact?.id) {
         contactId = existingContact.id;
       } else {
-        const { data: novoContato } = await supabase
+        const { data: novoContato } = await ctx.db
           .from('contacts')
           .insert({
-            organization_id: profile.organization_id,
+            organization_id: ctx.organizationId,
             name: nomeCidadao,
             bairro: bairro || null,
             tags: ['Ouvidoria'],
@@ -110,10 +100,10 @@ export async function POST(req: NextRequest) {
         contactId = novoContato?.id;
       }
 
-      const { data: insertedProtocolo, error: protocoloError } = await supabase
+      const { data: insertedProtocolo, error: protocoloError } = await ctx.db
         .from('protocolos')
         .insert({
-          organization_id: profile.organization_id,
+          organization_id: ctx.organizationId,
           contact_id: contactId,
           title,
           tipo_manifestacao,
@@ -123,7 +113,7 @@ export async function POST(req: NextRequest) {
           prioridade,
           status,
           due_date: due_date || null,
-          assignee_id: user.id,
+          assignee_id: ctx.userId,
         })
         .select('*, contact:contacts(*)')
         .single();

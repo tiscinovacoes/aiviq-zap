@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { Cidadao, Protocolo } from '@/types';
 import { getRealContacts } from '@/lib/evolutionService';
 import { getCustomContacts, updateCustomContact } from '@/lib/conversationStore';
@@ -9,6 +8,7 @@ import {
   resumoCidadao,
   updateMockCidadao,
 } from '@/lib/mockOuvidoria';
+import { getDbContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
 
 type NotaInterna = { text: string; at: string; by?: string };
 
@@ -21,45 +21,44 @@ export async function GET(
 ) {
   try {
     const { id } = params;
-
-    const supabase = await createClient();
-    const isPlaceholder =
-      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder = isPlaceholderEnv();
 
     let contact: Cidadao | null = null;
     let protocolos: Protocolo[] = [];
 
-    // 1. Banco conectado: cidadão + protocolos por RLS
+    // 1. Banco conectado → fonte de verdade (sem mock).
     if (!isPlaceholder) {
-      const { data: dbContact } = await supabase
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
+      const { data: dbContact } = await ctx.db
         .from('contacts')
         .select('*, assigned_user:profiles(*)')
+        .eq('organization_id', ctx.organizationId)
         .eq('id', id)
-        .single();
-
+        .maybeSingle();
       if (dbContact) contact = dbContact as unknown as Cidadao;
 
-      const { data: dbProtocolos } = await supabase
+      const { data: dbProtocolos } = await ctx.db
         .from('protocolos')
         .select('*')
+        .eq('organization_id', ctx.organizationId)
         .eq('contact_id', id)
         .order('created_at', { ascending: false });
-
       if (dbProtocolos) protocolos = dbProtocolos as unknown as Protocolo[];
-    }
 
-    // 2. Fallback (dev/mock): procura em mock -> custom -> Evolution
-    if (!contact) {
+      if (!contact) {
+        // Pode ser um contato REAL do WhatsApp (Evolution) ainda não gravado.
+        contact = (await getRealContacts()).find((c) => c.id === id) || null;
+      }
+    } else {
+      // Fallback dev/mock: mock -> custom -> Evolution.
       contact =
         acharCidadaoMock(id) ||
         getCustomContacts().find((c) => c.id === id) ||
         (await getRealContacts()).find((c) => c.id === id) ||
         null;
-
-      if (protocolos.length === 0) {
-        protocolos = protocolosDoCidadao(id);
-      }
+      protocolos = protocolosDoCidadao(id);
     }
 
     if (!contact) {
@@ -89,11 +88,7 @@ export async function PATCH(
   try {
     const { id } = params;
     const body = await req.json();
-
-    const supabase = await createClient();
-    const isPlaceholder =
-      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder = isPlaceholderEnv();
 
     // Whitelist de colunas diretas — impede que `...body` injete organization_id
     // (mover tenant) ou colunas inexistentes (mesmo racional do CR-004 T2/T6).
@@ -110,29 +105,26 @@ export async function PATCH(
         ? (body.custom_attributes as Record<string, unknown>)
         : undefined;
 
-    // ================= BANCO SUPABASE (fonte de verdade + RLS) =================
+    // ================= BANCO SUPABASE (fonte de verdade) =================
     if (!isPlaceholder) {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-      }
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
       // Read-modify-write de custom_attributes quando há nota ou merge de atributos.
       let custom_attributes: Record<string, unknown> | undefined;
       if (appendNote || attrsPatch) {
-        const { data: current } = await supabase
+        const { data: current } = await ctx.db
           .from('contacts')
           .select('custom_attributes')
+          .eq('organization_id', ctx.organizationId)
           .eq('id', id)
-          .single();
+          .maybeSingle();
         const base = (current?.custom_attributes as Record<string, unknown>) || {};
         custom_attributes = { ...base, ...(attrsPatch || {}) };
         if (appendNote) {
           const prev = Array.isArray(base.notes) ? (base.notes as NotaInterna[]) : [];
           custom_attributes.notes = [
-            { text: appendNote, at: new Date().toISOString(), by: user.id },
+            { text: appendNote, at: new Date().toISOString(), by: ctx.userId },
             ...prev,
           ];
         }
@@ -151,9 +143,10 @@ export async function PATCH(
         );
       }
 
-      const { data: updated, error } = await supabase
+      const { data: updated, error } = await ctx.db
         .from('contacts')
         .update(updatePayload)
+        .eq('organization_id', ctx.organizationId)
         .eq('id', id)
         .select('*, assigned_user:profiles(*)')
         .single();

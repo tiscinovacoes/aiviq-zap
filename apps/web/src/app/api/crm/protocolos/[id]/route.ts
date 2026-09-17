@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { updateMockProtocolo } from '@/lib/mockOuvidoria';
+import { getDbContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,8 +12,7 @@ export async function PATCH(
     const { id } = params;
     const body = await req.json();
 
-    const supabase = await createClient();
-    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder = isPlaceholderEnv();
 
     // CR-004 T2/T6: whitelist de colunas — impede que `...body` injete
     // organization_id (mover tenant) ou colunas inexistentes.
@@ -31,14 +30,13 @@ export async function PATCH(
     }
 
     if (!isPlaceholder) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-      }
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
-      const { data: updatedProtocolo, error } = await supabase
+      const { data: updatedProtocolo, error } = await ctx.db
         .from('protocolos')
         .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('organization_id', ctx.organizationId)
         .eq('id', id)
         .select()
         .single();
