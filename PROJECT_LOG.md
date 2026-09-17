@@ -1019,3 +1019,25 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
   - [ ] **`dispatch_queue` ainda não tem pausa por campanha**: a coluna `campaign_id` foi criada mas a fila continua sendo uma só por organização — pausar a campanha A ainda pausa a B. Wire pendente.
   - [ ] Fila atual em produção: 1.374 pendentes. Com 2 chips (960/dia) leva ~1,5 dia de janela.
 
+
+---
+
+## DATA: 17/09/2026 — Seleção MÚLTIPLA de Chips no Cluster de Disparo (v2.8.1)
+
+### Claude
+- 🐛 **Sintoma relatado**: em Configurações → Canais de WhatsApp, ao clicar "Ativar" numa instância a anterior era desmarcada — comportamento de rádio, impossível deixar vários números ativos para o cluster.
+- 🔍 **Diagnóstico**: o "ATIVO" nunca foi um seletor de disparo. É o `selected` do `useInstanceStore` — um rádio de **visualização**, guardado no `localStorage` do navegador, que define qual número o Inbox e os Contatos exibem. O motor de disparo nunca leu esse valor: ele usa `getConnectedDispatchInstances()`, que lista no servidor **todas** as instâncias conectadas. Ou seja, o disparo multi-chip já funcionava (os contadores de hoje provam: Khomp e PontaPora enviaram ambos) — o que estava errado era a interface, que prometia o contrário: *"O número ativo define o que aparece no Inbox, Contatos e **Disparos**"*.
+- ✅ Concluído:
+  - [x] **`db/migrations/013_dispatch_pool_toggle.sql` aplicada em produção**: coluna `dispatch_enabled BOOLEAN DEFAULT true` em `dispatch_instance_control`. Default `true` preserva o comportamento atual (chip conectado entra no cluster sozinho).
+  - [x] **Pool de disparo no servidor (`lib/dispatchQueue.ts`)**: `getDispatchPool()`, `setDispatchEnabled()` e `filterDispatchPool()`. É por organização e mora no banco — diferente do `selected`, o cron precisa enxergar.
+  - [x] **Motor (`pesquisaSenadoDispatcher.ts`)**: os chips conectados passam por `filterDispatchPool()` antes do rodízio. Chip desmarcado fica fora da campanha mas continua atendendo no Inbox. Novo `skipped: 'nenhum_chip_no_pool_de_disparo'` distingue "nenhum conectado" de "todos desmarcados".
+  - [x] **API**: `GET /api/instances` devolve `dispatchEnabled` por instância; `POST /api/instances/[name]` ganhou a ação `set_dispatch`.
+  - [x] **UI (`MultiInstancePanel.tsx`)**:
+    - Checkbox **"No disparo"** por número — **seleção múltipla**, marcar um não desmarca os outros.
+    - Barra de resumo do cluster: *"N números disparando · capacidade de N × 480 mensagens/dia"*, avisando quando um número está marcado mas ainda não conectou.
+    - O botão "Ativar" virou **"Ver no Inbox"** e o selo `ATIVO` virou `NO INBOX` — para nunca mais ser confundido com participação no disparo.
+    - Texto do cabeçalho corrigido (era ele que afirmava que o número ativo definia os disparos).
+  - [x] **Validação**: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
+- 📋 Próxima ação:
+  - [ ] Marcar em produção quais dos 4 números entram no cluster (hoje todos entram por default).
+

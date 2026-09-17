@@ -407,3 +407,57 @@ export async function requeueFailedItems(): Promise<number> {
   return data?.length || 0;
 }
 
+
+// -------------------- POOL DE DISPARO (quais chips entram no rodizio) --------------------
+// Diferente do "ATIVO" da tela de Configuracoes: aquele e um radio de
+// VISUALIZACAO (qual numero o Inbox/Contatos mostram), vive no localStorage do
+// navegador e nunca chegou ao motor de disparo. Este flag e por organizacao,
+// fica no servidor e e MULTIPLO: decide quais chips conectados participam da
+// campanha. Default true, para que um chip recem-conectado ja entre no cluster.
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __aiviq_dispatch_pool: Record<string, boolean> | undefined;
+}
+if (!global.__aiviq_dispatch_pool) global.__aiviq_dispatch_pool = {};
+
+/** Mapa instancia -> participa do disparo. Ausente = true (default). */
+export async function getDispatchPool(): Promise<Record<string, boolean>> {
+  if (isPlaceholderEnv()) return { ...global.__aiviq_dispatch_pool! };
+  const ctx = await getServiceContext();
+  if (!ctx) return {};
+  const { data, error } = await ctx.db
+    .from('dispatch_instance_control')
+    .select('instance_name, dispatch_enabled')
+    .eq('organization_id', ctx.organizationId);
+  if (error) return {};
+  const out: Record<string, boolean> = {};
+  for (const r of data || []) out[(r as any).instance_name] = (r as any).dispatch_enabled !== false;
+  return out;
+}
+
+/** Liga/desliga uma instancia no cluster de disparo. */
+export async function setDispatchEnabled(instance: string, enabled: boolean): Promise<void> {
+  if (isPlaceholderEnv()) {
+    global.__aiviq_dispatch_pool![instance] = enabled;
+    return;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return;
+  await ctx.db.from('dispatch_instance_control').upsert(
+    {
+      organization_id: ctx.organizationId,
+      instance_name: instance,
+      dispatch_enabled: enabled,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'organization_id,instance_name' }
+  );
+}
+
+/** Filtra uma lista de instancias conectadas, mantendo so as do pool de disparo. */
+export async function filterDispatchPool(instances: string[]): Promise<string[]> {
+  if (instances.length === 0) return [];
+  const pool = await getDispatchPool();
+  return instances.filter((i) => pool[i] !== false); // ausente = participa
+}

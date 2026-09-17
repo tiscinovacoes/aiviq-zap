@@ -11,6 +11,7 @@ import {
   X,
   RefreshCw,
   Loader2,
+  Send,
 } from 'lucide-react';
 import { useInstanceStore } from '@/store/useInstanceStore';
 
@@ -21,7 +22,7 @@ const statusStyle: Record<string, { dot: string; text: string; label: string }> 
 };
 
 export default function MultiInstancePanel() {
-  const { instances, selected, fetchInstances, setSelected } = useInstanceStore();
+  const { instances, selected, fetchInstances, setSelected, setDispatchEnabled } = useInstanceStore();
 
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
@@ -155,7 +156,7 @@ export default function MultiInstancePanel() {
           <div>
             <h3 className="text-sm font-bold text-slate-900">Números de WhatsApp (Multi-instância)</h3>
             <p className="text-[11px] text-slate-500">
-              Conecte vários celulares. O número ativo define o que aparece no Inbox, Contatos e Disparos.
+              Conecte vários celulares. O <strong className="text-slate-700">disparo usa ao mesmo tempo todos os números marcados em &quot;No disparo&quot;</strong> — 1 lead a cada ~90s em cada, teto de 480/dia por número. O selo ATIVO é outra coisa: define só qual número o Inbox e os Contatos exibem.
             </p>
           </div>
         </div>
@@ -221,6 +222,33 @@ export default function MultiInstancePanel() {
         </div>
       )}
 
+      {/* Resumo do cluster de disparo: o que realmente define a vazao da campanha. */}
+      {(() => {
+        const noPool = instances.filter((i) => i.dispatchEnabled !== false);
+        const prontos = noPool.filter((i) => i.status === 'connected');
+        return (
+          <div className="mb-3 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
+            <Send className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <p className="text-[11px] text-slate-600">
+              <strong className="text-slate-800">
+                {prontos.length} {prontos.length === 1 ? 'número disparando' : 'números disparando'}
+              </strong>
+              {noPool.length > prontos.length && (
+                <span className="text-amber-700">
+                  {' '}
+                  ({noPool.length - prontos.length} marcado
+                  {noPool.length - prontos.length === 1 ? '' : 's'} mas ainda não conectado
+                  {noPool.length - prontos.length === 1 ? '' : 's'})
+                </span>
+              )}
+              {' · '}
+              capacidade de <strong className="text-slate-800">{prontos.length * 480} mensagens/dia</strong>
+              {prontos.length > 0 && ` (${prontos.length} × 480)`}
+            </p>
+          </div>
+        );
+      })()}
+
       <div className="space-y-2">
         {instances.length === 0 && (
           <div className="text-xs text-slate-400 py-4 text-center">Nenhum número cadastrado ainda.</div>
@@ -228,6 +256,7 @@ export default function MultiInstancePanel() {
         {instances.map((i) => {
           const st = statusStyle[i.status] || statusStyle.disconnected;
           const isSel = i.instanceName === selected;
+          const noDisparo = i.dispatchEnabled !== false; // ausente = participa
           const isBusy = busy === i.instanceName;
           return (
             <div
@@ -247,7 +276,7 @@ export default function MultiInstancePanel() {
                   )}
                   {isSel && (
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
-                      ATIVO
+                      NO INBOX
                     </span>
                   )}
                 </div>
@@ -258,14 +287,37 @@ export default function MultiInstancePanel() {
                 </div>
               </div>
 
+              {/* SELECAO MULTIPLA: quais chips entram no rodizio da campanha.
+                  Independente do radio ATIVO (visualizacao do Inbox). */}
+              <label
+                title={
+                  noDisparo
+                    ? 'Este número participa do disparo das campanhas'
+                    : 'Este número fica fora do disparo (segue disponível para atendimento no Inbox)'
+                }
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border cursor-pointer select-none shrink-0 transition-colors ${
+                  noDisparo
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={noDisparo}
+                  onChange={(e) => setDispatchEnabled(i.instanceName, e.target.checked)}
+                  className="w-3.5 h-3.5 accent-emerald-600 cursor-pointer"
+                />
+                <span className="text-[11px] font-semibold whitespace-nowrap">No disparo</span>
+              </label>
+
               <div className="flex items-center gap-1.5 shrink-0">
                 {!isSel && (
                   <button
                     onClick={() => setSelected(i.instanceName)}
-                    title="Definir como número ativo"
+                    title="Exibir este número no Inbox e nos Contatos (não afeta o disparo)"
                     className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-50 flex items-center gap-1"
                   >
-                    <Check className="w-3 h-3" /> Ativar
+                    <Check className="w-3 h-3" /> Ver no Inbox
                   </button>
                 )}
                 {i.status === 'connected' ? (

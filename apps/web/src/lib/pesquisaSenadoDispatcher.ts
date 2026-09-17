@@ -20,6 +20,7 @@ import {
   claimPendingItems,
   releaseItem,
   reapStaleClaims,
+  filterDispatchPool,
   markItemSent,
   markItemError,
   getQueueStatus,
@@ -135,9 +136,17 @@ export async function runTickCore(): Promise<TickCoreResult> {
   await reapStaleClaims();
 
   // 4. Chips conectados agora.
-  const conectadas = await getConnectedDispatchInstances();
+  const todasConectadas = await getConnectedDispatchInstances();
+  // Filtra pelo pool: chips conectados mas desmarcados no disparo ficam de fora
+  // (atendimento manual no Inbox continua funcionando neles).
+  const conectadas = await filterDispatchPool(todasConectadas);
   if (conectadas.length === 0) {
-    return { success: true, skipped: 'nenhuma_instancia_conectada', status: await getQueueStatus() };
+    return {
+      success: true,
+      skipped: todasConectadas.length > 0 ? 'nenhum_chip_no_pool_de_disparo' : 'nenhuma_instancia_conectada',
+      instanciasConectadas: todasConectadas.length,
+      status: await getQueueStatus(),
+    };
   }
 
   // 5. Quais ja venceram o proprio intervalo anti-ban.

@@ -6,6 +6,7 @@ import {
   DEFAULT_INSTANCE,
 } from '@/lib/instanceRegistry';
 import { invalidateEvolutionCache } from '@/lib/evolutionService';
+import { setDispatchEnabled } from '@/lib/dispatchQueue';
 
 import { cookies } from 'next/headers';
 
@@ -140,6 +141,22 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
       } catch (err: any) {
         return NextResponse.json({ success: false, error: err.message }, { status: 502 });
       }
+    }
+
+    // Liga/desliga a instancia no CLUSTER DE DISPARO (selecao multipla).
+    // Nao confundir com o "ATIVO" da tela, que e o radio de visualizacao do
+    // Inbox e vive no localStorage do navegador.
+    if (action === 'set_dispatch') {
+      const enabled = body.enabled !== false;
+      await setDispatchEnabled(instanceName, enabled);
+      return NextResponse.json({
+        success: true,
+        instanceName,
+        dispatchEnabled: enabled,
+        message: enabled
+          ? 'Número incluído no cluster de disparo.'
+          : 'Número fora do cluster de disparo (segue disponível para atendimento no Inbox).',
+      });
     }
 
     return NextResponse.json({ success: false, error: 'unknown_action' }, { status: 400 });

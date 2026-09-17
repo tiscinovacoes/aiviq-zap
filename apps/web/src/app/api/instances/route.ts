@@ -7,6 +7,7 @@ import {
   DEFAULT_INSTANCE,
 } from '@/lib/instanceRegistry';
 import { fetchLiveEvolutionInstances, EvolutionLiveInstance } from '@/lib/evolutionService';
+import { getDispatchPool } from '@/lib/dispatchQueue';
 
 import { cookies } from 'next/headers';
 
@@ -52,6 +53,8 @@ export interface InstanceView {
   phoneNumber?: string;
   profileName?: string;
   profilePicUrl?: string;
+  /** Participa do cluster de disparo (multiplo, por organizacao). */
+  dispatchEnabled: boolean;
 }
 
 // GET: lista todas as instâncias conhecidas (registro local + servidor Evolution),
@@ -61,7 +64,7 @@ export async function GET() {
     const unauthorized = await requireUser();
     if (unauthorized) return unauthorized;
 
-    const live = await fetchLiveEvolutionInstances();
+    const [live, pool] = await Promise.all([fetchLiveEvolutionInstances(), getDispatchPool()]);
     const liveByName = new Map(live.map((i) => [i.instanceName, i]));
 
     // Qualquer instância que exista no servidor mas não no registro local é auto-registrada,
@@ -83,6 +86,7 @@ export async function GET() {
         phoneNumber: l?.phoneNumber,
         profileName: l?.profileName,
         profilePicUrl: l?.profilePicUrl,
+        dispatchEnabled: pool[k.instanceName] !== false, // ausente = participa
       };
     });
 

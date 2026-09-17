@@ -8,6 +8,8 @@ export interface InstanceView {
   phoneNumber?: string;
   profileName?: string;
   profilePicUrl?: string;
+  /** Participa do cluster de disparo (selecao MULTIPLA, salva no servidor). */
+  dispatchEnabled?: boolean;
 }
 
 export const SELECTED_INSTANCE_KEY = 'aiviq_selected_instance';
@@ -26,6 +28,7 @@ interface InstanceState {
   isLoading: boolean;
   fetchInstances: () => Promise<void>;
   setSelected: (instanceName: string) => void;
+  setDispatchEnabled: (instanceName: string, enabled: boolean) => Promise<void>;
 }
 
 export const useInstanceStore = create<InstanceState>((set, get) => ({
@@ -54,6 +57,27 @@ export const useInstanceStore = create<InstanceState>((set, get) => ({
       }
     } catch {
       set({ isLoading: false });
+    }
+  },
+
+  // Selecao MULTIPLA: quais chips participam do cluster de disparo. Diferente do
+  // `selected` acima (radio de visualizacao do Inbox, localStorage), este estado
+  // e por organizacao e mora no servidor — o cron de disparo precisa enxerga-lo.
+  setDispatchEnabled: async (instanceName: string, enabled: boolean) => {
+    // Otimista: a lista reflete na hora, o servidor confirma em seguida.
+    set({
+      instances: get().instances.map((i) =>
+        i.instanceName === instanceName ? { ...i, dispatchEnabled: enabled } : i
+      ),
+    });
+    try {
+      await fetch(`/api/instances/${encodeURIComponent(instanceName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_dispatch', enabled }),
+      });
+    } finally {
+      await get().fetchInstances();
     }
   },
 
