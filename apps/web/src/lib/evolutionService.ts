@@ -692,9 +692,14 @@ export function urlDoWebhook(origemDetectada?: string): string {
     origemDetectada ||
     '';
   if (!base) return '';
-  return base.endsWith('/api/webhooks/whatsapp')
+  const token = process.env.EVOLUTION_WEBHOOK_TOKEN || process.env.EVOLUTION_API_KEY;
+  let target = base.endsWith('/api/webhooks/whatsapp')
     ? base
     : `${base.replace(/\/$/, '')}/api/webhooks/whatsapp`;
+  if (token && !target.includes('token=')) {
+    target += `${target.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+  }
+  return target;
 }
 
 
