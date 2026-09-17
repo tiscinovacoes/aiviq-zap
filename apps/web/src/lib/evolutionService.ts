@@ -205,8 +205,39 @@ export async function getRealConversations(instanceName?: string): Promise<Conve
       };
     });
 
-    conversationsCache.set(inst, { data: conversations, timestamp: now });
-    return conversations;
+    // Unifica conversas duplicadas do MESMO contato: o WhatsApp às vezes devolve
+    // o mesmo número como LID (@lid, números longos) além do número real
+    // (@s.whatsapp.net), criando dois diálogos. Dedup por telefone canônico,
+    // preferindo o JID de telefone real e somando o não-lido.
+    const dedupMap = new Map<string, number>();
+    const deduped: Conversation[] = [];
+    for (const conv of conversations) {
+      const isGroup = conv.id.includes('@g.us');
+      const phone = (conv.contact?.phone || '').replace(/\D/g, '');
+      if (isGroup || !phone) {
+        deduped.push(conv);
+        continue;
+      }
+      const idx = dedupMap.get(phone);
+      if (idx === undefined) {
+        dedupMap.set(phone, deduped.length);
+        deduped.push(conv);
+        continue;
+      }
+      const existing = deduped[idx];
+      const convIsRealPhone = conv.id.includes('@s.whatsapp.net');
+      const existingIsRealPhone = existing.id.includes('@s.whatsapp.net');
+      const unread = Math.max(conv.unread_count || 0, existing.unread_count || 0);
+      // Mantém preferencialmente o diálogo do número real; funde o não-lido.
+      if (convIsRealPhone && !existingIsRealPhone) {
+        deduped[idx] = { ...conv, unread_count: unread };
+      } else {
+        deduped[idx] = { ...existing, unread_count: unread };
+      }
+    }
+
+    conversationsCache.set(inst, { data: deduped, timestamp: now });
+    return deduped;
   } catch (err: any) {
     console.error(`[Evolution getRealConversations Error] (${inst}):`, err.message);
     return [];

@@ -49,13 +49,37 @@ export async function POST(req: NextRequest) {
       signal: AbortSignal.timeout(10000),
     });
     const sendBody = await sr.text();
+    let sent: any = null;
+    try { sent = JSON.parse(sendBody); } catch {}
+    const msgId = sent?.key?.id;
+    const jid = sent?.key?.remoteJid;
+
+    // 3. Espera e confere o STATUS de entrega da mensagem (PENDING travado =
+    //    sessão morta; SERVER_ACK/DELIVERY_ACK/READ = entregou).
+    await new Promise((r) => setTimeout(r, 5000));
+    let statusCheck: any = null;
+    try {
+      const fr = await fetch(`${URL}/chat/findMessages/${inst}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: KEY },
+        body: JSON.stringify({ where: { key: { remoteJid: jid } } }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const fb = await fr.json();
+      const arr = Array.isArray(fb) ? fb : fb?.messages?.records || fb?.records || [];
+      const found = Array.isArray(arr) ? arr.find((m: any) => m?.key?.id === msgId) : null;
+      statusCheck = { httpStatus: fr.status, msgStatus: found?.status ?? 'nao-encontrada', total: Array.isArray(arr) ? arr.length : 0 };
+    } catch (e: any) {
+      statusCheck = { error: e.message };
+    }
 
     return NextResponse.json({
       ok: true,
       instanceUsada: inst,
       number,
       existsCheck: existsResp,
-      send: { status: sr.status, ok: sr.ok, body: sendBody.slice(0, 1500) },
+      send: { status: sr.status, ok: sr.ok, msgId, jid, statusInicial: sent?.status },
+      entrega: statusCheck,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message });
