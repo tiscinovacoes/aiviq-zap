@@ -977,6 +977,10 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
   - [x] **Servidor Localhost Ativo**:
     - Dev server iniciado e operacional em `http://localhost:3000`.
     - Endpoint `/api/pesquisa/senado/queue` respondendo com sucesso localmente.
+  - [x] **Testes Automatizados & Deploy de Produção**:
+    - Tipagem TypeScript e build de produção 100% aprovados.
+    - `git push origin master` concluído com sucesso (`d257dff..92e1863`). Deploy acionado na Vercel.
+
 
 
 
