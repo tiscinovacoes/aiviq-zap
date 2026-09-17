@@ -68,7 +68,10 @@ export async function POST(req: NextRequest) {
       const fb = await fr.json();
       const arr = Array.isArray(fb) ? fb : fb?.messages?.records || fb?.records || [];
       const found = Array.isArray(arr) ? arr.find((m: any) => m?.key?.id === msgId) : null;
-      statusCheck = { httpStatus: fr.status, msgStatus: found?.status ?? 'nao-encontrada', total: Array.isArray(arr) ? arr.length : 0 };
+      const ultimas = (Array.isArray(arr) ? arr : [])
+        .slice(-8)
+        .map((m: any) => ({ fromMe: m?.key?.fromMe, status: m?.status, ts: m?.messageTimestamp, id: m?.key?.id }));
+      statusCheck = { httpStatus: fr.status, msgStatus: found?.status ?? 'nao-encontrada', total: Array.isArray(arr) ? arr.length : 0, ultimas };
     } catch (e: any) {
       statusCheck = { error: e.message };
     }
