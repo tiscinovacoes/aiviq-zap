@@ -40,7 +40,7 @@ export const conversationService = {
   async getMessages(conversationId: string): Promise<Message[]> {
     const inst = currentInstance();
     const qs = inst ? `?instance=${encodeURIComponent(inst)}` : '';
-    const res = await fetch(`/api/conversations/${conversationId}/messages${qs}`);
+    const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages${qs}`);
     if (!res.ok) throw new Error('Falha ao carregar histórico');
     const data = await res.json();
     return data.messages || [];
@@ -52,7 +52,7 @@ export const conversationService = {
     messageType: string = 'text',
     phone?: string
   ): Promise<Message> {
-    const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+    const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, message_type: messageType, phone, instance: currentInstance() || undefined }),
@@ -66,7 +66,7 @@ export const conversationService = {
     conversationId: string,
     updates: { status?: string; priority?: string; assignee_id?: string }
   ): Promise<void> {
-    const res = await fetch(`/api/conversations/${conversationId}`, {
+    const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),

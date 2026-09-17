@@ -49,7 +49,37 @@ export async function GET(
     // 2. Se não houver mensagens no banco, busca mensagens REAIS da Evolution API
     if (messages.length === 0) {
       const realMsgs = await getRealMessages(decodedId, instance);
-      const memoryMsgs = getMessagesByConversationId(decodedId);
+      let memoryMsgs = getMessagesByConversationId(decodedId);
+
+      // Se não encontrou mensagens em memória, verifica se é uma sessão de pesquisa
+      if (memoryMsgs.length === 0) {
+        const cleanDigits = decodedId.replace(/\D/g, '');
+        if (cleanDigits) {
+          try {
+            const { getPesquisaSessionByPhone } = await import('@/lib/pesquisaSenadoStore');
+            const { ensurePesquisaConversation } = await import('@/lib/conversationStore');
+            const session = await getPesquisaSessionByPhone(cleanDigits);
+            if (session) {
+              ensurePesquisaConversation({
+                phone: session.phone,
+                name: session.name,
+                bairro: session.bairro,
+                etapa: session.etapa,
+                voto1Nome: session.voto1Nome,
+                voto1Id: session.voto1Id,
+                voto2Nome: session.voto2Nome,
+                voto2Id: session.voto2Id,
+              });
+              memoryMsgs = getMessagesByConversationId(decodedId);
+              if (memoryMsgs.length === 0) {
+                memoryMsgs = getMessagesByConversationId(`${cleanDigits}@s.whatsapp.net`);
+              }
+            }
+          } catch (e) {
+            console.error('[API messages] Erro ao recuperar mensagens de pesquisa:', e);
+          }
+        }
+      }
 
       // Mescla mensagens da API com mensagens em memória (enviadas na sessão atual)
       const existingIds = new Set(realMsgs.map((m) => m.id));

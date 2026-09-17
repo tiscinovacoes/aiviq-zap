@@ -83,6 +83,9 @@ export default function PesquisaSenadoKanban() {
     const cleanPhone = eleitor.phone.replace(/\D/g, '');
     setAssumindoTelefone(cleanPhone);
     try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('aiviq_target_conversa', cleanPhone);
+      }
       await fetch('/api/conversations/ensure', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,7 +105,8 @@ export default function PesquisaSenadoKanban() {
     } finally {
       setAssumindoTelefone(null);
     }
-    router.push(`/inbox?phone=${encodeURIComponent(cleanPhone)}&conversationId=${encodeURIComponent(cleanPhone + '@s.whatsapp.net')}`);
+    const targetUrl = `/inbox?phone=${encodeURIComponent(cleanPhone)}&conversationId=${encodeURIComponent(cleanPhone + '@s.whatsapp.net')}`;
+    router.push(targetUrl);
   };
 
   const fetchDados = async () => {

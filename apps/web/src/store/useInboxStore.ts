@@ -96,24 +96,35 @@ export const useInboxStore = create<InboxState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const { conversations, whatsappConnected } = await conversationService.getConversations({
+      const { conversations: fetchedConvs, whatsappConnected } = await conversationService.getConversations({
         status: statusFilter,
         channel: channelFilter,
         q: searchQuery,
       });
 
+      let mergedConvs = fetchedConvs || [];
+      const currentActive = get().activeConversation;
+
+      // Se já temos uma conversa ativa selecionada (ex: veio por link/CRM com 'Assumir'),
+      // nunca a descartamos: se ela não veio no payload, nós a preservamos no topo!
+      if (currentActive) {
+        const alreadyInList = mergedConvs.some(
+          (c) => c.id === currentActive.id || (currentActive.contact?.phone && c.contact?.phone === currentActive.contact.phone)
+        );
+        if (!alreadyInList) {
+          mergedConvs = [currentActive, ...mergedConvs];
+        }
+      }
+
       set({
-        conversations,
+        conversations: mergedConvs,
         isWhatsAppConnected: whatsappConnected,
         isLoading: false,
       });
 
-      // Se a lista estiver vazia (ex: sem whatsapp conectado), limpa seleção ativa
-      const currentActive = get().activeConversation;
-      if (conversations.length === 0) {
-        set({ activeConversation: null, messages: [] });
-      } else if (!currentActive || !conversations.some((c) => c.id === currentActive.id)) {
-        get().selectConversation(conversations[0]);
+      // Só seleciona a primeira conversa se NENHUMA conversa estiver ativa e a lista tiver itens
+      if (!get().activeConversation && mergedConvs.length > 0) {
+        get().selectConversation(mergedConvs[0]);
       }
     } catch (err: any) {
       set({ error: err.message, isLoading: false });
@@ -121,6 +132,11 @@ export const useInboxStore = create<InboxState>((set, get) => ({
   },
 
   selectConversation: async (conversation) => {
+    // Garante que a conversa selecionada esteja na lista
+    const currentList = get().conversations;
+    if (!currentList.some((c) => c.id === conversation.id)) {
+      set({ conversations: [conversation, ...currentList] });
+    }
     // Limpar mensagens imediatamente para evitar que mensagens de outra conversa vazem na tela
     set({ activeConversation: conversation, messages: [], isLoadingMessages: true });
     await get().fetchMessages(conversation.id);
@@ -182,25 +198,31 @@ export const useInboxStore = create<InboxState>((set, get) => ({
 
     const { statusFilter, channelFilter, searchQuery, activeConversation, conversations: currentConvs, messages: currentMsgs } = get();
     try {
-      const { conversations, whatsappConnected } = await conversationService.getConversations({
+      const { conversations: fetchedConvs, whatsappConnected } = await conversationService.getConversations({
         status: statusFilter,
         channel: channelFilter,
         q: searchQuery,
       });
 
-      const hasConvsChanged = !areConversationsEqual(currentConvs, conversations);
+      let mergedConvs = fetchedConvs || [];
+      // Se há conversa ativa, preserva-a na lista caso o backend não a tenha retornado
+      if (activeConversation) {
+        const exists = mergedConvs.some(
+          (c) => c.id === activeConversation.id || (activeConversation.contact?.phone && c.contact?.phone === activeConversation.contact.phone)
+        );
+        if (!exists) {
+          mergedConvs = [activeConversation, ...mergedConvs];
+        }
+      }
+
+      const hasConvsChanged = !areConversationsEqual(currentConvs, mergedConvs);
       const hasConnectionChanged = get().isWhatsAppConnected !== whatsappConnected;
 
       if (hasConvsChanged || hasConnectionChanged) {
         set({
-          conversations,
+          conversations: mergedConvs,
           isWhatsAppConnected: whatsappConnected,
         });
-
-        // Se a conversa ativa não existe mais na nova lista (ex: desconectou número), limpa
-        if (activeConversation && !conversations.some((c) => c.id === activeConversation.id)) {
-          set({ activeConversation: null, messages: [] });
-        }
       }
 
       // Se houver conversa ativa válida, busca mensagens de forma suave sem causar re-render desnecessário

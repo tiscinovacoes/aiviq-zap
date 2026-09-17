@@ -30,18 +30,30 @@ function InboxMain() {
   const [inputText, setInputText] = useState('');
   const searchParams = useSearchParams();
 
+  const getTargetIdOrPhone = () => {
+    let target =
+      searchParams?.get('conversationId') ||
+      searchParams?.get('phone') ||
+      searchParams?.get('id');
+    if (!target && typeof window !== 'undefined') {
+      target = sessionStorage.getItem('aiviq_target_conversa') || null;
+      if (target) sessionStorage.removeItem('aiviq_target_conversa');
+    }
+    return target;
+  };
+
   useEffect(() => {
     fetchUser();
-    fetchConversations().then(() => {
-      const targetPhoneOrId =
-        searchParams?.get('conversationId') ||
-        searchParams?.get('phone') ||
-        searchParams?.get('id');
+    const target = getTargetIdOrPhone();
 
-      if (targetPhoneOrId) {
-        selectConversationByPhoneOrId(targetPhoneOrId);
-      }
-    });
+    if (target) {
+      // Se o atendente veio para assumir conversa, seleciona imediatamente o lead
+      selectConversationByPhoneOrId(target).finally(() => {
+        fetchConversations();
+      });
+    } else {
+      fetchConversations();
+    }
 
     let timeoutId: NodeJS.Timeout;
     let isCancelled = false;
