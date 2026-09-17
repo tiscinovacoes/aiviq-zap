@@ -1,6 +1,7 @@
 import { createOrUpdateSessionByPhone } from './pesquisaSenadoStore';
 import { gerarMensagem1 } from './pesquisaSenado';
 import { sendRealMessage } from './evolutionService';
+import { addBotDispatchedMessage } from './conversationStore';
 
 export interface ItemFilaDisparo {
   id: string;
@@ -126,6 +127,18 @@ export async function processarProximoDisparo(): Promise<void> {
     // 2. Dispara a Msg 1 com a saudação de acordo com o fuso de MS
     const msg1 = gerarMensagem1(proximo.name);
     const sent = await sendRealMessage(proximo.phone, msg1);
+
+    // Registra a mensagem enviada no Inbox para o atendente acompanhar e assumir se quiser
+    try {
+      addBotDispatchedMessage({
+        toPhone: proximo.phone,
+        name: proximo.name,
+        text: msg1,
+        botName: 'Robô Pesquisa Senado',
+      });
+    } catch (inboxErr) {
+      console.error('[Disparador Inbox Sync Error]:', inboxErr);
+    }
 
     if (sent) {
       proximo.status = 'enviado';

@@ -241,3 +241,107 @@ export function addOutboundMessage(params: {
 
   return message;
 }
+
+export function addBotDispatchedMessage(params: {
+  toPhone: string;
+  name?: string;
+  text: string;
+  instanceName?: string;
+  botName?: string;
+}): { conversation: Conversation; message: Message } {
+  const { toPhone, name, text, instanceName, botName = 'Robô Pesquisa Senado' } = params;
+  const cleanPhone = toPhone.replace(/\D/g, '');
+  const convs = global.__aiviq_conversations || [];
+  const msgs = global.__aiviq_messages || {};
+
+  let formattedPhone = `+${cleanPhone}`;
+  if (cleanPhone.length >= 12 && cleanPhone.startsWith('55')) {
+    const ddd = cleanPhone.slice(2, 4);
+    const rest = cleanPhone.slice(4);
+    if (rest.length === 9) {
+      formattedPhone = `+55 (${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
+    } else if (rest.length === 8) {
+      formattedPhone = `+55 (${ddd}) 9${rest.slice(0, 4)}-${rest.slice(4)}`;
+    }
+  }
+
+  const contactName = name || `Eleitor ${formattedPhone}`;
+  const nowIso = new Date().toISOString();
+  const nowTime = new Date().toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Campo_Grande',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  const convId = `${cleanPhone}@s.whatsapp.net`;
+  let conv = convs.find(
+    (c) =>
+      c.id === convId ||
+      c.id === toPhone ||
+      c.contact?.phone?.replace(/\D/g, '') === cleanPhone
+  );
+
+  if (!conv) {
+    conv = {
+      id: convId,
+      organization_id: '00000000-0000-0000-0000-000000000000',
+      inbox_id: 'inbox-whatsapp',
+      instance_name: instanceName,
+      contact_id: `cont-${cleanPhone}`,
+      channel_type: 'whatsapp_cloud',
+      status: 'open',
+      priority: 'high',
+      last_message_preview: `🤖 ${text}`,
+      last_message_at: nowTime,
+      unread_count: 0,
+      created_at: nowIso,
+      contact: {
+        id: `cont-${cleanPhone}`,
+        organization_id: '00000000-0000-0000-0000-000000000000',
+        name: contactName,
+        phone: formattedPhone,
+        tags: ['Pesquisa Senado MS', 'Chatbot Ativo'],
+        custom_attributes: {},
+      },
+    };
+    convs.unshift(conv);
+  } else {
+    conv.last_message_preview = `🤖 ${text}`;
+    conv.last_message_at = nowTime;
+    conv.status = 'open';
+    if (name && (!conv.contact?.name || conv.contact.name.startsWith('WhatsApp') || conv.contact.name.startsWith('Eleitor'))) {
+      if (conv.contact) conv.contact.name = name;
+    }
+    if (conv.contact && !conv.contact.tags?.includes('Pesquisa Senado MS')) {
+      conv.contact.tags = [...(conv.contact.tags || []), 'Pesquisa Senado MS'];
+    }
+    const index = convs.indexOf(conv);
+    if (index > 0) {
+      convs.splice(index, 1);
+      convs.unshift(conv);
+    }
+  }
+
+  const message: Message = {
+    id: `bot-msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    organization_id: '00000000-0000-0000-0000-000000000000',
+    conversation_id: conv.id,
+    sender_type: 'agent',
+    sender_name: botName,
+    content: text,
+    message_type: 'text',
+    delivery_status: 'delivered',
+    created_at: nowIso,
+  };
+
+  if (!msgs[conv.id]) {
+    msgs[conv.id] = [];
+  }
+  msgs[conv.id].push(message);
+
+  global.__aiviq_conversations = convs;
+  global.__aiviq_messages = msgs;
+
+  return { conversation: conv, message };
+}
+

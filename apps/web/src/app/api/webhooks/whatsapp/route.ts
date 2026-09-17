@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
-import { addInboundMessage } from '@/lib/conversationStore';
+import { addInboundMessage, addBotDispatchedMessage } from '@/lib/conversationStore';
 import { invalidateEvolutionCache, sendRealMessage } from '@/lib/evolutionService';
 import {
   getPesquisaSessionByPhone,
@@ -210,12 +210,20 @@ export async function POST(req: NextRequest) {
               session.etapa = 'aguardando_voto1';
               savePesquisaSession(session);
 
+              const msg2 = gerarMensagem2();
+              const msg3 = gerarMensagem3();
+
               // Envia Msg 2
-              await sendRealMessage(msg.from, gerarMensagem2(), instanceName);
+              await sendRealMessage(msg.from, msg2, instanceName);
+              addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msg2, instanceName });
+
               // Pequena pausa natural de leitura
               await new Promise((r) => setTimeout(r, 600));
+
               // Envia Msg 3
-              await sendRealMessage(msg.from, gerarMensagem3(), instanceName);
+              await sendRealMessage(msg.from, msg3, instanceName);
+              addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msg3, instanceName });
+
               console.log(`[Pesquisa Senado MS] Respondeu saudação! Enviadas Msg 2 e Msg 3 para ${msg.from}`);
             }
 
@@ -223,11 +231,9 @@ export async function POST(req: NextRequest) {
             else if (session.etapa === 'aguardando_voto1') {
               const votoValido = validarVoto(cleanText);
               if (!votoValido) {
-                await sendRealMessage(
-                  msg.from,
-                  `Por favor, digite apenas o número correspondente à sua opção (de 1 a 12).`,
-                  instanceName
-                );
+                const msgInvalida = `Por favor, digite apenas o número correspondente à sua opção (de 1 a 12).`;
+                await sendRealMessage(msg.from, msgInvalida, instanceName);
+                addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msgInvalida, instanceName });
               } else {
                 const candidato1 = obterCandidatoPorId(votoValido);
                 if (candidato1) {
@@ -239,6 +245,7 @@ export async function POST(req: NextRequest) {
                   // Envia Msg 4 com a lista atualizada (sem o candidato votado)
                   const msg4 = gerarMensagemSegundoVoto(candidato1.id);
                   await sendRealMessage(msg.from, msg4, instanceName);
+                  addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msg4, instanceName });
                   console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) computado para ${msg.from}. Msg 4 enviada.`);
                 }
               }
@@ -248,22 +255,18 @@ export async function POST(req: NextRequest) {
             else if (session.etapa === 'aguardando_voto2') {
               const votoValido = validarVoto(cleanText);
               if (!votoValido) {
-                await sendRealMessage(
-                  msg.from,
-                  `Por favor, digite apenas o número da sua escolha para o segundo voto.`,
-                  instanceName
-                );
+                const msgInvalida = `Por favor, digite apenas o número da sua escolha para o segundo voto.`;
+                await sendRealMessage(msg.from, msgInvalida, instanceName);
+                addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msgInvalida, instanceName });
               } else if (
                 session.voto1Id &&
                 session.voto1Id === votoValido &&
                 votoValido <= 10
               ) {
                 // Segundo voto deve ser diferente do primeiro (conforme instrução)
-                await sendRealMessage(
-                  msg.from,
-                  `O segundo voto deve ser diferente do primeiro.\nPor favor, escolha outro candidato da lista acima.`,
-                  instanceName
-                );
+                const msgRepetido = `O segundo voto deve ser diferente do primeiro.\nPor favor, escolha outro candidato da lista acima.`;
+                await sendRealMessage(msg.from, msgRepetido, instanceName);
+                addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msgRepetido, instanceName });
               } else {
                 const candidato2 = obterCandidatoPorId(votoValido);
                 if (candidato2) {
@@ -275,6 +278,7 @@ export async function POST(req: NextRequest) {
                   // Envia Msg 5 com despedida de acordo com o período MS
                   const msg5 = gerarMensagemAgradecimento();
                   await sendRealMessage(msg.from, msg5, instanceName);
+                  addBotDispatchedMessage({ toPhone: msg.from, name: session.name, text: msg5, instanceName });
                   console.log(`[Pesquisa Senado MS] 2º Voto (${candidato2.nome}) computado para ${msg.from}. Pesquisa finalizada com sucesso!`);
                 }
               }

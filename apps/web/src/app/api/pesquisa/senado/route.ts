@@ -15,6 +15,7 @@ import {
   obterCandidatoPorId,
 } from '@/lib/pesquisaSenado';
 import { sendRealMessage } from '@/lib/evolutionService';
+import { addBotDispatchedMessage } from '@/lib/conversationStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +67,18 @@ export async function POST(req: NextRequest) {
       let dispatched = false;
       if (sendWhatsApp) {
         dispatched = await sendRealMessage(cleanPhone, msg1);
+      }
+
+      // Registra a mensagem enviada no Inbox para o atendente acompanhar e intervir
+      try {
+        addBotDispatchedMessage({
+          toPhone: cleanPhone,
+          name: name || session.name,
+          text: msg1,
+          botName: 'Robô Pesquisa Senado',
+        });
+      } catch (err) {
+        console.error('[Pesquisa Manual Inbox Sync Error]:', err);
       }
 
       return NextResponse.json({

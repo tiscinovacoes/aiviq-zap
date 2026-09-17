@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import {
+  MessageSquare,
   Users,
   Vote,
   BarChart3,
