@@ -34,7 +34,7 @@ import {
   EtapaPesquisa,
 } from '@/lib/pesquisaSenado';
 import { PesquisaStats } from '@/lib/pesquisaSenadoStore';
-import { EstadoDisparador } from '@/lib/pesquisaSenadoDisparador';
+import type { EstadoDisparador, ItemFilaDisparo } from '@/lib/pesquisaSenadoDisparador';
 
 type VisaoModo = 'funil' | 'voto1' | 'voto2' | 'geral';
 
@@ -67,8 +67,13 @@ export default function PesquisaSenadoKanban() {
   const [importando, setImportando] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estado do Motor de Disparos em Lote
+  // Estado do Motor de Disparos em Lote — dirigido pelo CLIENTE (a aba aberta é
+  // o "relógio"). Serverless não sustenta setTimeout/estado global entre
+  // instâncias, então a fila vive aqui e cada tick envia UM contato.
   const [estadoDisparador, setEstadoDisparador] = useState<EstadoDisparador | null>(null);
+  const filaRef = useRef<EstadoDisparador | null>(null);
+  const disparoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchDados = async () => {
     try {
@@ -86,18 +91,6 @@ export default function PesquisaSenadoKanban() {
     }
   };
 
-  const fetchDisparador = async () => {
-    try {
-      const res = await fetch('/api/pesquisa/senado/disparador');
-      const data = await res.json();
-      if (data.success && data.estado) {
-        setEstadoDisparador(data.estado);
-      }
-    } catch (err) {
-      console.error('Erro ao consultar disparador:', err);
-    }
-  };
-
   const isFetchingRef = useRef(false);
 
   useEffect(() => {
@@ -105,7 +98,7 @@ export default function PesquisaSenadoKanban() {
       if (document.visibilityState !== 'visible' || isFetchingRef.current) return;
       isFetchingRef.current = true;
       try {
-        await Promise.allSettled([fetchDados(), fetchDisparador()]);
+        await fetchDados();
       } finally {
         isFetchingRef.current = false;
       }
@@ -115,6 +108,94 @@ export default function PesquisaSenadoKanban() {
     const interval = setInterval(carregarTudo, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Limpa os timers do disparo ao desmontar (evita disparos órfãos).
+  useEffect(() => {
+    return () => {
+      if (disparoTimeoutRef.current) clearTimeout(disparoTimeoutRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
+
+  // ============ Motor de disparo client-side (anti-ban 35-75s) ============
+  const limparTimersDisparo = () => {
+    if (disparoTimeoutRef.current) { clearTimeout(disparoTimeoutRef.current); disparoTimeoutRef.current = null; }
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+  };
+
+  const commitEstado = (est: EstadoDisparador | null) => {
+    filaRef.current = est;
+    setEstadoDisparador(est);
+  };
+
+  const agendarProximoDisparo = () => {
+    limparTimersDisparo();
+    const delay = Math.floor(Math.random() * (75 - 35 + 1)) + 35;
+    commitEstado({ ...(filaRef.current as EstadoDisparador), segundosRestantesProximo: delay });
+
+    countdownRef.current = setInterval(() => {
+      const e = filaRef.current;
+      if (!e) return;
+      const s = Math.max(0, (e.segundosRestantesProximo || 0) - 1);
+      commitEstado({ ...e, segundosRestantesProximo: s });
+      if (s <= 0 && countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+    }, 1000);
+
+    disparoTimeoutRef.current = setTimeout(() => { dispararProximoContato(); }, delay * 1000);
+  };
+
+  const dispararProximoContato = async () => {
+    const est = filaRef.current;
+    if (!est || !est.ativo || est.pausado) return;
+
+    const proximo = est.fila.find((it) => it.status === 'pendente');
+    if (!proximo) {
+      limparTimersDisparo();
+      commitEstado({ ...est, ativo: false, segundosRestantesProximo: 0, contatoAtual: undefined });
+      return;
+    }
+
+    commitEstado({ ...est, contatoAtual: { name: proximo.name, phone: proximo.phone } });
+
+    let enviado = false;
+    try {
+      const res = await fetch('/api/pesquisa/senado', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'disparar',
+          phone: proximo.phone,
+          name: proximo.name,
+          bairro: proximo.bairro,
+          sendWhatsApp: true,
+        }),
+      });
+      const data = await res.json();
+      // "enviado" só quando o WhatsApp confirmou o envio; senão conta como falha.
+      enviado = data?.success === true && data?.dispatchedWhatsApp === true;
+    } catch {
+      enviado = false;
+    }
+
+    const atual = filaRef.current as EstadoDisparador;
+    const fila = atual.fila.map((it) =>
+      it.id === proximo.id
+        ? ({ ...it, status: enviado ? 'enviado' : 'erro', enviadoEm: enviado ? new Date().toISOString() : undefined, erroMsg: enviado ? undefined : 'Falha no envio pelo WhatsApp' } as ItemFilaDisparo)
+        : it
+    );
+    const enviados = fila.filter((f) => f.status === 'enviado').length;
+    const erros = fila.filter((f) => f.status === 'erro').length;
+    commitEstado({ ...atual, fila, enviados, erros });
+    fetchDados();
+
+    const temMais = fila.some((f) => f.status === 'pendente');
+    if (temMais && filaRef.current?.ativo && !filaRef.current?.pausado) {
+      agendarProximoDisparo();
+    } else if (!temMais) {
+      limparTimersDisparo();
+      commitEstado({ ...(filaRef.current as EstadoDisparador), ativo: false, segundosRestantesProximo: 0, contatoAtual: undefined });
+    }
+  };
 
   const handleDispararPesquisa = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,69 +314,58 @@ export default function PesquisaSenadoKanban() {
   };
 
   // Carrega contatos na fila de disparo do servidor
-  const handleCarregarFilaDisparo = async () => {
+  const handleCarregarFilaDisparo = () => {
     if (planilhaContatos.length === 0) return;
     setImportando(true);
     try {
-      const res = await fetch('/api/pesquisa/senado/disparador', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'carregar_fila',
-          contatos: planilhaContatos,
-        }),
+      const fila: ItemFilaDisparo[] = planilhaContatos.map((c, idx) => ({
+        id: `fila-${Date.now()}-${idx}`,
+        name: c.name?.trim() || 'Eleitor',
+        phone: c.phone.replace(/\D/g, ''),
+        bairro: c.bairro || 'Mato Grosso do Sul',
+        status: 'pendente',
+      }));
+      limparTimersDisparo();
+      commitEstado({
+        ativo: true,
+        pausado: false,
+        total: fila.length,
+        enviados: 0,
+        erros: 0,
+        segundosRestantesProximo: 0,
+        fila,
       });
-      const data = await res.json();
-      if (data.success) {
-        setEstadoDisparador(data.estado);
-        setIsExcelModalOpen(false);
-        setPlanilhaContatos([]);
-        setPlanilhaNomeArquivo('');
-        // Recarrega imediatamente o Kanban e as métricas na tela
-        await fetchDados();
-        await fetchDisparador();
-        // Inicia automaticamente o processamento da fila com o delay anti-ban
-        await fetch('/api/pesquisa/senado/disparador', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'iniciar' }),
-        });
-        await fetchDisparador();
-      }
-    } catch (err) {
-      console.error('Erro ao carregar fila:', err);
+      setIsExcelModalOpen(false);
+      setPlanilhaContatos([]);
+      setPlanilhaNomeArquivo('');
+      // Começa imediatamente pelo primeiro; os próximos entram com delay anti-ban.
+      dispararProximoContato();
     } finally {
       setImportando(false);
     }
   };
 
-  // Controles do Disparador
-  const handleIniciarDisparos = async () => {
-    await fetch('/api/pesquisa/senado/disparador', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'iniciar' }),
-    });
-    fetchDisparador();
+  // Controles do Disparador (todos client-side)
+  const handleIniciarDisparos = () => {
+    if (!filaRef.current) return;
+    commitEstado({ ...filaRef.current, ativo: true, pausado: false });
+    dispararProximoContato();
   };
 
-  const handlePausarDisparos = async () => {
-    await fetch('/api/pesquisa/senado/disparador', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'pausar' }),
-    });
-    fetchDisparador();
+  const handlePausarDisparos = () => {
+    if (!filaRef.current) return;
+    limparTimersDisparo();
+    commitEstado({ ...filaRef.current, pausado: true, segundosRestantesProximo: 0 });
   };
 
-  const handlePararDisparos = async () => {
+  const handlePararDisparos = () => {
     if (!confirm('Deseja realmente cancelar a fila de disparos restante?')) return;
-    await fetch('/api/pesquisa/senado/disparador', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'parar' }),
-    });
-    fetchDisparador();
+    limparTimersDisparo();
+    commitEstado(
+      filaRef.current
+        ? { ...filaRef.current, ativo: false, pausado: false, segundosRestantesProximo: 0, contatoAtual: undefined }
+        : null
+    );
   };
 
   const handleExportarCSV = () => {
