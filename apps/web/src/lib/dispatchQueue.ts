@@ -41,9 +41,24 @@ function secsUntil(nextAllowedAtMs: number): number {
 }
 
 // -------------------- ENQUEUE --------------------
+export interface EnqueueResult {
+  enfileirados: number;
+  ignorados: number;
+  /** Ja receberam a abordagem numa rodada anterior e foram pulados. */
+  jaEnviados: number;
+}
+
+/**
+ * Enfileira contatos. Por padrao PULA quem ja recebeu a abordagem (status
+ * 'enviado'): reimportar a mesma planilha e o jeito mais facil de mandar a
+ * mesma mensagem duas vezes para a mesma pessoa -- ruim para o eleitor e um
+ * sinal classico de spam para a Meta. Passe `permitirReenvio` para forcar.
+ */
 export async function enqueueContacts(
-  contatos: Array<{ name?: string; phone: string; bairro?: string }>
-): Promise<{ enfileirados: number; ignorados: number }> {
+  contatos: Array<{ name?: string; phone: string; bairro?: string }>,
+  opts: { permitirReenvio?: boolean } = {}
+): Promise<EnqueueResult> {
+  const permitirReenvio = opts.permitirReenvio === true;
   const limpos = contatos
     .map((c) => ({ name: (c.name || '').trim(), phone: canonicalDigits(c.phone), bairro: c.bairro || 'Mato Grosso do Sul' }))
     .filter((c) => c.phone && c.phone.length >= 10);
@@ -54,28 +69,50 @@ export async function enqueueContacts(
 
   if (isPlaceholderEnv()) {
     const q = global.__aiviq_queue!;
-    const jaPendente = new Set(q.filter((i) => i.status === 'pendente').map((i) => i.phone));
+    const naFila = new Set(
+      q.filter((i) => i.status === 'pendente' || i.status === 'processando').map((i) => i.phone)
+    );
+    const enviados = new Set(q.filter((i) => i.status === 'enviado').map((i) => i.phone));
     let n = 0;
+    let ja = 0;
     for (const c of unicos) {
-      if (jaPendente.has(c.phone)) continue;
+      if (naFila.has(c.phone)) continue;
+      if (!permitirReenvio && enviados.has(c.phone)) { ja++; continue; }
       q.push({ id: `q-${Date.now()}-${n}`, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente', attempts: 0 });
       n++;
     }
-    return { enfileirados: n, ignorados: unicos.length - n };
+    return { enfileirados: n, ignorados: unicos.length - n - ja, jaEnviados: ja };
   }
 
   const ctx = await getServiceContext();
-  if (!ctx) return { enfileirados: 0, ignorados: 0 };
+  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0 };
 
-  // Pula quem já está pendente na fila.
+  // Ja na fila (pendente/processando) -> pula sempre.
   const { data: pend } = await ctx.db
     .from('dispatch_queue')
     .select('phone')
     .eq('organization_id', ctx.organizationId)
     .in('status', ['pendente', 'processando']);
-  const jaPendente = new Set((pend || []).map((r: any) => r.phone));
+  const naFila = new Set((pend || []).map((r: any) => r.phone));
+
+  // Ja abordado -> pula, a menos que o operador peca reenvio explicitamente.
+  let jaEnviados = new Set<string>();
+  if (!permitirReenvio) {
+    const { data: env } = await ctx.db
+      .from('dispatch_queue')
+      .select('phone')
+      .eq('organization_id', ctx.organizationId)
+      .eq('status', 'enviado');
+    jaEnviados = new Set((env || []).map((r: any) => r.phone));
+  }
+
+  let puladosPorEnvio = 0;
   const rows = unicos
-    .filter((c) => !jaPendente.has(c.phone))
+    .filter((c) => {
+      if (naFila.has(c.phone)) return false;
+      if (jaEnviados.has(c.phone)) { puladosPorEnvio++; return false; }
+      return true;
+    })
     .map((c) => ({ organization_id: ctx.organizationId, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente' }));
 
   if (rows.length > 0) {
@@ -86,7 +123,11 @@ export async function enqueueContacts(
     // Ao enfileirar, garante que não está pausado e libera o próximo envio.
     await setPaused(false);
   }
-  return { enfileirados: rows.length, ignorados: unicos.length - rows.length };
+  return {
+    enfileirados: rows.length,
+    ignorados: unicos.length - rows.length - puladosPorEnvio,
+    jaEnviados: puladosPorEnvio,
+  };
 }
 
 // -------------------- CONTROLE (pausa) --------------------
@@ -460,4 +501,36 @@ export async function filterDispatchPool(instances: string[]): Promise<string[]>
   if (instances.length === 0) return [];
   const pool = await getDispatchPool();
   return instances.filter((i) => pool[i] !== false); // ausente = participa
+}
+
+/**
+ * Disputa ATOMICA do ritmo de um chip: avanca next_allowed_at em `gapSeconds`
+ * e devolve true SO para quem venceu a disputa. Os ticks concorrentes que
+ * perderem saem sem enviar.
+ *
+ * Substitui o par getInstanceNextAllowedAt()+setInstanceNextAllowedAt(), que era
+ * ler-depois-gravar: dois ticks liam o mesmo horario vencido, os dois passavam,
+ * e o MESMO chip mandava duas mensagens no mesmo segundo.
+ */
+export async function claimInstanceSlot(instance: string, gapSeconds: number): Promise<boolean> {
+  if (isPlaceholderEnv()) {
+    const agora = Date.now();
+    const prox = global.__aiviq_inst_next![instance] || 0;
+    if (prox && agora < prox) return false;
+    global.__aiviq_inst_next![instance] = agora + gapSeconds * 1000;
+    return true;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return false;
+  const { data, error } = await ctx.db.rpc('claim_instance_slot', {
+    p_org: ctx.organizationId,
+    p_instance: instance,
+    p_gap_seconds: gapSeconds,
+  });
+  if (error) {
+    console.error('[dispatchQueue] claim_instance_slot falhou:', error.message);
+    // Sem confirmacao, nao envia: erra para o lado de proteger o chip.
+    return false;
+  }
+  return data === true;
 }

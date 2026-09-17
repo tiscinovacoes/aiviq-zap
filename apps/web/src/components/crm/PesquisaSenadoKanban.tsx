@@ -329,7 +329,7 @@ export default function PesquisaSenadoKanban() {
       const data = await res.json();
       if (data?.success) {
         setMensagemSucesso(
-          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 1 lead a cada ~90s por chip conectado, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}`
+          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 1 lead a cada ~90s por chip conectado, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}${data.jaEnviados ? ` ${data.jaEnviados} foram pulados por já terem recebido a abordagem antes.` : ''}`
         );
         setIsExcelModalOpen(false);
         setPlanilhaContatos([]);

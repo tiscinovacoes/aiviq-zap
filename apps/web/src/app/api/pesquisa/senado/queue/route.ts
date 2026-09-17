@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
           { status: 400, headers: NO_CACHE_HEADERS }
         );
       }
-      const r = await enqueueContacts(contatos);
+      const r = await enqueueContacts(contatos, { permitirReenvio: body.permitirReenvio === true });
       const status = await getQueueStatus();
 
       // Dispara imediatamente o primeiro ciclo de 2 contatos simultâneos em segundo plano

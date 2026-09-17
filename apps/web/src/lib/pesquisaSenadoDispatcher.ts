@@ -21,6 +21,7 @@ import {
   releaseItem,
   reapStaleClaims,
   filterDispatchPool,
+  claimInstanceSlot,
   markItemSent,
   markItemError,
   getQueueStatus,
@@ -149,14 +150,18 @@ export async function runTickCore(): Promise<TickCoreResult> {
     };
   }
 
-  // 5. Quais ja venceram o proprio intervalo anti-ban.
-  const agora = Date.now();
-  const proximos = await getInstanceNextAllowedAt(conectadas);
-  const prontas = conectadas.filter((i) => !proximos[i] || agora >= proximos[i]);
+  // 5. Disputa ATOMICA do ritmo de cada chip. Quem vence avanca o proprio
+  //    next_allowed_at e ganha o direito de enviar neste ciclo; os ticks
+  //    concorrentes que perderem saem sem enviar. Isso e o que impede o MESMO
+  //    chip de mandar duas mensagens no mesmo segundo quando o cron, o worker
+  //    e as abas abertas disparam o tick ao mesmo tempo.
+  const prontas: string[] = [];
+  for (const inst of conectadas) {
+    const venceu = await claimInstanceSlot(inst, sortearGapSegundos());
+    if (venceu) prontas.push(inst);
+  }
 
   if (prontas.length === 0) {
-    const menorEspera = Math.min(...conectadas.map((i) => proximos[i] || 0));
-    await setNextAllowedAt(menorEspera); // relogio agregado, so para a UI
     return {
       success: true,
       skipped: 'aguardando_intervalo',
@@ -166,8 +171,9 @@ export async function runTickCore(): Promise<TickCoreResult> {
     };
   }
 
-  // 6. Reserva 1 slot no teto diario de cada chip pronto. A reserva e atomica:
-  //    e ela que garante o limite de 480/dia mesmo com ticks simultaneos.
+  // 6. Reserva 1 slot no teto diario de cada chip que venceu o ritmo. A reserva
+  //    e atomica: e ela que garante o limite de 480/dia mesmo com ticks
+  //    simultaneos.
   const habilitadas: string[] = [];
   for (const inst of prontas) {
     const slot = await reserveDispatchSlot(inst);
@@ -175,7 +181,7 @@ export async function runTickCore(): Promise<TickCoreResult> {
       habilitadas.push(inst);
     } else if (slot.reason === 'teto_diario') {
       // Chip fechou as 480 do dia: dorme 1h antes de reavaliar.
-      await setInstanceNextAllowedAt(inst, agora + 60 * 60 * 1000);
+      await setInstanceNextAllowedAt(inst, Date.now() + 60 * 60 * 1000);
     }
   }
 
@@ -215,11 +221,9 @@ export async function runTickCore(): Promise<TickCoreResult> {
     else falhas.push(items[idx].phone);
   });
 
-  // 9. Reagenda cada chip com o SEU proprio intervalo sorteado (75-105s).
-  //    Sorteio por chip: dois chips nunca ficam sincronizados no mesmo segundo.
-  await Promise.allSettled(
-    usadas.map((inst) => setInstanceNextAllowedAt(inst, Date.now() + sortearGapSegundos() * 1000))
-  );
+  // 9. NAO reagenda aqui: o intervalo de cada chip ja foi fixado no passo 5,
+  //    ANTES do envio, pelo claimInstanceSlot atomico. Regravar depois abriria
+  //    de novo a janela de corrida que o passo 5 fecha.
 
   // Relogio agregado (o que a UI mostra): o chip que libera primeiro.
   const novosProximos = await getInstanceNextAllowedAt(conectadas);

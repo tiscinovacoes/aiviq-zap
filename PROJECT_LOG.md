@@ -1041,3 +1041,22 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
 - 📋 Próxima ação:
   - [ ] Marcar em produção quais dos 4 números entram no cluster (hoje todos entram por default).
 
+
+---
+
+## DATA: 17/09/2026 — Revisão Pré-Teste: Corrida no Ritmo do Chip e Reenvio ao Reimportar Planilha (v2.8.2)
+
+### Claude (revisão do próprio código antes do teste em produção)
+- 🐛 **Bug 1 — corrida no intervalo anti-ban (grave, introduzido na v2.8.0)**:
+  - O teto diário e o claim do contato viraram atômicos na v2.8.0, mas **o intervalo por chip continuou lê-depois-grava**: `getInstanceNextAllowedAt()` no passo 5, `setInstanceNextAllowedAt()` só no fim do tick.
+  - Os chamadores do tick são vários e simultâneos — cron da Vercel + `serverDispatchWorker` + o `GlobalDispatchRunner` de **cada aba aberta**. Dois deles liam o mesmo `next_allowed_at` já vencido, ambos passavam no teste, e **o mesmo chip disparava 2 mensagens no mesmo instante**. Rajada num único número é exatamente o padrão que queima o chip — o oposto do objetivo do teto de 480.
+  - **Correção**: `db/migrations/014_claim_instance_slot.sql` + `claimInstanceSlot()`. O intervalo passa a ser disputado num único `INSERT … ON CONFLICT DO UPDATE … WHERE next_allowed_at <= now()`: só quem consegue avançar o relógio do chip ganha o direito de enviar naquele ciclo; os ticks perdedores saem sem enviar. O reagendamento no fim do tick foi **removido** — regravar depois reabriria a mesma janela de corrida.
+- 🐛 **Bug 2 — reimportar a planilha remandava para todo mundo**:
+  - `enqueueContacts()` pulava apenas quem estava `pendente`/`processando`. Quem já tinha status `enviado` **entrava de novo na fila** — reimportar a mesma planilha (o cenário mais provável num teste) mandaria a abordagem uma segunda vez para os mesmos eleitores.
+  - **Correção**: o enqueue agora pula por padrão quem já recebeu a abordagem, devolve `jaEnviados` na resposta e o toast do Kanban informa quantos foram pulados. Reenvio deliberado continua possível via `permitirReenvio: true` no POST.
+- ⚠️ **Comportamento que NÃO é bug mas surpreende**: `enqueueContacts()` chama `setPaused(false)`. **Importar uma planilha despausa a fila e começa a disparar na hora** — não existe etapa de confirmação entre o upload e o primeiro envio.
+- ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
+- ⏳ Bloqueado por:
+  - [ ] **`014_claim_instance_slot.sql` ainda NÃO aplicada em produção** — a aplicação via MCP foi barrada pelo classificador de modo automático (ação classificada como deploy de produção). Precisa ser aplicada no SQL Editor antes do teste, senão `claimInstanceSlot()` falha e (por segurança) nenhum chip envia.
+  - [ ] Deploy da v2.8.0/v2.8.1/v2.8.2 não confirmado — MCP da Vercel segue sem enxergar a conta (`teams: []`).
+
