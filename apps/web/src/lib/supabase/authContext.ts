@@ -71,10 +71,13 @@ export async function getDbContext(): Promise<DbContext | null> {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  // Desempate estável por id — sem ele, orgs com o mesmo created_at fariam a
+  // resolução variar entre requisições (contato gravado numa org, listado noutra).
   const { data: org } = await admin
     .from('organizations')
     .select('id')
     .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
     .limit(1)
     .maybeSingle();
   if (!org) return null;
