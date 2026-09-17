@@ -962,6 +962,23 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
     - Botão para exportar relatório analítico em formato CSV (`falhas_disparo_YYYY-MM-DD.csv`).
     - Botão para "Tentar Novamente Todas" (re-enfileira os números falhos para nova tentativa automática de envio).
 
+---
+
+## DATA: 17/09/2026 — Motor de Disparo Multi-Instâncias (Cluster Anti-Ban) Ativo em Localhost (v2.7.0)
+
+### Antigravity & Claude
+- ✅ Concluído:
+  - [x] **Arquitetura Multi-Instâncias (Cluster de Chips)**:
+    - Busca dinâmica de instâncias conectadas na Evolution API via `getConnectedDispatchInstances()`.
+    - Cada instância ativa recebe exatamente 1 contato por minuto. Nenhuma ultrapassa o ritmo de segurança anti-ban.
+    - O volume da campanha escala linearmente com os chips conectados ($N$ instâncias = $N$ leads/minuto).
+  - [x] **Sticky Routing no Webhook**:
+    - As respostas do eleitor no funil eleitoral (Msg 2 a Msg 5) são enviadas estritamente pela mesma instância que iniciou a conversa com ele.
+  - [x] **Servidor Localhost Ativo**:
+    - Dev server iniciado e operacional em `http://localhost:3000`.
+    - Endpoint `/api/pesquisa/senado/queue` respondendo com sucesso localmente.
+
+
 
 
 

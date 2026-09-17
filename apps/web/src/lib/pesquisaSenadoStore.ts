@@ -26,6 +26,7 @@ function rowToSession(r: any): RespostaEleitor {
     voto1Nome: r.voto1_nome ?? undefined,
     voto2Id: r.voto2_id ?? undefined,
     voto2Nome: r.voto2_nome ?? undefined,
+    instanceName: r.instance_name ?? r.instanceName ?? undefined,
     createdAt: r.created_at,
     lastMessageAt: r.updated_at,
   };
@@ -97,24 +98,50 @@ export async function savePesquisaSession(
 
   const ctx = await getServiceContext();
   if (!ctx) throw new Error('Supabase indisponível para salvar pesquisa');
-  const { data, error } = await ctx.db
-    .from(TABLE)
-    .upsert(
-      {
-        organization_id: ctx.organizationId,
-        phone: clean,
-        name: session.name,
-        bairro: session.bairro ?? null,
-        etapa: session.etapa,
-        voto1_id: session.voto1Id ?? null,
-        voto1_nome: session.voto1Nome ?? null,
-        voto2_id: session.voto2Id ?? null,
-        voto2_nome: session.voto2Nome ?? null,
-      },
-      { onConflict: 'organization_id,phone' }
-    )
-    .select('*')
-    .single();
+  
+  const payloadBase: any = {
+    organization_id: ctx.organizationId,
+    phone: clean,
+    name: session.name,
+    bairro: session.bairro ?? null,
+    etapa: session.etapa,
+    voto1_id: session.voto1Id ?? null,
+    voto1_nome: session.voto1Nome ?? null,
+    voto2_id: session.voto2Id ?? null,
+    voto2_nome: session.voto2Nome ?? null,
+  };
+
+  let data: any;
+  let error: any;
+
+  if (session.instanceName) {
+    const res = await ctx.db
+      .from(TABLE)
+      .upsert({ ...payloadBase, instance_name: session.instanceName }, { onConflict: 'organization_id,phone' })
+      .select('*')
+      .single();
+    if (!res.error) {
+      data = res.data;
+    } else {
+      // Se a coluna ainda nao existe no schema, salva sem ela
+      const fallbackRes = await ctx.db
+        .from(TABLE)
+        .upsert(payloadBase, { onConflict: 'organization_id,phone' })
+        .select('*')
+        .single();
+      data = fallbackRes.data;
+      error = fallbackRes.error;
+    }
+  } else {
+    const res = await ctx.db
+      .from(TABLE)
+      .upsert(payloadBase, { onConflict: 'organization_id,phone' })
+      .select('*')
+      .single();
+    data = res.data;
+    error = res.error;
+  }
+
   if (error) throw error;
   return rowToSession(data);
 }

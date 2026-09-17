@@ -223,18 +223,19 @@ export async function POST(req: NextRequest) {
       }
 
       // Helper: resposta do bot ao vivo (delay 0), persistida no banco + espelhada.
-      const botReply = async (to: string, name: string, text: string) => {
-        const r = await sendRealMessageDetailed(to, text, instanceName, 0);
+      const botReply = async (to: string, name: string, text: string, overrideInstance?: string) => {
+        const sendInst = overrideInstance || instanceName;
+        const r = await sendRealMessageDetailed(to, text, sendInst, 0);
         persistMessageByJid({
           phoneOrJid: to,
           senderType: 'agent',
           content: text,
           name,
           externalId: r.messageId,
-          instanceName,
+          instanceName: sendInst,
         }).catch((e) => console.error('[Webhook persist bot reply]:', e));
         try {
-          addBotDispatchedMessage({ toPhone: to, name, text, instanceName });
+          addBotDispatchedMessage({ toPhone: to, name, text, instanceName: sendInst });
         } catch {}
         return r.ok;
       };
@@ -245,6 +246,12 @@ export async function POST(req: NextRequest) {
           const session = await getPesquisaSessionByPhone(msg.from);
           if (!session || session.etapa === 'concluido' || session.etapa === 'recusado') continue;
 
+          // Sticky Routing: preserva e responde pela mesma instância de WhatsApp
+          const stickyInst = instanceName || session.instanceName;
+          if (!session.instanceName && instanceName) {
+            session.instanceName = instanceName;
+          }
+
           const cleanText = msg.text.trim();
           const seed = msg.from.replace(/\D/g, '');
 
@@ -252,7 +259,7 @@ export async function POST(req: NextRequest) {
           if (isOptOut(cleanText)) {
             session.etapa = 'recusado';
             await savePesquisaSession(session);
-            await botReply(msg.from, session.name, 'Tudo bem, não vamos mais te enviar mensagens. Obrigado! 🙏');
+            await botReply(msg.from, session.name, 'Tudo bem, não vamos mais te enviar mensagens. Obrigado! 🙏', stickyInst);
             sincronizarContatoEleitor({
               name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'recusado',
             }).catch((e) => console.error('[Webhook] Erro sync opt-out:', e));
@@ -267,16 +274,16 @@ export async function POST(req: NextRequest) {
               name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'aguardando_voto1',
             }).catch((e) => console.error('[Webhook] Erro sync contato:', e));
 
-            await botReply(msg.from, session.name, gerarMensagem2(seed));
-            await botReply(msg.from, session.name, gerarMensagem3(seed));
-            console.log(`[Pesquisa Senado MS] Saudação respondida — Msg 2 e 3 enviadas para ${msg.from}`);
+            await botReply(msg.from, session.name, gerarMensagem2(seed), stickyInst);
+            await botReply(msg.from, session.name, gerarMensagem3(seed), stickyInst);
+            console.log(`[Pesquisa Senado MS] Saudação respondida — Msg 2 e 3 enviadas para ${msg.from} via ${stickyInst || 'default'}`);
           }
 
           // Etapa 2: aguardando 1º voto
           else if (session.etapa === 'aguardando_voto1') {
             const votoValido = validarVoto(cleanText);
             if (!votoValido) {
-              await botReply(msg.from, session.name, 'Por favor, digite apenas o número correspondente à sua opção (de 1 a 12).');
+              await botReply(msg.from, session.name, 'Por favor, digite apenas o número correspondente à sua opção (de 1 a 12).', stickyInst);
             } else {
               const candidato1 = obterCandidatoPorId(votoValido);
               if (candidato1) {
@@ -289,8 +296,8 @@ export async function POST(req: NextRequest) {
                   voto1Nome: candidato1.nome, etapa: 'aguardando_voto2',
                 }).catch((e) => console.error('[Webhook] Erro sync contato 1º voto:', e));
 
-                await botReply(msg.from, session.name, gerarMensagemSegundoVoto(candidato1.id, seed));
-                console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) — Msg 4 enviada para ${msg.from}`);
+                await botReply(msg.from, session.name, gerarMensagemSegundoVoto(candidato1.id, seed), stickyInst);
+                console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) — Msg 4 enviada para ${msg.from} via ${stickyInst || 'default'}`);
               }
             }
           }
@@ -299,9 +306,9 @@ export async function POST(req: NextRequest) {
           else if (session.etapa === 'aguardando_voto2') {
             const votoValido = validarVoto(cleanText);
             if (!votoValido) {
-              await botReply(msg.from, session.name, 'Por favor, digite apenas o número da sua escolha para o segundo voto.');
+              await botReply(msg.from, session.name, 'Por favor, digite apenas o número da sua escolha para o segundo voto.', stickyInst);
             } else if (session.voto1Id && session.voto1Id === votoValido && votoValido <= 10) {
-              await botReply(msg.from, session.name, 'O segundo voto deve ser diferente do primeiro.\nPor favor, escolha outro candidato da lista acima.');
+              await botReply(msg.from, session.name, 'O segundo voto deve ser diferente do primeiro.\nPor favor, escolha outro candidato da lista acima.', stickyInst);
             } else {
               const candidato2 = obterCandidatoPorId(votoValido);
               if (candidato2) {
@@ -314,8 +321,8 @@ export async function POST(req: NextRequest) {
                   voto1Nome: session.voto1Nome, voto2Nome: candidato2.nome, etapa: 'concluido',
                 }).catch((e) => console.error('[Webhook] Erro sync contato 2º voto:', e));
 
-                await botReply(msg.from, session.name, gerarMensagemAgradecimento(seed));
-                console.log(`[Pesquisa Senado MS] 2º Voto (${candidato2.nome}) — pesquisa concluída para ${msg.from}`);
+                await botReply(msg.from, session.name, gerarMensagemAgradecimento(seed), stickyInst);
+                console.log(`[Pesquisa Senado MS] 2º Voto (${candidato2.nome}) — pesquisa concluída para ${msg.from} via ${stickyInst || 'default'}`);
               }
             }
           }

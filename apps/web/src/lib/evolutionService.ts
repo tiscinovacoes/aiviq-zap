@@ -608,4 +608,25 @@ export async function fetchLiveEvolutionInstances(forceRefresh = false): Promise
   }
 }
 
+/**
+ * Retorna os nomes de todas as instâncias conectadas e disponíveis para despacho.
+ * Se houver instâncias conectadas na Evolution API, retorna apenas elas.
+ * Fallback: retorna a instância padrão resolvida.
+ */
+export async function getConnectedDispatchInstances(): Promise<string[]> {
+  try {
+    const live = await fetchLiveEvolutionInstances(true);
+    const connected = live
+      .filter((i) => i.status === 'connected' && i.instanceName)
+      .map((i) => i.instanceName);
+    if (connected.length > 0) {
+      return Array.from(new Set(connected));
+    }
+  } catch (e) {
+    console.warn('[getConnectedDispatchInstances] Falha ao listar instâncias ativas:', e);
+  }
+  const fallback = await resolveSendInstance();
+  return fallback ? [fallback] : [getDefaultInstanceName()];
+}
+
 export { getDefaultInstanceName };

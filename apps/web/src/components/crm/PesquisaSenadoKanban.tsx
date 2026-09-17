@@ -525,7 +525,7 @@ export default function PesquisaSenadoKanban() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Fila em Segundo Plano (2 simultâneos por minuto · máx 800/dia):</span>
+              <span>Fila Multi-Instâncias (Cluster Anti-Ban · 1 lead/min por chip ativo):</span>
             </div>
             <span className="text-emerald-700">
               Progresso: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados

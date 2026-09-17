@@ -1,5 +1,5 @@
 import { isPlaceholderEnv } from '@/lib/supabase/authContext';
-import { resolveSendInstance, sendRealMessageDetailed } from '@/lib/evolutionService';
+import { resolveSendInstance, sendRealMessageDetailed, getConnectedDispatchInstances } from '@/lib/evolutionService';
 import { checkDispatchGate, recordDispatch, dentroDaJanela, ANTIBAN } from '@/lib/antiBan';
 import { gerarMensagem1 } from '@/lib/pesquisaSenado';
 import { createOrUpdateSessionByPhone } from '@/lib/pesquisaSenadoStore';
@@ -57,31 +57,45 @@ export async function runTickCore(): Promise<TickCoreResult> {
     }
   }
 
-  // Instância ativa e gate anti-ban
-  const inst = await resolveSendInstance();
-  const gate = await checkDispatchGate(inst);
-  if (!gate.allowed) {
-    await setNextAllowedAt(Date.now() + 10 * 60 * 1000);
-    return { success: true, skipped: 'gate_bloqueado', status: await getQueueStatus() };
+  // 4. Detecção e Health Check do Pool de Instâncias Conectadas
+  const candidateInstances = await getConnectedDispatchInstances();
+  const availableInstances: string[] = [];
+
+  for (const instName of candidateInstances) {
+    const gate = await checkDispatchGate(instName);
+    if (gate.allowed) {
+      availableInstances.push(instName);
+    }
   }
 
-  // 4. Busca 2 contatos pendentes para disparo SIMULTÂNEO por minuto
-  const SIMULTANEOS = 2;
-  const items = await nextPendingItems(SIMULTANEOS);
+  if (availableInstances.length === 0) {
+    // Se nenhuma instância passou no gate, agenda espera de 5 minutos
+    await setNextAllowedAt(Date.now() + 5 * 60 * 1000);
+    return { success: true, skipped: 'todas_instancias_bloqueadas', status: await getQueueStatus() };
+  }
+
+  // 5. Busca N contatos pendentes, onde N = quantidade de instâncias conectadas e aptas
+  // Cada instância disparará EXATAMENTE 1 lead a cada ciclo de 60 segundos
+  const batchSize = availableInstances.length;
+  const items = await nextPendingItems(batchSize);
   if (items.length === 0) {
     return { success: true, skipped: 'fila_vazia', status: await getQueueStatus() };
   }
 
-  // 5. Executa os disparos SIMULTANEAMENTE (ao mesmo tempo)
+  // 6. Distribui 1 contato exclusivo para cada instância disponível e dispara simultaneamente
   const enviadosNoTick: string[] = [];
   const falhasNoTick: string[] = [];
 
-  const promessasDisparo = items.map(async (item) => {
+  const promessasDisparo = items.map(async (item, idx) => {
+    // Alocação 1:1 garantida (1 lead por instância)
+    const targetInst = availableInstances[idx % availableInstances.length];
     const seed = item.phone;
+
     try {
       await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
         bairro: item.bairro,
         etapa: 'disparado',
+        instanceName: targetInst,
         voto1Id: undefined,
         voto1Nome: undefined,
         voto2Id: undefined,
@@ -89,18 +103,18 @@ export async function runTickCore(): Promise<TickCoreResult> {
       });
 
       const msg1 = gerarMensagem1(item.name, seed);
-      const r = await sendRealMessageDetailed(item.phone, msg1, inst, ANTIBAN.PRESENCA_MS);
+      const r = await sendRealMessageDetailed(item.phone, msg1, targetInst, ANTIBAN.PRESENCA_MS);
 
       if (r.ok) {
-        await markItemSent(item.id, r.instance);
-        await recordDispatch(r.instance);
+        await markItemSent(item.id, r.instance || targetInst);
+        await recordDispatch(r.instance || targetInst);
         persistMessageByJid({
           phoneOrJid: item.phone,
           senderType: 'agent',
           content: msg1,
           name: item.name,
           externalId: r.messageId,
-          instanceName: r.instance,
+          instanceName: r.instance || targetInst,
         }).catch((e) => console.error('[tick] persist Msg1:', e));
 
         try {
@@ -109,7 +123,7 @@ export async function runTickCore(): Promise<TickCoreResult> {
             name: item.name,
             text: msg1,
             botName: 'Robô Pesquisa Senado',
-            instanceName: r.instance,
+            instanceName: r.instance || targetInst,
           });
         } catch {}
 
@@ -132,10 +146,11 @@ export async function runTickCore(): Promise<TickCoreResult> {
     }
   });
 
-  // Aguarda ambos os disparos simultâneos finalizarem
+  // Aguarda todos os disparos simultâneos do lote finalizarem
   await Promise.allSettled(promessasDisparo);
 
-  // 6. Define o próximo envio simultâneo de 2 contatos para exatamente 60 segundos (1 minuto)
+  // 7. Define o próximo envio do pool para exatamente 60 segundos (1 minuto)
+  // Garantindo que nenhum chip ultrapasse 1 disparo por minuto
   const INTERVALO_MINUTO_MS = 60 * 1000;
   await setNextAllowedAt(Date.now() + INTERVALO_MINUTO_MS);
 

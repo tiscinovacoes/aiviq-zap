@@ -44,6 +44,7 @@ export interface RespostaEleitor {
   voto1Nome?: string;
   voto2Id?: number;
   voto2Nome?: string;
+  instanceName?: string;
   lastMessageAt: string;
   createdAt: string;
 }
