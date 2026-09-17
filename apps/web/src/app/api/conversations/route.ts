@@ -67,18 +67,43 @@ export async function GET(req: NextRequest) {
       console.error('[API conversations] Erro ao carregar sessões de pesquisa:', e);
     }
 
-    // 4. Mescla conversas do banco/Evolution com conversas locais da plataforma (Pesquisas, Campanhas e Bot)
+    // 4. Mescla conversas do banco/Evolution com as locais (Pesquisas/Campanhas/Bot),
+    //    deduplicando pelo MESMO contato. Chave canônica BR colapsa a variação do
+    //    9º dígito (o WhatsApp resolve nº de 13→12 dígitos) e o LID vs número real,
+    //    evitando diálogos duplicados do mesmo cidadão.
+    const canonicalKey = (c: Conversation): string => {
+      const d = String(c.contact?.phone || c.id || '').replace(/\D/g, '');
+      if (d.startsWith('55') && (d.length === 12 || d.length === 13)) {
+        return '55' + d.slice(2, 4) + d.slice(4).slice(-8); // 55 + DDD + 8 finais
+      }
+      return d || c.id;
+    };
+
     const memoryChats = getAllConversations(instance);
-    const map = new Map<string, Conversation>();
+    const byKey = new Map<string, Conversation>();
+    const upsert = (c: Conversation, isReal: boolean) => {
+      const key = canonicalKey(c);
+      const ex = byKey.get(key);
+      if (!ex) {
+        byKey.set(key, c);
+        return;
+      }
+      const unread = Math.max(ex.unread_count || 0, c.unread_count || 0);
+      // Prefere o diálogo "real" (Evolution/banco) e/ou o JID de número real.
+      const preferC = isReal || (c.id.includes('@s.whatsapp.net') && !ex.id.includes('@s.whatsapp.net'));
+      const base = preferC ? c : ex;
+      const other = preferC ? ex : c;
+      const goodName =
+        base.contact?.name && !base.contact.name.startsWith('WhatsApp')
+          ? base.contact
+          : other.contact || base.contact;
+      byKey.set(key, { ...base, unread_count: unread, contact: goodName });
+    };
 
-    for (const m of memoryChats) {
-      map.set(m.id, m);
-    }
-    for (const c of dbOrRealConversations) {
-      map.set(c.id, c);
-    }
+    for (const m of memoryChats) upsert(m, false);
+    for (const c of dbOrRealConversations) upsert(c, true);
 
-    let conversations: Conversation[] = Array.from(map.values());
+    let conversations: Conversation[] = Array.from(byKey.values());
 
     // Apply query filters
     if (status) {
