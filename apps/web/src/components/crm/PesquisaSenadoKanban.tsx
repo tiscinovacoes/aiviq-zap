@@ -34,7 +34,7 @@ import {
   CANDIDATOS_SENADO_MS,
   EtapaPesquisa,
 } from '@/lib/pesquisaSenado';
-import { PesquisaStats } from '@/lib/pesquisaSenadoStore';
+import type { PesquisaStats } from '@/lib/pesquisaSenadoStore';
 import type { EstadoDisparador, ItemFilaDisparo } from '@/lib/pesquisaSenadoDisparador';
 
 type VisaoModo = 'funil' | 'voto1' | 'voto2' | 'geral';
