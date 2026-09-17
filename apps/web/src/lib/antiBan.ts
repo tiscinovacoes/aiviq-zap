@@ -17,19 +17,31 @@ export { spin, isOptOut } from '@/lib/spintax';
 // ============================================================================
 
 // -------- Parâmetros do perfil conservador (ajuste central) --------
+// Teto definido pelo operador: 480 mensagens por CHIP por dia. A janela de
+// 8h–20h tem 720 minutos; a 1 msg/min um chip chegaria a 720/dia. Fixando 480
+// sobra folga de 1/3 — e o intervalo abaixo é DERIVADO do teto (43200s / 480 =
+// 90s) para o chip distribuir as 480 ao longo das 12h em vez de despejar tudo
+// em 8h e ficar mudo o resto do dia (a rajada seguida de silêncio é justamente
+// o padrão que a Meta pega). O teto segue sendo limite rígido, reservado de
+// forma atômica a cada envio (reserveDispatchSlot).
 export const ANTIBAN = {
-  // Teto diário definido pelo operador: MÁX 800/dia. O intervalo 40–90s + a
-  // janela 8h–20h já espalham os envios (na prática ~700/dia no melhor caso),
-  // então o teto de 800 funciona como limite rígido de segurança.
-  WARMUP_BASE: 800, // sem rampa artificial (teto cheio desde o 1º dia)
+  WARMUP_BASE: 480, // sem rampa artificial (teto cheio desde o 1º dia)
   WARMUP_STEP: 0,
-  DAILY_CAP: 800, // teto máximo por chip/dia
+  DAILY_CAP: 480, // teto máximo por chip/dia
   HORA_INICIO: 8, // 08:00 MS
   HORA_FIM: 20, // 20:00 MS (exclusivo)
-  GAP_MIN_S: 35, // intervalo mínimo entre disparos (35s)
-  GAP_MAX_S: 75, // intervalo máximo entre disparos (75s dinâmico/aleatório)
+  // Intervalo POR INSTÂNCIA (não global). Média 90s = 480 envios nas 12h.
+  // O sorteio evita cadência metronômica (padrão de robô).
+  GAP_MIN_S: 75,
+  GAP_MAX_S: 105,
   PRESENCA_MS: 1200, // "digitando..." antes de cada disparo em massa (humaniza)
 };
+
+/** Sorteia o intervalo até o próximo envio DAQUELE chip (75s–105s, média 90s). */
+export function sortearGapSegundos(): number {
+  const { GAP_MIN_S, GAP_MAX_S } = ANTIBAN;
+  return Math.floor(Math.random() * (GAP_MAX_S - GAP_MIN_S + 1)) + GAP_MIN_S;
+}
 
 const TZ = 'America/Campo_Grande';
 
@@ -130,41 +142,94 @@ export async function checkDispatchGate(instanceName?: string): Promise<Dispatch
   };
 }
 
-/** Registra 1 disparo bem-sucedido (incrementa o contador do dia). */
-export async function recordDispatch(instanceName?: string): Promise<void> {
+// ---------------------------------------------------------------------------
+// RESERVA ATÔMICA DE SLOT — substitui o antigo recordDispatch().
+//
+// O par checkDispatchGate() + recordDispatch() era ler-depois-gravar em duas
+// etapas. Com o cron da Vercel, o worker de servidor E cada aba aberta do app
+// chamando o tick, dois disparos concorrentes liam o mesmo sent_count e ambos
+// enviavam: o teto de 480 vazava justamente nas horas de maior volume. Agora o
+// slot é reservado ANTES do envio, num único UPDATE atômico no Postgres.
+// ---------------------------------------------------------------------------
+
+export interface SlotReservation {
+  ok: boolean;
+  reason?: 'fora_horario' | 'teto_diario' | 'sem_contexto';
+  sentToday: number;
+  dailyCap: number;
+}
+
+/**
+ * Reserva 1 slot no teto diário do chip. Só devolve ok=true se a reserva foi
+ * efetivada — só então pode enviar. Em caso de falha no envio, chame
+ * releaseDispatchSlot() para devolver o slot.
+ */
+export async function reserveDispatchSlot(instanceName?: string): Promise<SlotReservation> {
+  const inst = resolveInstanceName(instanceName);
+  const { day } = nowInMS();
+  const cap = ANTIBAN.DAILY_CAP;
+
+  if (!dentroDaJanela()) {
+    return { ok: false, reason: 'fora_horario', sentToday: 0, dailyCap: cap };
+  }
+
+  // Dev/placeholder → memória (single-process, sem concorrência real).
+  if (isPlaceholderEnv()) {
+    const cur = global.__aiviq_dispatch_counters![inst];
+    const sent = cur && cur.day === day ? cur.sent : 0;
+    if (sent >= cap) return { ok: false, reason: 'teto_diario', sentToday: sent, dailyCap: cap };
+    if (cur && cur.day === day) cur.sent += 1;
+    else global.__aiviq_dispatch_counters![inst] = { day, sent: 1, firstDay: cur?.firstDay || day };
+    return { ok: true, sentToday: sent + 1, dailyCap: cap };
+  }
+
+  const ctx = await getServiceContext();
+  if (!ctx) return { ok: false, reason: 'sem_contexto', sentToday: 0, dailyCap: cap };
+
+  const { data, error } = await ctx.db.rpc('reserve_dispatch_slot', {
+    p_org: ctx.organizationId,
+    p_instance: inst,
+    p_day: day,
+    p_cap: cap,
+  });
+
+  if (error) {
+    console.error('[antiBan] reserve_dispatch_slot falhou:', error.message);
+    // Sem confirmação de reserva não se envia: erra para o lado de proteger o chip.
+    return { ok: false, reason: 'sem_contexto', sentToday: 0, dailyCap: cap };
+  }
+
+  const sentToday = typeof data === 'number' ? data : 0;
+  if (!sentToday) {
+    return { ok: false, reason: 'teto_diario', sentToday: cap, dailyCap: cap };
+  }
+  return { ok: true, sentToday, dailyCap: cap };
+}
+
+/** Devolve o slot quando o envio falhou (nenhuma mensagem saiu do chip). */
+export async function releaseDispatchSlot(instanceName?: string): Promise<void> {
   const inst = resolveInstanceName(instanceName);
   const { day } = nowInMS();
 
   if (isPlaceholderEnv()) {
     const cur = global.__aiviq_dispatch_counters![inst];
-    if (cur && cur.day === day) cur.sent += 1;
-    else global.__aiviq_dispatch_counters![inst] = { day, sent: 1, firstDay: cur?.firstDay || day };
+    if (cur && cur.day === day) cur.sent = Math.max(0, cur.sent - 1);
     return;
   }
   const ctx = await getServiceContext();
   if (!ctx) return;
   try {
-    // Incremento atômico via RPC não disponível → leitura+upsert best-effort.
-    const { data: today } = await ctx.db
-      .from('dispatch_counters')
-      .select('sent_count')
-      .eq('organization_id', ctx.organizationId)
-      .eq('instance_name', inst)
-      .eq('day', day)
-      .maybeSingle();
-    const next = ((today?.sent_count as number) || 0) + 1;
-    await ctx.db.from('dispatch_counters').upsert(
-      {
-        organization_id: ctx.organizationId,
-        instance_name: inst,
-        day,
-        sent_count: next,
-        last_sent_at: new Date().toISOString(),
-      },
-      { onConflict: 'organization_id,instance_name,day' }
-    );
+    await ctx.db.rpc('release_dispatch_slot', {
+      p_org: ctx.organizationId,
+      p_instance: inst,
+      p_day: day,
+    });
   } catch {
-    // best-effort
+    // best-effort: um slot a menos no dia é o lado seguro do erro.
   }
 }
 
+/** @deprecated Use reserveDispatchSlot() — o incremento agora é feito na reserva. */
+export async function recordDispatch(_instanceName?: string): Promise<void> {
+  // no-op: mantido para não quebrar chamadores legados.
+}

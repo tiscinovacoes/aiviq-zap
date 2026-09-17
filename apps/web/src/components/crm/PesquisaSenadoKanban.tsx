@@ -329,7 +329,7 @@ export default function PesquisaSenadoKanban() {
       const data = await res.json();
       if (data?.success) {
         setMensagemSucesso(
-          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 2 contatos simultâneos por minuto, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}`
+          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 1 lead a cada ~90s por chip conectado, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}`
         );
         setIsExcelModalOpen(false);
         setPlanilhaContatos([]);
@@ -525,7 +525,7 @@ export default function PesquisaSenadoKanban() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Fila Multi-Instâncias (Cluster Anti-Ban · 1 lead/min por chip ativo):</span>
+              <span>Fila Multi-Instâncias (Cluster Anti-Ban · 1 lead a cada ~90s por chip · teto 480/dia por chip):</span>
             </div>
             <span className="text-emerald-700">
               Progresso: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados
@@ -1051,7 +1051,7 @@ export default function PesquisaSenadoKanban() {
                 <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
                 <div>
                   <h3 className="font-bold text-sm text-slate-900">Importar Planilha Excel / CSV</h3>
-                  <p className="text-[11px] text-slate-500">Disparo inteligente com cadência anti-ban (35s a 75s)</p>
+                  <p className="text-[11px] text-slate-500">Cadência anti-ban de 75s a 105s por chip · teto de 480 mensagens/dia por chip</p>
                 </div>
               </div>
               <button
@@ -1123,7 +1123,7 @@ export default function PesquisaSenadoKanban() {
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex gap-2 text-[11px] text-amber-800">
                 <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Cadência Anti-Ban:</strong> Os disparos respeitarão estritamente a janela aleatória de 35 a 75 segundos entre cada eleitor.
+                  <strong>Cadência Anti-Ban:</strong> Cada chip conectado dispara 1 eleitor a cada 75–105 segundos (sorteado), com teto rígido de 480 mensagens por chip por dia. Com N chips conectados a vazão é de N × 480/dia.
                 </span>
               </div>
 

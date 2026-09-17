@@ -19,7 +19,7 @@ import { sendRealMessageDetailed, resolveSendInstance } from '@/lib/evolutionSer
 import { addBotDispatchedMessage } from '@/lib/conversationStore';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 import { persistMessageByJid } from '@/lib/conversationRepo';
-import { checkDispatchGate, recordDispatch, ANTIBAN } from '@/lib/antiBan';
+import { reserveDispatchSlot, releaseDispatchSlot, ANTIBAN } from '@/lib/antiBan';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,8 +81,8 @@ export async function POST(req: NextRequest) {
 
       // ============ ANTI-BAN: janela de horário + teto diário/warmup ============
       if (sendWhatsApp) {
-        const gate = await checkDispatchGate(instAlvo);
-        if (!gate.allowed) {
+        const gate = await reserveDispatchSlot(instAlvo);
+        if (!gate.ok) {
           const motivo =
             gate.reason === 'fora_horario'
               ? `Fora da janela de disparo (${ANTIBAN.HORA_INICIO}h–${ANTIBAN.HORA_FIM}h MS).`
@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
         dispatched = r.ok;
         instanciaUsada = r.instance;
         if (r.ok) {
-          await recordDispatch(r.instance);
+          // slot ja reservado antes do envio (reserveDispatchSlot)
           // Persiste a Msg 1 no Supabase (keyed por JID) — grava a conversa de verdade.
           persistMessageByJid({
             phoneOrJid: cleanPhone,
@@ -129,6 +129,9 @@ export async function POST(req: NextRequest) {
             externalId: r.messageId,
             instanceName: r.instance,
           }).catch((e) => console.error('[API Pesquisa] persist Msg1:', e));
+        } else {
+          // Envio falhou: nada saiu do chip, devolve o slot reservado.
+          await releaseDispatchSlot(instAlvo);
         }
       }
 

@@ -12,7 +12,7 @@ export interface QueueItem {
   phone: string;
   name?: string;
   bairro?: string;
-  status: 'pendente' | 'enviado' | 'erro';
+  status: 'pendente' | 'processando' | 'enviado' | 'erro';
   attempts: number;
 }
 
@@ -72,7 +72,7 @@ export async function enqueueContacts(
     .from('dispatch_queue')
     .select('phone')
     .eq('organization_id', ctx.organizationId)
-    .eq('status', 'pendente');
+    .in('status', ['pendente', 'processando']);
   const jaPendente = new Set((pend || []).map((r: any) => r.phone));
   const rows = unicos
     .filter((c) => !jaPendente.has(c.phone))
@@ -112,7 +112,7 @@ export async function clearPending(): Promise<void> {
   }
   const ctx = await getServiceContext();
   if (!ctx) return;
-  await ctx.db.from('dispatch_queue').delete().eq('organization_id', ctx.organizationId).eq('status', 'pendente');
+  await ctx.db.from('dispatch_queue').delete().eq('organization_id', ctx.organizationId).in('status', ['pendente', 'processando']);
 }
 
 // -------------------- STATUS (para a UI) --------------------
@@ -121,7 +121,7 @@ export async function getQueueStatus(): Promise<QueueStatus> {
     const q = global.__aiviq_queue!;
     const enviados = q.filter((i) => i.status === 'enviado').length;
     const erros = q.filter((i) => i.status === 'erro').length;
-    const pendentes = q.filter((i) => i.status === 'pendente').length;
+    const pendentes = q.filter((i) => i.status === 'pendente' || i.status === 'processando').length;
     const ctrl = global.__aiviq_queue_ctrl!;
     return {
       total: q.length, enviados, erros, pendentes,
@@ -132,9 +132,9 @@ export async function getQueueStatus(): Promise<QueueStatus> {
   const ctx = await getServiceContext();
   if (!ctx) return { total: 0, enviados: 0, erros: 0, pendentes: 0, pausado: false, ativo: false, segundosRestantesProximo: 0 };
 
-  const counts: Record<string, number> = { pendente: 0, enviado: 0, erro: 0 };
+  const counts: Record<string, number> = { pendente: 0, processando: 0, enviado: 0, erro: 0 };
   // Conta por status (3 queries baratas por índice, evita puxar linhas).
-  for (const s of ['pendente', 'enviado', 'erro'] as const) {
+  for (const s of ['pendente', 'processando', 'enviado', 'erro'] as const) {
     const { count } = await ctx.db
       .from('dispatch_queue')
       .select('id', { count: 'exact', head: true })
@@ -150,12 +150,12 @@ export async function getQueueStatus(): Promise<QueueStatus> {
   const paused = Boolean(ctrl?.paused);
   const nextMs = ctrl?.next_allowed_at ? new Date(ctrl.next_allowed_at).getTime() : 0;
   return {
-    total: counts.pendente + counts.enviado + counts.erro,
+    total: counts.pendente + counts.processando + counts.enviado + counts.erro,
     enviados: counts.enviado,
     erros: counts.erro,
-    pendentes: counts.pendente,
+    pendentes: counts.pendente + counts.processando,
     pausado: paused,
-    ativo: counts.pendente > 0 && !paused,
+    ativo: counts.pendente + counts.processando > 0 && !paused,
     segundosRestantesProximo: secsUntil(nextMs),
   };
 }
@@ -194,25 +194,115 @@ export async function setNextAllowedAt(ms: number): Promise<void> {
     );
 }
 
-export async function nextPendingItem(): Promise<QueueItem | null> {
-  const items = await nextPendingItems(1);
-  return items.length > 0 ? items[0] : null;
+// -------------------- RITMO POR INSTÂNCIA --------------------
+// Antes havia um único next_allowed_at para a organização inteira: todos os
+// chips andavam em lockstep e um chip no teto travava os demais. Agora cada
+// instância tem o seu relógio (dispatch_instance_control).
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __aiviq_inst_next: Record<string, number> | undefined;
+}
+if (!global.__aiviq_inst_next) global.__aiviq_inst_next = {};
+
+/** Próximo horário de envio (ms) de cada instância informada. */
+export async function getInstanceNextAllowedAt(
+  instances: string[]
+): Promise<Record<string, number>> {
+  if (instances.length === 0) return {};
+  if (isPlaceholderEnv()) {
+    const out: Record<string, number> = {};
+    for (const i of instances) out[i] = global.__aiviq_inst_next![i] || 0;
+    return out;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return {};
+  const { data } = await ctx.db
+    .from('dispatch_instance_control')
+    .select('instance_name, next_allowed_at')
+    .eq('organization_id', ctx.organizationId)
+    .in('instance_name', instances);
+
+  const out: Record<string, number> = {};
+  for (const i of instances) out[i] = 0;
+  for (const r of data || []) {
+    out[(r as any).instance_name] = (r as any).next_allowed_at
+      ? new Date((r as any).next_allowed_at).getTime()
+      : 0;
+  }
+  return out;
 }
 
-export async function nextPendingItems(count = 2): Promise<QueueItem[]> {
+export async function setInstanceNextAllowedAt(instance: string, ms: number): Promise<void> {
   if (isPlaceholderEnv()) {
-    return (global.__aiviq_queue || []).filter((i) => i.status === 'pendente').slice(0, count);
+    global.__aiviq_inst_next![instance] = ms;
+    return;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return;
+  await ctx.db.from('dispatch_instance_control').upsert(
+    {
+      organization_id: ctx.organizationId,
+      instance_name: instance,
+      next_allowed_at: new Date(ms).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'organization_id,instance_name' }
+  );
+}
+
+// -------------------- CLAIM ATÔMICO --------------------
+// Substitui o SELECT sem lock. O cron da Vercel, o worker de servidor e CADA
+// aba aberta chamam o tick; sem o claim, dois deles pegavam o mesmo contato e
+// o eleitor recebia a abordagem duas vezes (além de queimar 2 slots do chip).
+
+/** Reserva `count` contatos pendentes para ESTE tick (FOR UPDATE SKIP LOCKED). */
+export async function claimPendingItems(count = 1): Promise<QueueItem[]> {
+  if (count <= 0) return [];
+  if (isPlaceholderEnv()) {
+    const itens = (global.__aiviq_queue || []).filter((i) => i.status === 'pendente').slice(0, count);
+    itens.forEach((i) => { i.status = 'processando'; });
+    return itens;
   }
   const ctx = await getServiceContext();
   if (!ctx) return [];
-  const { data } = await ctx.db
-    .from('dispatch_queue')
-    .select('id, phone, name, bairro, status, attempts')
-    .eq('organization_id', ctx.organizationId)
-    .eq('status', 'pendente')
-    .order('created_at', { ascending: true })
-    .limit(count);
+  const { data, error } = await ctx.db.rpc('claim_dispatch_items', {
+    p_org: ctx.organizationId,
+    p_limit: count,
+  });
+  if (error) {
+    console.error('[dispatchQueue] claim_dispatch_items falhou:', error.message);
+    return [];
+  }
   return (data || []) as QueueItem[];
+}
+
+/** Devolve o contato à fila sem consumir tentativa (chip indisponível, etc.). */
+export async function releaseItem(id: string): Promise<void> {
+  if (isPlaceholderEnv()) {
+    const it = (global.__aiviq_queue || []).find((i) => i.id === id);
+    if (it && it.status === 'processando') it.status = 'pendente';
+    return;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return;
+  await ctx.db
+    .from('dispatch_queue')
+    .update({ status: 'pendente', claimed_at: null })
+    .eq('organization_id', ctx.organizationId)
+    .eq('id', id);
+}
+
+/** Devolve à fila contatos presos em 'processando' (worker que morreu no meio). */
+export async function reapStaleClaims(): Promise<number> {
+  if (isPlaceholderEnv()) return 0;
+  const ctx = await getServiceContext();
+  if (!ctx) return 0;
+  const { data, error } = await ctx.db.rpc('reap_stale_dispatch_claims', {
+    p_org: ctx.organizationId,
+  });
+  if (error) return 0;
+  return typeof data === 'number' ? data : 0;
 }
 
 export async function markItemSent(id: string, instanceName: string): Promise<void> {

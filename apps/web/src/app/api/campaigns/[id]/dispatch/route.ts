@@ -46,7 +46,7 @@ export async function POST(
       success: true,
       campaignId: params.id,
       status: newStatus,
-      message: action === 'pause' ? 'Campanha pausada.' : 'Disparo em segundo plano ativado (2 contatos simultâneos por minuto).',
+      message: action === 'pause' ? 'Campanha pausada.' : 'Disparo em segundo plano ativado (1 lead a cada ~90s por chip conectado, teto de 480/dia por chip).',
     });
   } catch (error: any) {
     return NextResponse.json(

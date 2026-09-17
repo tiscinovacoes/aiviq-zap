@@ -987,3 +987,35 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
 
 
 
+
+---
+
+## DATA: 17/09/2026 — Cluster de Chips com Teto Rígido de 480/dia por Instância (v2.8.0)
+
+### Claude
+- ✅ Concluído:
+  - [x] **Teto de 480 mensagens por chip por dia (`lib/antiBan.ts`)**:
+    - `DAILY_CAP` e `WARMUP_BASE` de 800 → **480**.
+    - Intervalo passou a ser **derivado do teto**: janela de 8h–20h = 43.200s ÷ 480 = 90s. `GAP_MIN_S`/`GAP_MAX_S` = **75s–105s** (média 90s), sorteados a cada envio.
+    - Motivo da mudança de cadência: a 1 msg/min o chip cumpria as 480 em 8h e ficava mudo 4h. Rajada seguida de silêncio é justamente o padrão que a Meta detecta — agora as 480 se distribuem pelas 12h inteiras.
+  - [x] **Reserva ATÔMICA do teto (`reserve_dispatch_slot` / `releaseDispatchSlot`)**:
+    - O par `checkDispatchGate()` + `recordDispatch()` era ler-depois-gravar em duas etapas. Como o cron da Vercel, o `serverDispatchWorker` **e cada aba aberta** do app chamam o tick, dois disparos concorrentes liam o mesmo `sent_count` e ambos enviavam: o teto vazava justamente no pico de volume.
+    - O slot passa a ser reservado **antes** do envio, num único `INSERT … ON CONFLICT DO UPDATE … WHERE sent_count < cap`. Sem confirmação de reserva, não envia (erra para o lado de proteger o chip).
+    - Envio que falha devolve o slot (`release_dispatch_slot`) — as 480 contam mensagens que realmente saíram.
+    - `recordDispatch()` virou no-op `@deprecated`; `/api/pesquisa/senado` (disparo manual) migrado para a reserva atômica — antes ele contava fora do novo fluxo.
+  - [x] **Claim ATÔMICO do contato (`claim_dispatch_items`, FOR UPDATE SKIP LOCKED)**:
+    - `nextPendingItems()` era um SELECT sem lock: ticks concorrentes pegavam o **mesmo** contato e o eleitor recebia a abordagem duas vezes (além de queimar 2 slots).
+    - Novo estado `processando` na fila + `reap_stale_dispatch_claims()` devolvendo à fila o que ficou preso por mais de 5 min (worker serverless que morreu no meio).
+  - [x] **Ritmo POR INSTÂNCIA (`dispatch_instance_control`)**:
+    - Havia um único `next_allowed_at` para a organização: todos os chips andavam em lockstep e um chip no teto travava os demais.
+    - Cada instância passa a ter o próprio relógio, com gap sorteado individualmente (dois chips nunca ficam sincronizados no mesmo segundo). Chip que fecha as 480 dorme 1h e os outros seguem.
+  - [x] **Motor reescrito (`pesquisaSenadoDispatcher.ts`)**: por tick → recupera presos, lista chips conectados, filtra os que venceram o próprio intervalo, reserva 1 slot em cada, faz claim de 1 contato por chip habilitado e dispara em paralelo. **Vazão = N chips × 480/dia.**
+  - [x] **`db/migrations/012_dispatch_multi_instance.sql` aplicada e verificada em produção** (`npzffhpmmaoirikhtmje`): 4 funções criadas, `dispatch_instance_control` com RLS, colunas `claimed_at`/`campaign_id` em `dispatch_queue`. `REVOKE EXECUTE` de `anon`/`authenticated` nas 4 funções (alerta 0028/0029). Teste de teto validado em produção: reservas devolveram `1, 2, NULL` com cap 2. Security advisor sem alertas novos (só o `leaked_password_protection` pré-existente).
+  - [x] **UI atualizada**: banners do Kanban, `GlobalDispatchRunner` e mensagem de `/api/campaigns/[id]/dispatch` passam a anunciar `1 lead a cada ~90s por chip · teto 480/dia por chip`.
+  - [x] **Validação**: `tsc --noEmit` 0 erros; `next build` de produção aprovado.
+- ⏳ Pendências / notas:
+  - [ ] **Deploy ainda não feito** — a migration já está em produção (aditiva, o código antigo continua rodando normalmente com ela). O deploy precisa vir depois dela, nunca antes.
+  - [ ] **Contadores de hoje preservados por decisão do operador**: Khomp com 55 e PontaPora com 2 já contam contra as 480 de hoje.
+  - [ ] **`dispatch_queue` ainda não tem pausa por campanha**: a coluna `campaign_id` foi criada mas a fila continua sendo uma só por organização — pausar a campanha A ainda pausa a B. Wire pendente.
+  - [ ] Fila atual em produção: 1.374 pendentes. Com 2 chips (960/dia) leva ~1,5 dia de janela.
+
