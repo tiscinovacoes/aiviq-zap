@@ -134,9 +134,20 @@ export async function POST(req: NextRequest) {
       const key = data?.key;
       const fromMe = key?.fromMe;
 
-      // Processa apenas mensagens recebidas de contatos (ignora grupos @g.us e mensagens enviadas por mim)
-      if (!fromMe && key?.remoteJid && !key.remoteJid.includes('@g.us')) {
-        const from = key.remoteJid.replace('@s.whatsapp.net', '');
+      // WhatsApp LID: mensagens recebidas podem chegar com remoteJid = "<lid>@lid"
+      // (sem o telefone). O número real vem em key.remoteJidAlt (fallback senderPn).
+      // Sem resolver isso, o webhook não casava a sessão da pesquisa (que é por
+      // telefone) → o bot ficava mudo e a resposta não gravava.
+      const rawJid: string = key?.remoteJid || '';
+      const isLid = rawJid.endsWith('@lid') || key?.addressingMode === 'lid';
+      const realJid: string = isLid
+        ? (key?.remoteJidAlt || key?.senderPn || rawJid)
+        : rawJid;
+      const isGroup = rawJid.includes('@g.us') || realJid.includes('@g.us');
+
+      // Processa apenas mensagens recebidas de contatos (ignora grupos e as minhas)
+      if (!fromMe && realJid && !isGroup) {
+        const from = realJid.replace('@s.whatsapp.net', '').replace('@lid', '');
         const text =
           data.message?.conversation ||
           data.message?.extendedTextMessage?.text ||

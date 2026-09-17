@@ -177,15 +177,16 @@ export async function persistMessage(params: {
   senderName?: string;
   deliveryStatus?: string;
   updateConversationPreview?: boolean;
-}): Promise<void> {
+  createdAt?: string; // preserva o horário original no backfill histórico
+}): Promise<boolean> {
   const {
     db, organizationId, conversationId, senderType, content, externalId,
     senderId = null, deliveryStatus = senderType === 'agent' ? 'sent' : 'delivered',
-    updateConversationPreview = true,
+    updateConversationPreview = true, createdAt,
   } = params;
   try {
     if (externalId) {
-      // Já existe? (reentrega do webhook) → não duplica.
+      // Já existe? (reentrega do webhook / reconciliação) → não duplica.
       const { data: dup } = await db
         .from('messages')
         .select('id')
@@ -193,7 +194,7 @@ export async function persistMessage(params: {
         .eq('external_message_id', externalId)
         .limit(1)
         .maybeSingle();
-      if (dup?.id) return;
+      if (dup?.id) return false;
     }
     await db.from('messages').insert({
       organization_id: organizationId,
@@ -204,6 +205,7 @@ export async function persistMessage(params: {
       message_type: 'text',
       delivery_status: deliveryStatus,
       external_message_id: externalId || null,
+      ...(createdAt ? { created_at: createdAt } : {}),
     });
     if (updateConversationPreview) {
       await db
@@ -215,8 +217,10 @@ export async function persistMessage(params: {
         })
         .eq('id', conversationId);
     }
+    return true;
   } catch {
     // best-effort: falha de persistência não deve derrubar o envio/recebimento.
+    return false;
   }
 }
 
@@ -240,6 +244,78 @@ export async function getPersistedMessagesByJid(
     .eq('conversation_id', conv.id)
     .order('created_at', { ascending: true });
   return data || [];
+}
+
+function tsToIso(messageTimestamp: any): string | undefined {
+  if (!messageTimestamp) return undefined;
+  const n = typeof messageTimestamp === 'number' ? messageTimestamp : Number(messageTimestamp);
+  if (!n || isNaN(n)) return undefined;
+  const ms = n < 1000000000000 ? n * 1000 : n;
+  const d = new Date(ms);
+  return isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+/** Reconciliação/backfill: recebe os registros brutos da Evolution e persiste no
+ *  Supabase o que faltar (idempotente por external_message_id), resolvendo o
+ *  telefone real do LID (key.remoteJidAlt). Garante que TUDO fique gravado mesmo
+ *  se um evento de webhook tiver sido perdido, e recupera respostas antigas. */
+export async function reconcileEvolutionRecords(
+  records: any[],
+  instanceName?: string
+): Promise<{ persisted: number; scanned: number }> {
+  if (isPlaceholderEnv() || !Array.isArray(records) || records.length === 0) {
+    return { persisted: 0, scanned: 0 };
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return { persisted: 0, scanned: 0 };
+
+  // Ordena do mais antigo p/ o mais novo (preserva a ordem no banco).
+  const sorted = [...records].sort(
+    (a, b) => Number(a?.messageTimestamp || 0) - Number(b?.messageTimestamp || 0)
+  );
+
+  let persisted = 0;
+  for (const m of sorted) {
+    const key = m?.key;
+    if (!key) continue;
+    const rawJid: string = key.remoteJid || '';
+    const isLid = rawJid.endsWith('@lid') || key.addressingMode === 'lid';
+    const realJid: string = isLid ? (key.remoteJidAlt || key.senderPn || rawJid) : rawJid;
+    if (!realJid || realJid.includes('@g.us')) continue;
+    const digits = canonicalDigits(realJid);
+    if (!digits || digits.length < 8) continue; // LID sem telefone → não dá p/ casar
+
+    const text =
+      m.message?.conversation ||
+      m.message?.extendedTextMessage?.text ||
+      m.message?.imageMessage?.caption ||
+      m.message?.documentMessage?.caption ||
+      '';
+    if (!text) continue;
+
+    const conv = await resolveOrCreateConversation({
+      db: ctx.db,
+      organizationId: ctx.organizationId,
+      phoneOrJid: realJid,
+      name: m.pushName,
+      instanceName,
+    });
+    if (!conv) continue;
+
+    const inserted = await persistMessage({
+      db: ctx.db,
+      organizationId: ctx.organizationId,
+      conversationId: conv.id,
+      senderType: key.fromMe ? 'agent' : 'contact',
+      content: text,
+      externalId: key.id,
+      deliveryStatus: key.fromMe ? 'sent' : 'delivered',
+      updateConversationPreview: false,
+      createdAt: tsToIso(m.messageTimestamp),
+    });
+    if (inserted) persisted++;
+  }
+  return { persisted, scanned: sorted.length };
 }
 
 /** Persiste uma mensagem a partir do JID (resolve/cria a conversa antes). Usado

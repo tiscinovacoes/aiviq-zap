@@ -58,6 +58,7 @@ function InboxMain() {
 
     let listTimeout: NodeJS.Timeout;
     let msgTimeout: NodeJS.Timeout;
+    let reconcileTimeout: NodeJS.Timeout;
     let isCancelled = false;
 
     // Poll da LISTA de conversas (mais pesado) — intervalo maior.
@@ -74,9 +75,25 @@ function InboxMain() {
       }
       if (!isCancelled) msgTimeout = setTimeout(runMsgSync, 2500);
     };
+    // Rede de segurança: reconcilia o histórico da Evolution → Supabase (recupera
+    // respostas que um webhook perdido teria deixado de fora). Fora do hot path.
+    const runReconcile = async () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          const res = await fetch('/api/conversations/reconcile');
+          const data = await res.json();
+          if (data?.persisted > 0) {
+            syncConversations();
+            syncActiveMessages();
+          }
+        } catch {}
+      }
+      if (!isCancelled) reconcileTimeout = setTimeout(runReconcile, 60000);
+    };
 
     listTimeout = setTimeout(runListSync, 5000);
     msgTimeout = setTimeout(runMsgSync, 2500);
+    reconcileTimeout = setTimeout(runReconcile, 3000);
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -96,6 +113,7 @@ function InboxMain() {
       isCancelled = true;
       clearTimeout(listTimeout);
       clearTimeout(msgTimeout);
+      clearTimeout(reconcileTimeout);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('aiviq:instance-changed', onInstanceChanged);
     };

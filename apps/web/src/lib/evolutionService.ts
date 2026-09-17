@@ -527,6 +527,31 @@ export async function sendRealMessage(
   return (await sendRealMessageDetailed(target, text, instanceName, delayMs)).ok;
 }
 
+// ================= 4b. HISTÓRICO BRUTO (para reconciliação/backfill) =================
+/** Busca as mensagens brutas armazenadas pela Evolution na instância (todas as
+ *  conversas). Usado pela reconciliação que garante que TUDO seja gravado no
+ *  Supabase mesmo se um evento de webhook for perdido. */
+export async function fetchInstanceMessagesRaw(
+  instanceName?: string,
+  limit = 300
+): Promise<any[]> {
+  const inst = resolveInstanceName(instanceName);
+  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) return [];
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/chat/findMessages/${inst}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
+      body: JSON.stringify({ where: {}, limit }),
+      signal: AbortSignal.timeout(9000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data?.messages?.records || data?.records || (Array.isArray(data) ? data : []);
+  } catch {
+    return [];
+  }
+}
+
 // ================= 5. LISTAR INSTÂNCIAS REAIS DO SERVIDOR EVOLUTION =================
 export interface EvolutionLiveInstance {
   instanceName: string;
