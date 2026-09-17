@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import NavigationRail from '@/components/layout/NavigationRail';
 import {
   Bot,
@@ -33,6 +34,7 @@ interface BotSummary {
 }
 
 export default function BotsDashboardPage() {
+  const router = useRouter();
   const [bots, setBots] = useState<BotSummary[]>([]);
   const [metrics, setMetrics] = useState({
     totalBots: 3,
@@ -60,21 +62,33 @@ export default function BotsDashboardPage() {
     b.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleCreateBot = (templateName?: string) => {
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const handleCreateBot = async (templateName?: string) => {
     const name = templateName || newBotName || 'Novo Chatbot';
-    fetch('/api/bots', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          setBots([data.bot, ...bots]);
-          setIsNewModalOpen(false);
-          setNewBotName('');
-        }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const res = await fetch('/api/bots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
       });
+      const data = await res.json();
+      if (res.ok && data.success && data.bot) {
+        setIsNewModalOpen(false);
+        setNewBotName('');
+        // Abre direto o editor com um fluxo em branco editável.
+        router.push(`/bots/${data.bot.id}?new=1&name=${encodeURIComponent(name)}`);
+      } else {
+        setCreateError(data.error || 'Não foi possível criar o fluxo. Tente novamente.');
+      }
+    } catch {
+      setCreateError('Falha de conexão ao criar o fluxo. Tente novamente.');
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -348,18 +362,23 @@ export default function BotsDashboardPage() {
                 </div>
               </div>
 
+              {createError && (
+                <p className="text-[11px] text-rose-600 font-medium">{createError}</p>
+              )}
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
                 <button
                   onClick={() => setIsNewModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-600 hover:text-slate-900 rounded-lg text-xs font-semibold transition-colors"
+                  disabled={creating}
+                  className="px-4 py-2 bg-slate-100 text-slate-600 hover:text-slate-900 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={() => handleCreateBot()}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-xs"
+                  disabled={creating}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-xs disabled:opacity-50"
                 >
-                  Criar em Branco
+                  {creating ? 'Criando...' : 'Criar em Branco'}
                 </button>
               </div>
             </div>

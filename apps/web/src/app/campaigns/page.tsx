@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import NavigationRail from '@/components/layout/NavigationRail';
 import { useCampaignStore } from '@/store/useCampaignStore';
 import {
@@ -55,9 +55,77 @@ export default function CampaignsPage() {
     scheduledAt: '',
     avoidDuplicates: true,
     ddiPlus55: true,
+    importedLeads: [] as { nome: string; telefone: string }[],
   });
 
   const [isEnhancingAI, setIsEnhancingAI] = useState(false);
+
+  // Importação de planilha de leads (CSV / Excel-exportado-como-CSV).
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importedFileName, setImportedFileName] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // Parser CSV nativo — tolera delimitador ',' ou ';', aspas e cabeçalho
+  // com colunas Nome / Telefone (acento-insensível). Sem dependência externa.
+  const parseCsv = (text: string): { nome: string; telefone: string }[] => {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length === 0) return [];
+    const semi = (lines[0].match(/;/g) || []).length;
+    const comma = (lines[0].match(/,/g) || []).length;
+    const delim = semi > comma ? ';' : ',';
+    const splitLine = (line: string) => {
+      const out: string[] = [];
+      let cur = '';
+      let q = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q;
+        } else if (ch === delim && !q) { out.push(cur); cur = ''; }
+        else cur += ch;
+      }
+      out.push(cur);
+      return out.map((s) => s.trim());
+    };
+    const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const header = splitLine(lines[0]).map(norm);
+    const nomeIdx = header.findIndex((h) => h.includes('nome'));
+    const telIdx = header.findIndex((h) => /tel|fone|whats|celular|numero|phone/.test(h));
+    const hasHeader = nomeIdx !== -1 || telIdx !== -1;
+    const ni = nomeIdx !== -1 ? nomeIdx : 0;
+    const ti = telIdx !== -1 ? telIdx : 1;
+    const rows = hasHeader ? lines.slice(1) : lines;
+    const leads: { nome: string; telefone: string }[] = [];
+    for (const line of rows) {
+      const cols = splitLine(line);
+      const telefone = (cols[ti] || '').replace(/\D/g, '');
+      if (telefone.length >= 10) {
+        leads.push({ nome: (cols[ni] || '').trim() || `Contato ${leads.length + 1}`, telefone });
+      }
+    }
+    return leads;
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportError(null);
+    try {
+      const text = await file.text();
+      const leads = parseCsv(text);
+      if (leads.length === 0) {
+        setImportError('Nenhum contato válido. Use um CSV com colunas Nome e Telefone (Excel: Salvar como CSV).');
+        setImportedFileName(null);
+      } else {
+        setImportedFileName(file.name);
+        setFormData((p) => ({ ...p, importedLeads: leads, totalContacts: leads.length }));
+      }
+    } catch {
+      setImportError('Falha ao ler o arquivo. Exporte a planilha como CSV e tente novamente.');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     fetchCampaigns();
@@ -84,6 +152,8 @@ export default function CampaignsPage() {
     await createCampaign(formData);
     setIsWizardOpen(false);
     setWizardStep(1);
+    setImportedFileName(null);
+    setImportError(null);
   };
 
   return (
@@ -487,12 +557,28 @@ export default function CampaignsPage() {
                         Colunas: Nome, Telefone (com DDD)
                       </span>
                     </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".csv,.txt,.xls,.xlsx"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
                     <button
                       type="button"
+                      onClick={() => fileInputRef.current?.click()}
                       className="px-3 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded text-xs font-semibold transition-colors shadow-2xs"
                     >
-                      Selecionar Arquivo
+                      {importedFileName ? 'Trocar Arquivo' : 'Selecionar Arquivo'}
                     </button>
+                    {importedFileName && (
+                      <span className="text-[11px] text-emerald-700 font-medium">
+                        ✓ {importedFileName} — {formData.importedLeads.length} contatos
+                      </span>
+                    )}
+                    {importError && (
+                      <span className="text-[11px] text-rose-600 leading-snug">{importError}</span>
+                    )}
                   </div>
 
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center justify-between">

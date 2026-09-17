@@ -34,6 +34,7 @@ interface BotEditorState {
 
   // Actions
   setBot: (bot: BotV1) => void;
+  initBlankBot: (id: string, name?: string) => void;
   selectBlock: (groupId: string | null, blockId: string | null) => void;
   createGroup: (title?: string, position?: Position) => void;
   updateGroup: (groupId: string, patch: Partial<Group>) => void;
@@ -199,6 +200,46 @@ export const useBotStore = create<BotEditorState>((set, get) => ({
 
   setBot: (bot: BotV1) => {
     set({ bot, history: { past: [], future: [] }, isDirty: false });
+  },
+
+  // Inicia um fluxo em branco editável (novo bot). Sem persistência de documento
+  // por bot ainda (ADR-004 fase futura: tabelas draft/published) — em produção
+  // mock isto vive só na sessão do editor.
+  initBlankBot: (id: string, name?: string) => {
+    const now = new Date().toISOString();
+    const startId = `event_start_${Date.now()}`;
+    const groupId = `group_${Date.now()}`;
+    const blankBot: BotV1 = {
+      version: '1',
+      id,
+      accountId: 1,
+      name: name || 'Novo Fluxo de Automação',
+      events: [
+        { id: startId, type: 'start', graphCoordinates: { x: 60, y: 160 }, outgoingEdgeId: undefined },
+      ],
+      groups: [
+        {
+          id: groupId,
+          title: '1. Boas-Vindas',
+          graphCoordinates: { x: 300, y: 120 },
+          blocks: [
+            { id: `b_${Date.now()}`, type: 'text', content: { text: 'Olá! 👋 Como posso ajudar?' } },
+          ],
+        },
+      ],
+      edges: [],
+      variables: [],
+      settings: { typingDelayMs: 600, handoffOnFailure: true },
+      createdAt: now,
+      updatedAt: now,
+    };
+    set({
+      bot: blankBot,
+      history: { past: [], future: [] },
+      selectedGroupId: null,
+      selectedBlockId: null,
+      isDirty: false,
+    });
   },
 
   selectBlock: (groupId: string | null, blockId: string | null) => {

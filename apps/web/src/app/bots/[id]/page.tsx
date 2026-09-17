@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useBotStore } from '@/store/useBotStore';
 import { Block, BlockType, Group } from '@/types/bot';
 
@@ -44,8 +44,11 @@ import {
 
 export default function BotCanvasEditorPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const routeId = String(params?.id || '');
   const {
     bot,
+    initBlankBot,
     selectedGroupId,
     selectedBlockId,
     selectBlock,
@@ -74,6 +77,15 @@ export default function BotCanvasEditorPage() {
   const [publishing, setPublishing] = useState(false);
   const [publishedVersion, setPublishedVersion] = useState(3);
   const [publishBanner, setPublishBanner] = useState<string | null>(null);
+
+  // Fluxo novo (?new=1): inicia um documento em branco editável para este id,
+  // em vez de reaproveitar o fluxo-demo padrão do store.
+  useEffect(() => {
+    if (searchParams?.get('new') === '1' && bot?.id !== routeId) {
+      initBlankBot(routeId, searchParams.get('name') || undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeId]);
 
   // Currently selected block
   const selectedGroup = bot?.groups.find((g) => g.id === selectedGroupId);
