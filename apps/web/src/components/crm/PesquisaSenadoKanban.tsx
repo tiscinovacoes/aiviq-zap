@@ -35,7 +35,7 @@ import {
   EtapaPesquisa,
 } from '@/lib/pesquisaSenado';
 import type { PesquisaStats } from '@/lib/pesquisaSenadoStore';
-import type { EstadoDisparador, ItemFilaDisparo } from '@/lib/pesquisaSenadoDisparador';
+import type { EstadoDisparador, ItemFilaDisparo } from '@/lib/disparadorTypes';
 
 type VisaoModo = 'funil' | 'voto1' | 'voto2' | 'geral';
 
