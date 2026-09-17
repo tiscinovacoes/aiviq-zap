@@ -18,7 +18,7 @@ import {
 } from '@/lib/dispatchQueue';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60; // 60s para comportar 2 disparos espaçados no cron da Vercel
 
 function safeEqual(a: string, b: string): boolean {
   const ba = Buffer.from(a);
@@ -50,80 +50,102 @@ async function runTick(req: NextRequest) {
   }
 
   // 1. Pausado?
-  const ctrl = await getControlState();
-  if (ctrl.paused) {
+  const initialCtrl = await getControlState();
+  if (initialCtrl.paused) {
     return NextResponse.json({ success: true, skipped: 'pausado' });
   }
 
-  // 2. Janela de horário (fuso MS).
+  // 2. Janela de horário (fuso MS: 8h–20h).
   if (!dentroDaJanela()) {
     return NextResponse.json({ success: true, skipped: 'fora_horario' });
   }
 
-  // 3. Intervalo anti-ban dinâmico (35s a 75s) desde o último envio.
-  if (ctrl.nextAllowedAtMs && Date.now() < ctrl.nextAllowedAtMs) {
-    const faltamMs = ctrl.nextAllowedAtMs - Date.now();
-    // Como o cron da Vercel roda a cada 60s e o gap aleatório é entre 35s e 75s,
-    // se faltam até 16 segundos, aguarda esse tempinho restante na própria execução
-    // para disparar pontualmente sem perder o minuto inteiro.
-    if (faltamMs > 0 && faltamMs <= 16000) {
+  // 3. Verifica intervalo anti-ban antes de iniciar o tick
+  if (initialCtrl.nextAllowedAtMs && Date.now() < initialCtrl.nextAllowedAtMs) {
+    const faltamMs = initialCtrl.nextAllowedAtMs - Date.now();
+    // Se faltam até 20 segundos, aguarda esse tempinho para disparar pontualmente sem pular o minuto
+    if (faltamMs > 0 && faltamMs <= 20000) {
       await new Promise((resolve) => setTimeout(resolve, faltamMs));
     } else {
       return NextResponse.json({ success: true, skipped: 'aguardando_intervalo', faltamMs });
     }
   }
 
-  // 4. Instância ativa + teto diário/warmup.
-  const inst = await resolveSendInstance();
-  const gate = await checkDispatchGate(inst);
-  if (!gate.allowed) {
-    // Fora do teto: espera ~10min antes de tentar de novo (evita loop).
-    await setNextAllowedAt(Date.now() + 10 * 60 * 1000);
-    return NextResponse.json({ success: true, skipped: gate.reason, sentToday: gate.sentToday, dailyCap: gate.dailyCap });
-  }
+  // Dispara 2 contatos por execução do cron (60s), mantendo intervalo anti-ban aleatório entre eles
+  const MAX_PER_TICK = 2;
+  const enviadosNoTick: string[] = [];
+  const falhasNoTick: string[] = [];
 
-  // 5. Próximo da fila.
-  const item = await nextPendingItem();
-  if (!item) {
-    return NextResponse.json({ success: true, done: true, status: await getQueueStatus() });
-  }
-
-  const seed = item.phone;
-  try {
-    await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
-      bairro: item.bairro,
-      etapa: 'disparado',
-      voto1Id: undefined, voto1Nome: undefined, voto2Id: undefined, voto2Nome: undefined,
-    });
-
-    const msg1 = gerarMensagem1(item.name, seed);
-    const r = await sendRealMessageDetailed(item.phone, msg1, inst, ANTIBAN.PRESENCA_MS);
-
-    if (r.ok) {
-      await markItemSent(item.id, r.instance);
-      await recordDispatch(r.instance);
-      persistMessageByJid({ phoneOrJid: item.phone, senderType: 'agent', content: msg1, name: item.name, externalId: r.messageId, instanceName: r.instance })
-        .catch((e) => console.error('[tick] persist Msg1:', e));
-      try { addBotDispatchedMessage({ toPhone: item.phone, name: item.name, text: msg1, botName: 'Robô Pesquisa Senado', instanceName: r.instance }); } catch {}
-      sincronizarContatoEleitor({ name: item.name || '', phone: item.phone, bairro: item.bairro, etapa: 'disparado' })
-        .catch((e) => console.error('[tick] sync contato:', e));
-
-      // Próximo envio: intervalo aleatório anti-ban (40–90s).
-      const gap = Math.floor(Math.random() * (ANTIBAN.GAP_MAX_S - ANTIBAN.GAP_MIN_S + 1)) + ANTIBAN.GAP_MIN_S;
-      await setNextAllowedAt(Date.now() + gap * 1000);
-
-      return NextResponse.json({ success: true, enviado: item.phone, proximoEmS: gap, status: await getQueueStatus() });
+  for (let step = 0; step < MAX_PER_TICK; step++) {
+    // Para o 2º contato, aguarda intervalo aleatório seguro (35s a 45s) após o 1º
+    if (step > 0) {
+      const gapEntreContatos = Math.floor(Math.random() * (45 - 35 + 1)) + 35;
+      await new Promise((resolve) => setTimeout(resolve, gapEntreContatos * 1000));
     }
 
-    // Falha no envio → tenta de novo em breve (até 3x).
-    const { failed } = await markItemError(item.id, item.attempts || 0, 'Falha no envio pelo WhatsApp');
-    await setNextAllowedAt(Date.now() + 30 * 1000);
-    return NextResponse.json({ success: true, falha: item.phone, definitiva: failed });
-  } catch (err: any) {
-    await markItemError(item.id, item.attempts || 0, err.message || 'erro');
-    await setNextAllowedAt(Date.now() + 30 * 1000);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    // Re-checa pausa e horário antes de cada envio
+    const currentCtrl = await getControlState();
+    if (currentCtrl.paused) break;
+    if (!dentroDaJanela()) break;
+
+    // Instância ativa + teto diário/warmup
+    const inst = await resolveSendInstance();
+    const gate = await checkDispatchGate(inst);
+    if (!gate.allowed) {
+      await setNextAllowedAt(Date.now() + 10 * 60 * 1000);
+      break;
+    }
+
+    // Próximo da fila
+    const item = await nextPendingItem();
+    if (!item) {
+      break;
+    }
+
+    const seed = item.phone;
+    try {
+      await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
+        bairro: item.bairro,
+        etapa: 'disparado',
+        voto1Id: undefined, voto1Nome: undefined, voto2Id: undefined, voto2Nome: undefined,
+      });
+
+      const msg1 = gerarMensagem1(item.name, seed);
+      const r = await sendRealMessageDetailed(item.phone, msg1, inst, ANTIBAN.PRESENCA_MS);
+
+      if (r.ok) {
+        await markItemSent(item.id, r.instance);
+        await recordDispatch(r.instance);
+        persistMessageByJid({ phoneOrJid: item.phone, senderType: 'agent', content: msg1, name: item.name, externalId: r.messageId, instanceName: r.instance })
+          .catch((e) => console.error('[tick] persist Msg1:', e));
+        try { addBotDispatchedMessage({ toPhone: item.phone, name: item.name, text: msg1, botName: 'Robô Pesquisa Senado', instanceName: r.instance }); } catch {}
+        sincronizarContatoEleitor({ name: item.name || '', phone: item.phone, bairro: item.bairro, etapa: 'disparado' })
+          .catch((e) => console.error('[tick] sync contato:', e));
+
+        enviadosNoTick.push(item.phone);
+
+        // Define quando será permitido o próximo envio (entre 35s e 75s aleatório)
+        const gap = Math.floor(Math.random() * (ANTIBAN.GAP_MAX_S - ANTIBAN.GAP_MIN_S + 1)) + ANTIBAN.GAP_MIN_S;
+        await setNextAllowedAt(Date.now() + gap * 1000);
+      } else {
+        const { failed } = await markItemError(item.id, item.attempts || 0, 'Falha no envio pelo WhatsApp');
+        falhasNoTick.push(item.phone);
+        await setNextAllowedAt(Date.now() + 20 * 1000);
+      }
+    } catch (err: any) {
+      await markItemError(item.id, item.attempts || 0, err.message || 'erro');
+      falhasNoTick.push(item.phone);
+      await setNextAllowedAt(Date.now() + 20 * 1000);
+    }
   }
+
+  return NextResponse.json({
+    success: true,
+    enviados: enviadosNoTick,
+    totalEnviados: enviadosNoTick.length,
+    falhas: falhasNoTick,
+    status: await getQueueStatus(),
+  });
 }
 
 export async function GET(req: NextRequest) {

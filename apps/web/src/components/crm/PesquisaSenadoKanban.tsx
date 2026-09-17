@@ -300,7 +300,7 @@ export default function PesquisaSenadoKanban() {
       const data = await res.json();
       if (data?.success) {
         setMensagemSucesso(
-          `✅ ${data.enfileirados} contatos na fila (o disparo roda no servidor, ~1/min, mesmo com a aba fechada).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}`
+          `✅ ${data.enfileirados} contatos na fila (disparo no servidor a ~2/min com cadência anti-ban de 35s–75s, mesmo com a aba fechada).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}`
         );
         setIsExcelModalOpen(false);
         setPlanilhaContatos([]);
@@ -456,7 +456,7 @@ export default function PesquisaSenadoKanban() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Fila Anti-Ban no Servidor (35s a 75s aleatório · 8h–20h · máx 800/dia):</span>
+              <span>Fila Anti-Ban no Servidor (2 por min · 35s a 75s aleatório · máx 800/dia):</span>
             </div>
             <span className="text-emerald-700">
               Progresso: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados
