@@ -118,17 +118,36 @@ export async function enqueueContacts(
     })
     .map((c) => ({ organization_id: ctx.organizationId, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente' }));
 
+  // Insere em lotes de 500 (limite de payload). O indice unico parcial da
+  // migration 015 recusa um telefone que ja esteja ativo na fila; no Postgres
+  // isso aborta o LOTE INTEIRO. Sem checar o erro, uma unica colisao derrubava
+  // 500 contatos em silencio e a tela ainda dizia que foram enfileirados.
+  // Por isso: se o lote falhar, reinsere linha a linha e conta o que entrou.
+  let inseridos = 0;
+  let colisoes = 0;
   if (rows.length > 0) {
-    // Insere em lotes de 500 (limite de payload).
     for (let i = 0; i < rows.length; i += 500) {
-      await ctx.db.from('dispatch_queue').insert(rows.slice(i, i + 500));
+      const lote = rows.slice(i, i + 500);
+      const { error } = await ctx.db.from('dispatch_queue').insert(lote);
+      if (!error) {
+        inseridos += lote.length;
+        continue;
+      }
+      console.warn('[dispatchQueue] lote recusado, reinserindo individualmente:', error.message);
+      for (const linha of lote) {
+        const { error: e1 } = await ctx.db.from('dispatch_queue').insert(linha);
+        if (e1) colisoes++;
+        else inseridos++;
+      }
     }
-    // Ao enfileirar, garante que não está pausado e libera o próximo envio.
-    await setPaused(false);
+    if (inseridos > 0) {
+      // Ao enfileirar, garante que não está pausado e libera o próximo envio.
+      await setPaused(false);
+    }
   }
   return {
-    enfileirados: rows.length,
-    ignorados: unicos.length - rows.length - puladosPorEnvio,
+    enfileirados: inseridos,
+    ignorados: unicos.length - rows.length - puladosPorEnvio + colisoes,
     jaEnviados: puladosPorEnvio,
   };
 }

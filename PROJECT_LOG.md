@@ -1087,3 +1087,13 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
 - ⏳ Bloqueado por:
   - [ ] **`015_queue_integrity.sql` precisa ser aplicada no SQL Editor** — o MCP de migration está barrado pelo classificador de modo automático.
 
+
+---
+
+## DATA: 17/09/2026 — Insert em Lote Resiliente ao Índice Único (v2.8.4)
+
+### Claude
+- 🐛 **Efeito colateral da migration 015**: `enqueueContacts()` insere em lotes de 500 e **não checava o resultado**. Com o índice único parcial em vigor, uma única colisão de telefone aborta o **lote inteiro** no Postgres — e, sem leitura do erro, até 500 contatos sumiriam em silêncio enquanto a tela reportava sucesso. O risco nasceu no momento em que a 015 foi aplicada.
+  - **Correção**: o lote passa a checar `error`; se for recusado, as linhas são reinseridas **uma a uma**, contando quantas entraram de fato. `enfileirados` passa a refletir o que realmente foi gravado (antes usava `rows.length`, ou seja, a intenção) e as colisões entram em `ignorados`.
+- ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
+
