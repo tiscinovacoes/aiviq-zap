@@ -17,27 +17,34 @@ export { spin, isOptOut } from '@/lib/spintax';
 // ============================================================================
 
 // -------- Parâmetros do perfil conservador (ajuste central) --------
-// Teto definido pelo operador: 480 mensagens por CHIP por dia. A janela de
-// 8h–20h tem 720 minutos; a 1 msg/min um chip chegaria a 720/dia. Fixando 480
-// sobra folga de 1/3 — e o intervalo abaixo é DERIVADO do teto (43200s / 480 =
-// 90s) para o chip distribuir as 480 ao longo das 12h em vez de despejar tudo
-// em 8h e ficar mudo o resto do dia (a rajada seguida de silêncio é justamente
-// o padrão que a Meta pega). O teto segue sendo limite rígido, reservado de
-// forma atômica a cada envio (reserveDispatchSlot).
+// Teto e cadencia definidos pelo operador: 480 mensagens por CHIP por dia, a
+// 1 envio por minuto em cada chip (60s fixo).
+//
+// Consequencia registrada: a janela 8h-20h tem 720 minutos, entao a 1/min o
+// chip cumpre as 480 em cerca de 8h e fica mudo as ultimas 4h. Rajada seguida
+// de silencio e um padrao que a Meta detecta, e o intervalo exato de 60s e
+// mecanicamente regular -- a alternativa avaliada foi 75-105s sorteado, que
+// espalharia as 480 pelas 12h inteiras. O operador optou pela cadencia fixa.
+//
+// O teto continua sendo limite rigido, reservado de forma ATOMICA a cada envio
+// (reserveDispatchSlot), e o intervalo e disputado de forma atomica por chip
+// (claimInstanceSlot) para que dois ticks concorrentes nunca facam o mesmo chip
+// enviar duas vezes no mesmo segundo.
 export const ANTIBAN = {
   WARMUP_BASE: 480, // sem rampa artificial (teto cheio desde o 1º dia)
   WARMUP_STEP: 0,
   DAILY_CAP: 480, // teto máximo por chip/dia
   HORA_INICIO: 8, // 08:00 MS
   HORA_FIM: 20, // 20:00 MS (exclusivo)
-  // Intervalo POR INSTÂNCIA (não global). Média 90s = 480 envios nas 12h.
-  // O sorteio evita cadência metronômica (padrão de robô).
-  GAP_MIN_S: 75,
-  GAP_MAX_S: 105,
+  // Cadência definida pelo operador: 1 envio por minuto POR CHIP (60s fixo).
+  // Consequência registrada: a 1/min o chip cumpre as 480 em 8h e fica mudo as
+  // últimas 4h da janela. O teto continua sendo o limite rígido.
+  GAP_MIN_S: 60,
+  GAP_MAX_S: 60,
   PRESENCA_MS: 1200, // "digitando..." antes de cada disparo em massa (humaniza)
 };
 
-/** Sorteia o intervalo até o próximo envio DAQUELE chip (75s–105s, média 90s). */
+/** Intervalo até o próximo envio DAQUELE chip: 60s fixo (1 por minuto). */
 export function sortearGapSegundos(): number {
   const { GAP_MIN_S, GAP_MAX_S } = ANTIBAN;
   return Math.floor(Math.random() * (GAP_MAX_S - GAP_MIN_S + 1)) + GAP_MIN_S;

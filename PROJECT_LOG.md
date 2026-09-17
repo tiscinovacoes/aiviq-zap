@@ -1097,3 +1097,28 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
   - **Correção**: o lote passa a checar `error`; se for recusado, as linhas são reinseridas **uma a uma**, contando quantas entraram de fato. `enfileirados` passa a refletir o que realmente foi gravado (antes usava `rows.length`, ou seja, a intenção) e as colisões entram em `ignorados`.
 - ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
 
+
+---
+
+## DATA: 17/09/2026 — Divisão Prévia da Lista por Chip + Cadência de 1/min (v2.9.0)
+
+### Claude
+- 🔍 **"Aparece como disparo mas não envia no chip" — investigado, não confirmado**: verificação ponta a ponta dos 13 disparos do dia mostrou que as mensagens **saíram e foram entregues**:
+  - Registradas na Evolution como `fromMe: true` nas instâncias corretas (`paloma`, `helenasegunda`, `67998454509`).
+  - `MessageUpdate` com **`SERVER_ACK` + `DELIVERY_ACK`** — a própria Meta confirmando entrega no aparelho do destinatário.
+  - Persistência íntegra: 13 disparos → 16 mensagens, 14 conversas, 13 sessões de pesquisa no Supabase.
+  - Anti-ban validado em produção: 3 chips dispararam simultaneamente às 19:41:53 (160ms de diferença, 1 contato cada) e o repeat do `paloma` veio 97s depois. Nenhum chip repetiu em menos de 75s.
+  - Pendente de esclarecimento com o operador **onde** ele observou a ausência (aparelho pareado, Inbox ou WhatsApp Web).
+- ✅ **Divisão prévia da lista entre os chips** (pedido do operador):
+  - `db/migrations/016_assigned_instance.sql`: coluna `assigned_instance` + RPC `claim_dispatch_items_for_instance`.
+  - Na importação, a lista é dividida em round-robin entre os chips **conectados e no pool de disparo**. Cada contato entra carimbado com quem vai abordá-lo.
+  - Antes o chip era escolhido no instante do envio: se um caía no meio da campanha a distribuição desequilibrava em silêncio e não dava para conferir chip a chip.
+  - **Chip que cai não trava a sub-lista** (decisão do operador): o claim prioriza os contatos carimbados para o próprio chip e, quando essa sub-lista acaba, puxa órfãos — contatos sem carimbo ou carimbados para chips que não estão mais vivos. Nunca toca no que está reservado para um chip de pé.
+  - Toast da importação passa a mostrar a divisão (`paloma: 459 · helenasegunda: 459 · 67998454509: 458`).
+  - `getProgressoPorChip()` + badges no banner do Kanban: `chip: enviados/total (falhas)`. Pendente conta pelo carimbo; enviado/erro contam pelo chip que de fato tentou, então redistribuição fica visível.
+- ✅ **Cadência de 1 envio por minuto por chip** (decisão do operador): `GAP_MIN_S`/`GAP_MAX_S` = 60s fixo (era 75–105s sorteado).
+  - **Ressalva registrada e aceita pelo operador**: a 1/min o chip cumpre as 480 em ~8h e fica mudo as últimas 4h da janela — rajada seguida de silêncio é padrão detectável, e o intervalo exato de 60s é mecanicamente regular. A alternativa era manter o sorteio de 75–105s, que espalharia as 480 pelas 12h inteiras.
+- ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
+- ⏳ Bloqueado por:
+  - [ ] **`016_assigned_instance.sql` precisa ser aplicada no SQL Editor** (MCP de migration barrado pelo modo automático). Sem ela `claim_dispatch_items_for_instance` não existe e o disparo para — falha fechada.
+

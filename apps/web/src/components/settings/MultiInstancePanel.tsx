@@ -156,7 +156,7 @@ export default function MultiInstancePanel() {
           <div>
             <h3 className="text-sm font-bold text-slate-900">Números de WhatsApp (Multi-instância)</h3>
             <p className="text-[11px] text-slate-500">
-              Conecte vários celulares. O <strong className="text-slate-700">disparo usa ao mesmo tempo todos os números marcados em &quot;No disparo&quot;</strong> — 1 lead a cada ~90s em cada, teto de 480/dia por número. O selo ATIVO é outra coisa: define só qual número o Inbox e os Contatos exibem.
+              Conecte vários celulares. A lista é <strong className="text-slate-700">dividida entre todos os números marcados em &quot;No disparo&quot;</strong> na importação — 1 lead por minuto em cada, teto de 480/dia por número. O selo ATIVO é outra coisa: define só qual número o Inbox e os Contatos exibem.
             </p>
           </div>
         </div>

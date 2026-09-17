@@ -6,8 +6,11 @@ import {
   getQueueStatus,
   getFailedItems,
   requeueFailedItems,
+  filterDispatchPool,
+  getProgressoPorChip,
 } from '@/lib/dispatchQueue';
 import { triggerServerDispatchCycle, stopServerDispatchWorker } from '@/lib/serverDispatchWorker';
+import { getConnectedDispatchInstances } from '@/lib/evolutionService';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,9 +23,10 @@ const NO_CACHE_HEADERS = {
 // GET: status da fila para a UI (progresso, pausado, próximo em Xs) + lista de falhas para auditoria.
 export async function GET() {
   try {
-    const [status, falhas] = await Promise.all([
+    const [status, falhas, porChip] = await Promise.all([
       getQueueStatus(),
       getFailedItems(100),
+      getProgressoPorChip(),
     ]);
 
     // Se a fila estiver ativa com pendentes e sem timer rodando, aciona o worker em 2º plano
@@ -33,7 +37,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { success: true, status, falhas },
+      { success: true, status, falhas, porChip },
       { headers: NO_CACHE_HEADERS }
     );
   } catch (err: any) {
@@ -58,7 +62,14 @@ export async function POST(req: NextRequest) {
           { status: 400, headers: NO_CACHE_HEADERS }
         );
       }
-      const r = await enqueueContacts(contatos, { permitirReenvio: body.permitirReenvio === true });
+      // Divide a lista entre os chips conectados E no pool de disparo, na hora
+      // da importacao. Assim da para conferir chip a chip em vez de descobrir a
+      // distribuicao so depois que a campanha rodou.
+      const chips = await filterDispatchPool(await getConnectedDispatchInstances());
+      const r = await enqueueContacts(contatos, {
+        permitirReenvio: body.permitirReenvio === true,
+        chips,
+      });
       const status = await getQueueStatus();
 
       // Dispara imediatamente o primeiro ciclo de 2 contatos simultâneos em segundo plano

@@ -49,6 +49,8 @@ export interface EnqueueResult {
   ignorados: number;
   /** Ja receberam a abordagem numa rodada anterior e foram pulados. */
   jaEnviados: number;
+  /** Quantos contatos couberam a cada chip (divisao previa da lista). */
+  divisaoPorChip: Record<string, number>;
 }
 
 /**
@@ -59,9 +61,11 @@ export interface EnqueueResult {
  */
 export async function enqueueContacts(
   contatos: Array<{ name?: string; phone: string; bairro?: string }>,
-  opts: { permitirReenvio?: boolean } = {}
+  opts: { permitirReenvio?: boolean; chips?: string[] } = {}
 ): Promise<EnqueueResult> {
   const permitirReenvio = opts.permitirReenvio === true;
+  // Chips que vao dividir a lista. Vazio = sem carimbo (o claim decide na hora).
+  const chips = Array.isArray(opts.chips) ? opts.chips.filter(Boolean) : [];
   const limpos = contatos
     .map((c) => ({ name: (c.name || '').trim(), phone: canonicalDigits(c.phone), bairro: c.bairro || 'Mato Grosso do Sul' }))
     .filter((c) => c.phone && c.phone.length >= 10);
@@ -84,11 +88,11 @@ export async function enqueueContacts(
       q.push({ id: `q-${Date.now()}-${n}`, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente', attempts: 0 });
       n++;
     }
-    return { enfileirados: n, ignorados: unicos.length - n - ja, jaEnviados: ja };
+    return { enfileirados: n, ignorados: unicos.length - n - ja, jaEnviados: ja, divisaoPorChip: {} };
   }
 
   const ctx = await getServiceContext();
-  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0 };
+  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, divisaoPorChip: {} };
 
   // Ja na fila (pendente/processando) -> pula sempre.
   const { data: pend } = await ctx.db
@@ -116,7 +120,17 @@ export async function enqueueContacts(
       if (jaEnviados.has(c.phone)) { puladosPorEnvio++; return false; }
       return true;
     })
-    .map((c) => ({ organization_id: ctx.organizationId, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente' }));
+    .map((c, idx) => ({
+      organization_id: ctx.organizationId,
+      phone: c.phone,
+      name: c.name,
+      bairro: c.bairro,
+      status: 'pendente',
+      // Divisao previa da lista: round-robin sobre os chips do pool. O contato
+      // ja entra carimbado com quem vai aborda-lo, em vez de sortear o chip no
+      // instante do envio.
+      assigned_instance: chips.length > 0 ? chips[idx % chips.length] : null,
+    }));
 
   // Insere em lotes de 500 (limite de payload). O indice unico parcial da
   // migration 015 recusa um telefone que ja esteja ativo na fila; no Postgres
@@ -145,10 +159,18 @@ export async function enqueueContacts(
       await setPaused(false);
     }
   }
+  // Quanto coube a cada chip, para a tela mostrar a divisao da lista.
+  const divisaoPorChip: Record<string, number> = {};
+  for (const r of rows) {
+    const chip = (r as any).assigned_instance;
+    if (chip) divisaoPorChip[chip] = (divisaoPorChip[chip] || 0) + 1;
+  }
+
   return {
     enfileirados: inseridos,
     ignorados: unicos.length - rows.length - puladosPorEnvio + colisoes,
     jaEnviados: puladosPorEnvio,
+    divisaoPorChip,
   };
 }
 
@@ -582,4 +604,87 @@ export async function claimInstanceSlot(instance: string, gapSeconds: number): P
     return false;
   }
   return data === true;
+}
+
+/**
+ * Claim da sub-lista DE UM CHIP. Prioriza os contatos carimbados para ele na
+ * importacao; se a sub-lista dele acabou (ou se um chip caiu e deixou orfaos),
+ * puxa contatos sem carimbo ou carimbados para chips que nao estao mais vivos.
+ *
+ * `live` = chips atualmente conectados e no pool. E o que distingue "orfao de
+ * chip caido" (pode redistribuir) de "reservado para um chip que esta de pe"
+ * (nao toca).
+ */
+export async function claimPendingItemsForInstance(
+  instance: string,
+  count: number,
+  live: string[]
+): Promise<QueueItem[]> {
+  if (count <= 0) return [];
+  if (isPlaceholderEnv()) {
+    const fila = global.__aiviq_queue || [];
+    const meus = fila.filter(
+      (i) => i.status === 'pendente' && (i as any).assignedInstance === instance
+    );
+    const orfaos = fila.filter(
+      (i) =>
+        i.status === 'pendente' &&
+        (!(i as any).assignedInstance || !live.includes((i as any).assignedInstance))
+    );
+    const itens = [...meus, ...orfaos].slice(0, count);
+    itens.forEach((i) => {
+      i.status = 'processando';
+      (i as any).assignedInstance = instance;
+    });
+    return itens;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return [];
+  const { data, error } = await ctx.db.rpc('claim_dispatch_items_for_instance', {
+    p_org: ctx.organizationId,
+    p_instance: instance,
+    p_limit: count,
+    p_live: live,
+  });
+  if (error) {
+    console.error('[dispatchQueue] claim_dispatch_items_for_instance falhou:', error.message);
+    return [];
+  }
+  return (data || []) as QueueItem[];
+}
+
+export interface ProgressoChip {
+  instancia: string;
+  pendentes: number;
+  enviados: number;
+  erros: number;
+}
+
+/** Progresso por chip: quanto da sub-lista de cada um ja saiu. */
+export async function getProgressoPorChip(): Promise<ProgressoChip[]> {
+  if (isPlaceholderEnv()) return [];
+  const ctx = await getServiceContext();
+  if (!ctx) return [];
+  const { data, error } = await ctx.db
+    .from('dispatch_queue')
+    .select('assigned_instance, instance_name, status')
+    .eq('organization_id', ctx.organizationId);
+  if (error || !data) return [];
+
+  const mapa = new Map<string, ProgressoChip>();
+  for (const r of data as any[]) {
+    // Pendente conta pelo carimbo; enviado/erro contam pelo chip que de fato
+    // tentou (podem divergir quando houve redistribuicao).
+    const chip =
+      r.status === 'pendente' || r.status === 'processando'
+        ? r.assigned_instance
+        : r.instance_name || r.assigned_instance;
+    if (!chip) continue;
+    if (!mapa.has(chip)) mapa.set(chip, { instancia: chip, pendentes: 0, enviados: 0, erros: 0 });
+    const alvo = mapa.get(chip)!;
+    if (r.status === 'pendente' || r.status === 'processando') alvo.pendentes++;
+    else if (r.status === 'enviado') alvo.enviados++;
+    else if (r.status === 'erro') alvo.erros++;
+  }
+  return Array.from(mapa.values()).sort((a, b) => a.instancia.localeCompare(b.instancia));
 }

@@ -75,6 +75,7 @@ export default function PesquisaSenadoKanban() {
   // e mostra o progresso (GET /queue); fechar a aba NÃO para mais o disparo.
   const [estadoDisparador, setEstadoDisparador] = useState<EstadoDisparador | null>(null);
   const [falhasList, setFalhasList] = useState<any[]>([]);
+  const [porChip, setPorChip] = useState<Array<{ instancia: string; pendentes: number; enviados: number; erros: number }>>([]);
   const [isFalhasModalOpen, setIsFalhasModalOpen] = useState(false);
   const [reenfileirandoFalhas, setReenfileirandoFalhas] = useState(false);
 
@@ -186,6 +187,7 @@ export default function PesquisaSenadoKanban() {
           contatoAtual: undefined,
           fila: [],
         });
+        if (Array.isArray(data.porChip)) setPorChip(data.porChip);
         if (Array.isArray(data.falhas)) {
           setFalhasList(data.falhas);
         }
@@ -331,7 +333,13 @@ export default function PesquisaSenadoKanban() {
       const data = await res.json();
       if (data?.success) {
         setMensagemSucesso(
-          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 1 lead a cada ~90s por chip conectado, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}${data.jaEnviados ? ` ${data.jaEnviados} foram pulados por já terem recebido a abordagem antes.` : ''}`
+          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 1 lead por minuto em cada chip, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}${data.jaEnviados ? ` ${data.jaEnviados} foram pulados por já terem recebido a abordagem antes.` : ''}` +
+          (data.divisaoPorChip && Object.keys(data.divisaoPorChip).length > 0
+            ? ' Divisão da lista: ' +
+              Object.entries(data.divisaoPorChip)
+                .map(([chip, n]) => chip + ': ' + n)
+                .join(' · ')
+            : '')
         );
         setIsExcelModalOpen(false);
         setPlanilhaContatos([]);
@@ -528,8 +536,24 @@ export default function PesquisaSenadoKanban() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Fila Multi-Instâncias (Cluster Anti-Ban · 1 lead a cada ~90s por chip · teto 480/dia por chip):</span>
+              <span>Fila Multi-Instâncias (Cluster Anti-Ban · 1 lead por minuto em cada chip · teto 480/dia por chip):</span>
             </div>
+            {porChip.length > 0 && (
+              <span className="flex items-center gap-1.5 flex-wrap">
+                {porChip.map((c) => (
+                  <span
+                    key={c.instancia}
+                    title={`${c.instancia}: ${c.enviados} enviados, ${c.pendentes} na fila, ${c.erros} falhas`}
+                    className="px-2 py-0.5 rounded-full bg-white border border-emerald-200 text-emerald-900 font-mono text-[11px] flex items-center gap-1"
+                  >
+                    <Smartphone className="w-3 h-3 text-emerald-600" />
+                    {c.instancia}: <strong>{c.enviados}</strong>/{c.enviados + c.pendentes}
+                    {c.erros > 0 && <span className="text-rose-600">·{c.erros}✕</span>}
+                  </span>
+                ))}
+              </span>
+            )}
+
             <span className="text-emerald-700">
               Progresso: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados
               {estadoDisparador.erros > 0 && ` (${estadoDisparador.erros} falhas)`}
@@ -1073,7 +1097,7 @@ export default function PesquisaSenadoKanban() {
                 <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
                 <div>
                   <h3 className="font-bold text-sm text-slate-900">Importar Planilha Excel / CSV</h3>
-                  <p className="text-[11px] text-slate-500">Cadência anti-ban de 75s a 105s por chip · teto de 480 mensagens/dia por chip</p>
+                  <p className="text-[11px] text-slate-500">Cadência de 1 envio por minuto em cada chip · teto de 480 mensagens/dia por chip</p>
                 </div>
               </div>
               <button
@@ -1145,7 +1169,7 @@ export default function PesquisaSenadoKanban() {
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex gap-2 text-[11px] text-amber-800">
                 <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Cadência Anti-Ban:</strong> Cada chip conectado dispara 1 eleitor a cada 75–105 segundos (sorteado), com teto rígido de 480 mensagens por chip por dia. Com N chips conectados a vazão é de N × 480/dia.
+                  <strong>Cadência Anti-Ban:</strong> A lista é dividida entre os chips conectados na importação e cada chip dispara 1 eleitor por minuto da própria sub-lista, com teto rígido de 480 mensagens por chip por dia. Se um chip cair, sua sub-lista é redistribuída para os que estiverem de pé.
                 </span>
               </div>
 

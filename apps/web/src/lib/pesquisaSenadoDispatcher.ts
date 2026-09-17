@@ -18,6 +18,7 @@ import {
   getInstanceNextAllowedAt,
   setInstanceNextAllowedAt,
   claimPendingItems,
+  claimPendingItemsForInstance,
   releaseItem,
   reapStaleClaims,
   filterDispatchPool,
@@ -36,14 +37,15 @@ import {
 //
 //   1. devolve a fila contatos presos em 'processando' (worker que morreu);
 //   2. pergunta a Evolution quais instancias estao conectadas;
-//   3. seleciona as que ja venceram o proprio intervalo (75-105s, media 90s);
+//   3. seleciona as que ja venceram o proprio intervalo (60s = 1 por minuto);
 //   4. reserva ATOMICAMENTE 1 slot no teto diario de cada uma;
 //   5. faz o claim de 1 contato por chip habilitado (SKIP LOCKED) e dispara
 //      todos em paralelo;
 //   6. reagenda cada chip individualmente com um novo intervalo sorteado.
 //
 // Vazao = (no de chips conectados) x 480/dia, com o piso de seguranca de um
-// envio a cada ~90s POR CHIP. Nenhum chip acelera porque outro parou.
+// envio por minuto POR CHIP, cada um puxando da sua sub-lista carimbada na
+// importacao. Nenhum chip acelera porque outro parou.
 // ===========================================================================
 
 export interface TickCoreResult {
@@ -195,30 +197,31 @@ export async function runTickCore(): Promise<TickCoreResult> {
     };
   }
 
-  // 7. Claim de 1 contato por chip habilitado (exclusivo entre ticks concorrentes).
-  const items = await claimPendingItems(habilitadas.length);
-  if (items.length === 0) {
-    // Fila vazia: devolve os slots reservados que nao serao usados.
-    await Promise.allSettled(habilitadas.map((i) => releaseDispatchSlot(i)));
+  // 7. Cada chip puxa da PROPRIA sub-lista (carimbada na importacao). Se a
+  //    sub-lista dele acabou, ou se outro chip caiu e deixou orfaos, o claim
+  //    redistribui -- mas nunca toca no que esta reservado para um chip vivo.
+  const pares: Array<{ inst: string; item: QueueItem }> = [];
+  for (const inst of habilitadas) {
+    const [item] = await claimPendingItemsForInstance(inst, 1, conectadas);
+    if (item) pares.push({ inst, item });
+    else await releaseDispatchSlot(inst); // nada para este chip: devolve a cota
+  }
+
+  if (pares.length === 0) {
     return { success: true, skipped: 'fila_vazia', status: await getQueueStatus() };
   }
 
-  // Sobrou slot reservado sem contato? Devolve.
-  const sobrando = habilitadas.slice(items.length);
-  await Promise.allSettled(sobrando.map((i) => releaseDispatchSlot(i)));
-
   // 8. Dispara em paralelo: 1 contato por chip, exatamente.
-  const usadas = habilitadas.slice(0, items.length);
   const enviados: string[] = [];
   const falhas: string[] = [];
 
   const resultados = await Promise.allSettled(
-    items.map((item, idx) => dispararContato(item, usadas[idx]))
+    pares.map((p) => dispararContato(p.item, p.inst))
   );
 
   resultados.forEach((r, idx) => {
-    if (r.status === 'fulfilled' && r.value) enviados.push(items[idx].phone);
-    else falhas.push(items[idx].phone);
+    if (r.status === 'fulfilled' && r.value) enviados.push(pares[idx].item.phone);
+    else falhas.push(pares[idx].item.phone);
   });
 
   // 9. NAO reagenda aqui: o intervalo de cada chip ja foi fixado no passo 5,
