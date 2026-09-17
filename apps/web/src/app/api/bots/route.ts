@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import type { BotV1 } from '@/types/bot';
+import { listBotRecords, createBotRecord } from '@/lib/botStore';
+import { makeBlankBot } from '@/lib/bot/blankBot';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,74 +18,77 @@ interface BotSummary {
   updatedAt: string;
 }
 
-const mockBots: BotSummary[] = [
-  {
-    id: 'bot_qualifica_01',
-    name: 'Triagem de Manifestações da Ouvidoria',
-    status: 'active',
-    channels: ['WhatsApp Cloud Oficial', 'Webchat'],
-    groupsCount: 4,
-    publishedVersion: 3,
-    totalConversations: 1248,
-    resolutionRate: '68.4%',
-    updatedAt: '2026-09-11T14:30:00Z',
-  },
-  {
-    id: 'bot_suporte_n1',
-    name: 'FAQ & Informações ao Cidadão',
-    status: 'active',
+function summaryFrom(
+  id: string,
+  name: string,
+  status: string,
+  document: any,
+  publishedVersion: number,
+  updatedAt: string
+): BotSummary {
+  const groups = document && Array.isArray(document.groups) ? document.groups : [];
+  return {
+    id,
+    name: name || document?.name || 'Fluxo de Automação',
+    status: (status as BotSummary['status']) || 'draft',
     channels: ['WhatsApp Cloud Oficial'],
-    groupsCount: 6,
-    publishedVersion: 5,
-    totalConversations: 890,
-    resolutionRate: '74.2%',
-    updatedAt: '2026-09-10T18:15:00Z',
-  },
-  {
-    id: 'bot_fora_expediente',
-    name: 'Atendimento Fora do Expediente',
-    status: 'paused',
-    channels: ['WhatsApp Cloud Oficial', 'Instagram Direct'],
-    groupsCount: 3,
-    publishedVersion: 1,
-    totalConversations: 312,
-    resolutionRate: '52.0%',
-    updatedAt: '2026-09-08T11:00:00Z',
-  },
-];
+    groupsCount: groups.length,
+    publishedVersion: publishedVersion ?? 0,
+    totalConversations: 0,
+    resolutionRate: '—',
+    updatedAt: updatedAt || new Date().toISOString(),
+  };
+}
+
+function isPlaceholderEnv() {
+  return (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project')
+  );
+}
 
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
-    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder = isPlaceholderEnv();
+    const search = new URL(request.url).searchParams.get('q')?.toLowerCase() || '';
+
+    let bots: BotSummary[] = [];
 
     if (!isPlaceholder) {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
+      const { data, error } = await supabase
+        .from('bots')
+        .select('id, name, status, document, published_version, updated_at')
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        return NextResponse.json(
+          { success: false, error: 'Falha ao listar chatbots', message: error.message },
+          { status: 500 }
+        );
       }
+      bots = (data ?? []).map((r: any) =>
+        summaryFrom(r.id, r.name, r.status, r.document, r.published_version, r.updated_at)
+      );
+    } else {
+      bots = listBotRecords().map((r) =>
+        summaryFrom(r.id, r.name, r.status, r.document, r.publishedVersion, r.updatedAt)
+      );
     }
 
-    const { searchParams } = new URL(request.url);
-    const search = searchParams.get('q')?.toLowerCase() || '';
-
-    let list = mockBots;
-    if (search) {
-      list = list.filter((b) => b.name.toLowerCase().includes(search));
-    }
+    if (search) bots = bots.filter((b) => b.name.toLowerCase().includes(search));
 
     const metrics = {
-      totalBots: mockBots.length,
-      activeBots: mockBots.filter((b) => b.status === 'active').length,
-      totalAutomations: mockBots.reduce((acc, curr) => acc + curr.totalConversations, 0),
-      avgResolution: '64.8%',
+      totalBots: bots.length,
+      activeBots: bots.filter((b) => b.status === 'active').length,
+      totalAutomations: 0,
+      avgResolution: '—',
     };
 
-    return NextResponse.json({
-      success: true,
-      bots: list,
-      metrics,
-    });
+    return NextResponse.json({ success: true, bots, metrics });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message || 'Erro ao listar chatbots' },
@@ -94,38 +100,57 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    const isPlaceholder = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+    const isPlaceholder = isPlaceholderEnv();
+    const body = await request.json();
+    const name = (body?.name && String(body.name).trim()) || 'Novo Fluxo de Automação';
 
     if (!isPlaceholder) {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', user.id)
+        .single();
+      if (!profile?.organization_id) {
+        return NextResponse.json({ error: 'Perfil de organização não encontrado' }, { status: 403 });
       }
+
+      // Insere primeiro para obter o UUID e então grava o documento com o id real.
+      const { data: inserted, error: insErr } = await supabase
+        .from('bots')
+        .insert({ organization_id: profile.organization_id, name, status: 'draft', document: {} })
+        .select('id, name, status, published_version, updated_at')
+        .single();
+
+      if (insErr || !inserted) {
+        return NextResponse.json(
+          { success: false, error: 'Falha ao criar o fluxo', message: insErr?.message },
+          { status: 500 }
+        );
+      }
+
+      const document: BotV1 = makeBlankBot(inserted.id, name);
+      const { error: updErr } = await supabase
+        .from('bots')
+        .update({ document })
+        .eq('id', inserted.id);
+      if (updErr) {
+        return NextResponse.json(
+          { success: false, error: 'Falha ao inicializar o fluxo', message: updErr.message },
+          { status: 500 }
+        );
+      }
+
+      const bot = summaryFrom(inserted.id, name, 'draft', document, 0, inserted.updated_at);
+      return NextResponse.json({ success: true, bot }, { status: 201 });
     }
 
-    const body = await request.json();
-    const newBot: BotSummary = {
-      id: `bot_${Date.now()}`,
-      name: body.name || 'Novo Fluxo de Automação',
-      status: 'draft',
-      channels: body.channels || ['WhatsApp Cloud Oficial'],
-      groupsCount: 1,
-      publishedVersion: 1,
-      totalConversations: 0,
-      resolutionRate: '0%',
-      updatedAt: new Date().toISOString(),
-    };
-
-    mockBots.unshift(newBot);
-
-    return NextResponse.json(
-      {
-        success: true,
-        simulated: true,
-        bot: newBot,
-      },
-      { status: 201 }
-    );
+    // Fallback dev/sem banco
+    const rec = createBotRecord(name);
+    const bot = summaryFrom(rec.id, rec.name, rec.status, rec.document, rec.publishedVersion, rec.updatedAt);
+    return NextResponse.json({ success: true, simulated: true, bot }, { status: 201 });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message || 'Erro ao criar bot' },
@@ -133,4 +158,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

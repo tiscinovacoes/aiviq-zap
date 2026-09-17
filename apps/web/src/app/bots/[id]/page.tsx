@@ -48,6 +48,7 @@ export default function BotCanvasEditorPage() {
   const routeId = String(params?.id || '');
   const {
     bot,
+    setBot,
     initBlankBot,
     selectedGroupId,
     selectedBlockId,
@@ -75,17 +76,60 @@ export default function BotCanvasEditorPage() {
 
   const [simInput, setSimInput] = useState('');
   const [publishing, setPublishing] = useState(false);
-  const [publishedVersion, setPublishedVersion] = useState(3);
+  const [publishedVersion, setPublishedVersion] = useState(1);
   const [publishBanner, setPublishBanner] = useState<string | null>(null);
+  const [loadingBot, setLoadingBot] = useState(true);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  // Fluxo novo (?new=1): inicia um documento em branco editável para este id,
-  // em vez de reaproveitar o fluxo-demo padrão do store.
+  // Carrega o documento do fluxo por id. Fluxo novo (?new=1) começa em branco
+  // (já foi criado no servidor pelo POST); os demais vêm do GET /api/bots/[id].
   useEffect(() => {
-    if (searchParams?.get('new') === '1' && bot?.id !== routeId) {
+    let active = true;
+    setLoadingBot(true);
+    const isNew = searchParams?.get('new') === '1';
+    if (isNew) {
       initBlankBot(routeId, searchParams.get('name') || undefined);
+      setLoadingBot(false);
+      return;
     }
+    fetch(`/api/bots/${routeId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!active) return;
+        if (data.success && data.bot) {
+          setBot(data.bot);
+          if (typeof data.publishedVersion === 'number') setPublishedVersion(data.publishedVersion);
+        }
+      })
+      .catch(() => {})
+      .finally(() => active && setLoadingBot(false));
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeId]);
+
+  // Autosave do rascunho (debounce). Salva o documento sempre que houver
+  // alterações pendentes; o servidor persiste (Supabase ou fallback).
+  useEffect(() => {
+    if (loadingBot || !bot || !isDirty) return;
+    setSaveState('saving');
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/bots/${routeId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ document: bot }),
+        });
+        const data = await res.json();
+        setSaveState(res.ok && data.success ? 'saved' : 'error');
+      } catch {
+        setSaveState('error');
+      }
+    }, 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bot, isDirty, loadingBot, routeId]);
 
   // Currently selected block
   const selectedGroup = bot?.groups.find((g) => g.id === selectedGroupId);
@@ -123,7 +167,14 @@ export default function BotCanvasEditorPage() {
     setSimInput('');
   };
 
-  if (!bot) return null;
+  if (!bot || loadingBot) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-50 text-slate-400 text-xs gap-2">
+        <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+        Carregando fluxo...
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 antialiased overflow-hidden font-sans">
@@ -151,9 +202,17 @@ export default function BotCanvasEditorPage() {
               <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                 v{publishedVersion} Produção
               </span>
-              <span className="text-xs text-slate-400 flex items-center gap-1">
-                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                {isDirty ? 'Alterações pendentes' : 'Salvo na nuvem'}
+              <span className={`text-xs flex items-center gap-1 ${saveState === 'error' ? 'text-rose-500' : 'text-slate-400'}`}>
+                <CheckCircle className={`w-3.5 h-3.5 ${saveState === 'error' ? 'text-rose-500' : 'text-emerald-600'}`} />
+                {saveState === 'saving'
+                  ? 'Salvando...'
+                  : saveState === 'error'
+                  ? 'Erro ao salvar'
+                  : saveState === 'saved'
+                  ? 'Salvo na nuvem'
+                  : isDirty
+                  ? 'Alterações pendentes'
+                  : 'Salvo na nuvem'}
               </span>
             </div>
           </div>
