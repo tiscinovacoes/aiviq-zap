@@ -3,6 +3,11 @@ import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
+// Origem da app configurável por ambiente (evita domínio Vercel hardcoded).
+// Só usada como fallback quando a origem da requisição não está disponível.
+const APP_ORIGIN =
+  process.env.NEXT_PUBLIC_APP_URL || 'https://aiviq-zap-web.vercel.app';
+
 interface WhatsAppConfig {
   phoneNumberId: string;
   wabaId: string;
@@ -26,7 +31,7 @@ let mockConfig: WhatsAppConfig = {
   accessTokenMasked: 'EAAGbZCoq8L...••••••••••••••',
   status: 'connected',
   qualityRating: 'GREEN (Alta Qualidade)',
-  webhookUrl: 'https://aiviq-zap-web.vercel.app/api/webhooks/whatsapp',
+  webhookUrl: `${APP_ORIGIN}/api/webhooks/whatsapp`,
 };
 
 export async function GET(req: NextRequest) {
@@ -53,7 +58,7 @@ export async function GET(req: NextRequest) {
 
           if (inbox) {
             const creds = inbox.credentials || {};
-            const origin = req.nextUrl.origin || 'https://aiviq-zap-web.vercel.app';
+            const origin = req.nextUrl.origin || APP_ORIGIN;
             return NextResponse.json({
               success: true,
               config: {
@@ -75,7 +80,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Fallback com URL dinâmica
-    const origin = req.nextUrl.origin || 'https://aiviq-zap-web.vercel.app';
+    const origin = req.nextUrl.origin || APP_ORIGIN;
     return NextResponse.json({
       success: true,
       config: {
