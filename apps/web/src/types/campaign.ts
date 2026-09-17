@@ -24,6 +24,24 @@ export interface Campaign {
 export interface CampaignMetrics {
   totalCampaigns: number;
   activeCampaigns: number;
+  scheduledCampaigns: number;
+  completedCampaigns: number;
+  draftCampaigns: number;
+  pausedCampaigns: number;
+
+  totalContacts: number;
+  totalSent: number;
+  totalDelivered: number;
+  totalRead: number;
+  totalReplied: number;
+  totalFailed: number;
+
+  deliveryRate: string; // entregues / enviados
+  readRate: string; // lidos / entregues
+  replyRate: string; // respostas / entregues
+  failureRate: string; // falhas / enviados
+
+  // Legado (compat).
   monthlyDispatches: number;
   avgDeliveryRate: string;
   avgReplyRate: string;

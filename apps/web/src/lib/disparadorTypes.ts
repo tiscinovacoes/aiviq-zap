@@ -1,7 +1,7 @@
 // Tipos compartilhados do motor de disparo em lote da Pesquisa.
-// O disparo em si é dirigido pelo CLIENTE (aba aberta = relógio; serverless não
-// sustenta setTimeout/estado global), então estes tipos vivem num módulo puro,
-// sem lógica de servidor, para o componente e as rotas os reusarem.
+// O disparo roda no SERVIDOR: fila persistente (dispatch_queue) consumida pelo
+// cron /api/pesquisa/senado/tick. A aba só enfileira e espelha o progresso.
+// Módulo puro (sem lógica de servidor) para o componente e as rotas reusarem.
 
 export interface ItemFilaDisparo {
   id: string;

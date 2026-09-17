@@ -68,13 +68,10 @@ export default function PesquisaSenadoKanban() {
   const [importando, setImportando] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estado do Motor de Disparos em Lote — dirigido pelo CLIENTE (a aba aberta é
-  // o "relógio"). Serverless não sustenta setTimeout/estado global entre
-  // instâncias, então a fila vive aqui e cada tick envia UM contato.
+  // Estado do Motor de Disparos em Lote — agora a fila é PERSISTENTE no servidor
+  // e um cron (Vercel) consome via /api/pesquisa/senado/tick. A aba só ENFILEIRA
+  // e mostra o progresso (GET /queue); fechar a aba NÃO para mais o disparo.
   const [estadoDisparador, setEstadoDisparador] = useState<EstadoDisparador | null>(null);
-  const filaRef = useRef<EstadoDisparador | null>(null);
-  const disparoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const router = useRouter();
   const [assumindoTelefone, setAssumindoTelefone] = useState<string | null>(null);
@@ -132,7 +129,7 @@ export default function PesquisaSenadoKanban() {
       if (document.visibilityState !== 'visible' || isFetchingRef.current) return;
       isFetchingRef.current = true;
       try {
-        await fetchDados();
+        await Promise.all([fetchDados(), fetchQueueStatus()]);
       } finally {
         isFetchingRef.current = false;
       }
@@ -143,110 +140,27 @@ export default function PesquisaSenadoKanban() {
     return () => clearInterval(interval);
   }, []);
 
-  // Limpa os timers do disparo ao desmontar (evita disparos órfãos).
-  useEffect(() => {
-    return () => {
-      if (disparoTimeoutRef.current) clearTimeout(disparoTimeoutRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-  }, []);
-
-  // ============ Motor de disparo client-side (anti-ban 35-75s) ============
-  const limparTimersDisparo = () => {
-    if (disparoTimeoutRef.current) { clearTimeout(disparoTimeoutRef.current); disparoTimeoutRef.current = null; }
-    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
-  };
-
-  const commitEstado = (est: EstadoDisparador | null) => {
-    filaRef.current = est;
-    setEstadoDisparador(est);
-  };
-
-  const agendarProximoDisparo = () => {
-    limparTimersDisparo();
-    // Intervalo aleatório 40–90s (perfil anti-ban conservador).
-    const delay = Math.floor(Math.random() * (90 - 40 + 1)) + 40;
-    commitEstado({ ...(filaRef.current as EstadoDisparador), segundosRestantesProximo: delay });
-
-    countdownRef.current = setInterval(() => {
-      const e = filaRef.current;
-      if (!e) return;
-      const s = Math.max(0, (e.segundosRestantesProximo || 0) - 1);
-      commitEstado({ ...e, segundosRestantesProximo: s });
-      if (s <= 0 && countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
-    }, 1000);
-
-    disparoTimeoutRef.current = setTimeout(() => { dispararProximoContato(); }, delay * 1000);
-  };
-
-  const dispararProximoContato = async () => {
-    const est = filaRef.current;
-    if (!est || !est.ativo || est.pausado) return;
-
-    const proximo = est.fila.find((it) => it.status === 'pendente');
-    if (!proximo) {
-      limparTimersDisparo();
-      commitEstado({ ...est, ativo: false, segundosRestantesProximo: 0, contatoAtual: undefined });
-      return;
-    }
-
-    commitEstado({ ...est, contatoAtual: { name: proximo.name, phone: proximo.phone } });
-
-    let enviado = false;
-    let jaEmFluxo = false;
-    let gatedPausa: string | null = null;
+  // Status da fila PERSISTENTE no servidor (consumida pelo cron /tick). A aba só
+  // reflete o progresso — fechar/atualizar a página não para mais o disparo.
+  const fetchQueueStatus = async () => {
     try {
-      const res = await fetch('/api/pesquisa/senado', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'disparar',
-          phone: proximo.phone,
-          name: proximo.name,
-          bairro: proximo.bairro,
-          sendWhatsApp: true,
-        }),
-      });
+      const res = await fetch('/api/pesquisa/senado/queue');
       const data = await res.json();
-      if (data?.gated) {
-        // 'ja_em_fluxo' = lead já respondeu; pula sem erro. Limite/horário = PAUSA.
-        if (data.reason === 'ja_em_fluxo') jaEmFluxo = true;
-        else gatedPausa = data.message || 'Disparo pausado pelo limite anti-bloqueio.';
-      } else {
-        // "enviado" só quando o WhatsApp confirmou; senão conta como falha.
-        enviado = data?.success === true && data?.dispatchedWhatsApp === true;
+      if (data?.success && data.status) {
+        const s = data.status;
+        setEstadoDisparador({
+          ativo: Boolean(s.ativo),
+          pausado: Boolean(s.pausado),
+          total: s.total || 0,
+          enviados: s.enviados || 0,
+          erros: s.erros || 0,
+          segundosRestantesProximo: s.segundosRestantesProximo || 0,
+          contatoAtual: undefined,
+          fila: [],
+        });
       }
     } catch {
-      enviado = false;
-    }
-
-    // Teto diário / fora de horário → pausa a fila e MANTÉM o contato pendente
-    // (não queima o lead). O operador retoma quando puder.
-    if (gatedPausa) {
-      limparTimersDisparo();
-      commitEstado({ ...(filaRef.current as EstadoDisparador), pausado: true, segundosRestantesProximo: 0, contatoAtual: undefined });
-      setMensagemSucesso(`⏸️ ${gatedPausa}`);
-      return;
-    }
-
-    const atual = filaRef.current as EstadoDisparador;
-    const ok = enviado || jaEmFluxo;
-    const fila = atual.fila.map((it) =>
-      it.id === proximo.id
-        ? ({ ...it, status: ok ? 'enviado' : 'erro', enviadoEm: ok ? new Date().toISOString() : undefined, erroMsg: ok ? undefined : 'Falha no envio pelo WhatsApp' } as ItemFilaDisparo)
-        : it
-    );
-    const enviados = fila.filter((f) => f.status === 'enviado').length;
-    const erros = fila.filter((f) => f.status === 'erro').length;
-    commitEstado({ ...atual, fila, enviados, erros });
-    fetchDados();
-
-    const temMais = fila.some((f) => f.status === 'pendente');
-    if (temMais && filaRef.current?.ativo && !filaRef.current?.pausado) {
-      agendarProximoDisparo();
-    } else if (!temMais) {
-      limparTimersDisparo();
-      commitEstado({ ...(filaRef.current as EstadoDisparador), ativo: false, segundosRestantesProximo: 0, contatoAtual: undefined });
+      // silencioso em background
     }
   };
 
@@ -366,59 +280,60 @@ export default function PesquisaSenadoKanban() {
     reader.readAsBinaryString(file);
   };
 
-  // Carrega contatos na fila de disparo do servidor
-  const handleCarregarFilaDisparo = () => {
+  // Enfileira os contatos na fila PERSISTENTE do servidor (o cron consome).
+  const handleCarregarFilaDisparo = async () => {
     if (planilhaContatos.length === 0) return;
     setImportando(true);
     try {
-      const fila: ItemFilaDisparo[] = planilhaContatos.map((c, idx) => ({
-        id: `fila-${Date.now()}-${idx}`,
-        name: c.name?.trim() || '',
-        phone: c.phone.replace(/\D/g, ''),
-        bairro: c.bairro || 'Mato Grosso do Sul',
-        status: 'pendente',
-      }));
-      limparTimersDisparo();
-      commitEstado({
-        ativo: true,
-        pausado: false,
-        total: fila.length,
-        enviados: 0,
-        erros: 0,
-        segundosRestantesProximo: 0,
-        fila,
+      const res = await fetch('/api/pesquisa/senado/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'enfileirar',
+          contatos: planilhaContatos.map((c) => ({
+            name: c.name?.trim() || '',
+            phone: c.phone.replace(/\D/g, ''),
+            bairro: c.bairro || 'Mato Grosso do Sul',
+          })),
+        }),
       });
-      setIsExcelModalOpen(false);
-      setPlanilhaContatos([]);
-      setPlanilhaNomeArquivo('');
-      // Começa imediatamente pelo primeiro; os próximos entram com delay anti-ban.
-      dispararProximoContato();
+      const data = await res.json();
+      if (data?.success) {
+        setMensagemSucesso(
+          `✅ ${data.enfileirados} contatos na fila (o disparo roda no servidor, ~1/min, mesmo com a aba fechada).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}`
+        );
+        setIsExcelModalOpen(false);
+        setPlanilhaContatos([]);
+        setPlanilhaNomeArquivo('');
+        await fetchQueueStatus();
+        setTimeout(() => setMensagemSucesso(null), 6000);
+      }
+    } catch (err) {
+      console.error('Erro ao enfileirar:', err);
     } finally {
       setImportando(false);
     }
   };
 
-  // Controles do Disparador (todos client-side)
-  const handleIniciarDisparos = () => {
-    if (!filaRef.current) return;
-    commitEstado({ ...filaRef.current, ativo: true, pausado: false });
-    dispararProximoContato();
+  // Controles da fila (server-side): retomar / pausar / parar.
+  const controlarFila = async (action: 'retomar' | 'pausar' | 'parar') => {
+    try {
+      await fetch('/api/pesquisa/senado/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      await fetchQueueStatus();
+    } catch (err) {
+      console.error('Erro ao controlar fila:', err);
+    }
   };
 
-  const handlePausarDisparos = () => {
-    if (!filaRef.current) return;
-    limparTimersDisparo();
-    commitEstado({ ...filaRef.current, pausado: true, segundosRestantesProximo: 0 });
-  };
-
+  const handleIniciarDisparos = () => controlarFila('retomar');
+  const handlePausarDisparos = () => controlarFila('pausar');
   const handlePararDisparos = () => {
-    if (!confirm('Deseja realmente cancelar a fila de disparos restante?')) return;
-    limparTimersDisparo();
-    commitEstado(
-      filaRef.current
-        ? { ...filaRef.current, ativo: false, pausado: false, segundosRestantesProximo: 0, contatoAtual: undefined }
-        : null
-    );
+    if (!confirm('Deseja realmente cancelar os disparos pendentes da fila?')) return;
+    controlarFila('parar');
   };
 
   const handleExportarCSV = () => {
@@ -541,7 +456,7 @@ export default function PesquisaSenadoKanban() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Fila Anti-Ban Ativa (Intervalo Seguro: 35s a 75s):</span>
+              <span>Fila Anti-Ban no Servidor (40s a 90s · 8h–20h · máx 800/dia):</span>
             </div>
             <span className="text-emerald-700">
               Progresso: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados

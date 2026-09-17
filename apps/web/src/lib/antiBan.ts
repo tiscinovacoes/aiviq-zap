@@ -18,12 +18,15 @@ export { spin, isOptOut } from '@/lib/spintax';
 
 // -------- Parâmetros do perfil conservador (ajuste central) --------
 export const ANTIBAN = {
-  WARMUP_BASE: 20, // teto no 1º dia do chip
-  WARMUP_STEP: 10, // +10/dia
-  DAILY_CAP: 60, // teto máximo após o warmup
+  // Teto diário definido pelo operador: MÁX 800/dia. O intervalo 40–90s + a
+  // janela 8h–20h já espalham os envios (na prática ~700/dia no melhor caso),
+  // então o teto de 800 funciona como limite rígido de segurança.
+  WARMUP_BASE: 800, // sem rampa artificial (teto cheio desde o 1º dia)
+  WARMUP_STEP: 0,
+  DAILY_CAP: 800, // teto máximo por chip/dia
   HORA_INICIO: 8, // 08:00 MS
   HORA_FIM: 20, // 20:00 MS (exclusivo)
-  GAP_MIN_S: 40, // intervalo mínimo entre disparos (cliente usa isto)
+  GAP_MIN_S: 40, // intervalo mínimo entre disparos
   GAP_MAX_S: 90,
   PRESENCA_MS: 1200, // "digitando..." antes de cada disparo em massa (humaniza)
 };
