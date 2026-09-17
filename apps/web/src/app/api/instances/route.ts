@@ -8,6 +8,7 @@ import {
 } from '@/lib/instanceRegistry';
 import { fetchLiveEvolutionInstances, EvolutionLiveInstance } from '@/lib/evolutionService';
 import { getDispatchPool, getMaturidadeChips } from '@/lib/dispatchQueue';
+import { configurarWebhookInstancia, getWebhookInstancia } from '@/lib/evolutionService';
 import { capDoChip, ANTIBAN } from '@/lib/antiBan';
 
 import { cookies } from 'next/headers';
@@ -63,6 +64,8 @@ export interface InstanceView {
   /** Fora do pool ate este horario (resfriamento por falhas ou pausa de lote). */
   cooldownAte?: string;
   cooldownMotivo?: string;
+  /** false = a Evolution nao tem para onde avisar respostas nem acks. */
+  webhookOk: boolean;
 }
 
 // GET: lista todas as instâncias conhecidas (registro local + servidor Evolution),
@@ -106,6 +109,7 @@ export async function GET() {
           capHoje: await capDoChip(k.instanceName, hoje),
           cooldownAte: m?.cooldownAte,
           cooldownMotivo: m?.cooldownMotivo,
+          webhookOk: Boolean(await getWebhookInstancia(k.instanceName)),
         };
       })
     );
@@ -202,10 +206,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Sem isto a instancia nasce SURDA: a Evolution nao teria para onde avisar
+    // respostas nem acks de entrega, e a campanha coletaria zero sem nenhum
+    // sinal na tela -- foi o que aconteceu em 17/09 com 69 eleitores.
+    const wh = await configurarWebhookInstancia(instanceName);
+    if (!wh.ok) {
+      console.error('[instances] webhook nao configurado em ' + instanceName + ': ' + wh.error);
+    }
+
     const entry = registerInstance(instanceName, label);
 
     return NextResponse.json(
-      { success: true, instance: entry, qrCode, pairingCode },
+      {
+        success: true,
+        instance: entry,
+        qrCode,
+        pairingCode,
+        webhookConfigurado: wh.ok,
+        webhookUrl: wh.url,
+        webhookErro: wh.ok ? undefined : wh.error,
+      },
       { status: 201 }
     );
   } catch (err: any) {

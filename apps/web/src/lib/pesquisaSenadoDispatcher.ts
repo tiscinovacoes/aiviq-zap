@@ -108,7 +108,7 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
     }
 
     const instEnviou = r.instance || instancia;
-    await markItemSent(item.id, instEnviou);
+    await markItemSent(item.id, instEnviou, r.messageId);
 
     persistMessageByJid({
       phoneOrJid: item.phone,

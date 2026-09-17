@@ -24,6 +24,7 @@ const statusStyle: Record<string, { dot: string; text: string; label: string }> 
 export default function MultiInstancePanel() {
   const { instances, selected, fetchInstances, setSelected, setDispatchEnabled, setMaturidade } =
     useInstanceStore();
+  const repararWebhook = useInstanceStore((s) => s.repararWebhook);
 
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
@@ -270,6 +271,21 @@ export default function MultiInstancePanel() {
               }`}
             >
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${st.dot}`} />
+              {i.webhookOk === false && (
+                <button
+                  onClick={async () => {
+                    setBusy(i.instanceName);
+                    const ok = await repararWebhook(i.instanceName);
+                    if (!ok) setError('Não foi possível configurar o webhook deste número.');
+                    setBusy(null);
+                  }}
+                  disabled={busy === i.instanceName}
+                  title="Sem webhook, a Evolution não avisa as respostas nem as confirmações de entrega: a campanha dispara mas não coleta nada."
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300 shrink-0 hover:bg-rose-200 disabled:opacity-60"
+                >
+                  {busy === i.instanceName ? 'CORRIGINDO…' : 'SEM WEBHOOK ⟳'}
+                </button>
+              )}
               {i.cooldownAte && new Date(i.cooldownAte) > new Date() && (
                 <span
                   title={'Fora do disparo até ' +

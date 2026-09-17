@@ -665,3 +665,103 @@ export async function getConnectedDispatchInstances(): Promise<string[]> {
 }
 
 export { getDefaultInstanceName };
+
+// ============================================================================
+// WEBHOOK DA INSTANCIA
+//
+// Toda instancia criada pelo painel nascia SURDA: o /instance/create so recebia
+// qrcode e integration, e o webhook nunca era configurado. Resultado observado
+// em 17/09: 69 eleitores receberam a saudacao, responderam, e o robo nunca
+// respondeu -- a Evolution nao tinha para onde avisar. Como o painel so mostra
+// envios, a campanha ficou horas coletando zero sem sinal nenhum na tela.
+// ============================================================================
+
+/** Eventos indispensaveis: respostas, ack de entrega e queda de conexao. */
+export const EVENTOS_WEBHOOK = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'];
+
+export function urlDoWebhook(): string {
+  const base =
+    process.env.EVOLUTION_WEBHOOK_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    '';
+  if (!base) return '';
+  return base.endsWith('/api/webhooks/whatsapp')
+    ? base
+    : `${base.replace(/\/$/, '')}/api/webhooks/whatsapp`;
+}
+
+/** Le a configuracao de webhook da instancia (null = nao configurado). */
+export async function getWebhookInstancia(
+  instanceName: string
+): Promise<{ enabled: boolean; url?: string; events?: string[] } | null> {
+  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) return null;
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/webhook/find/${encodeURIComponent(instanceName)}`, {
+      headers: { apikey: EVOLUTION_API_KEY },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    if (!data) return null;
+    const w = data.webhook || data;
+    if (!w || !w.url) return null;
+    return { enabled: w.enabled !== false, url: w.url, events: w.events || [] };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Configura (ou repara) o webhook da instancia. A Evolution v2 mudou o formato
+ * do payload entre versoes -- aninhado em `webhook` nas mais novas, plano nas
+ * anteriores -- entao tenta o novo e cai para o antigo.
+ */
+export async function configurarWebhookInstancia(
+  instanceName: string,
+  url?: string
+): Promise<{ ok: boolean; url?: string; error?: string }> {
+  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+    return { ok: false, error: 'Servidor Evolution não configurado.' };
+  }
+  const alvo = url || urlDoWebhook();
+  if (!alvo) {
+    return {
+      ok: false,
+      error:
+        'URL do webhook desconhecida. Defina EVOLUTION_WEBHOOK_URL ou NEXT_PUBLIC_APP_URL no ambiente.',
+    };
+  }
+
+  const endpoint = `${EVOLUTION_API_URL}/webhook/set/${encodeURIComponent(instanceName)}`;
+  const corpoNovo = {
+    webhook: {
+      enabled: true,
+      url: alvo,
+      byEvents: false,
+      base64: false,
+      events: EVENTOS_WEBHOOK,
+    },
+  };
+  const corpoAntigo = {
+    enabled: true,
+    url: alvo,
+    webhook_by_events: false,
+    webhook_base64: false,
+    events: EVENTOS_WEBHOOK,
+  };
+
+  for (const corpo of [corpoNovo, corpoAntigo]) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
+        body: JSON.stringify(corpo),
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) return { ok: true, url: alvo };
+    } catch {
+      // tenta o proximo formato
+    }
+  }
+  return { ok: false, error: 'A Evolution recusou a configuração do webhook.' };
+}

@@ -5,7 +5,7 @@ import {
   unregisterInstance,
   DEFAULT_INSTANCE,
 } from '@/lib/instanceRegistry';
-import { invalidateEvolutionCache } from '@/lib/evolutionService';
+import { invalidateEvolutionCache, configurarWebhookInstancia } from '@/lib/evolutionService';
 import { setDispatchEnabled, setMaturidadeChip } from '@/lib/dispatchQueue';
 
 import { cookies } from 'next/headers';
@@ -148,6 +148,19 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
     // Inbox e vive no localStorage do navegador.
     // Declara se o numero ja esta aquecido. Nao da para inferir: o primeiro
     // disparo por aqui nao diz nada sobre a idade real do chip.
+    // Repara o webhook de uma instancia que nasceu (ou ficou) surda.
+    if (action === 'fix_webhook') {
+      const r = await configurarWebhookInstancia(instanceName);
+      return NextResponse.json({
+        success: r.ok,
+        instanceName,
+        url: r.url,
+        message: r.ok
+          ? 'Webhook configurado: respostas e confirmações de entrega voltam a chegar.'
+          : r.error,
+      }, { status: r.ok ? 200 : 502 });
+    }
+
     if (action === 'set_maturidade') {
       const mat = body.maturidade === 'maduro' ? 'maduro' : 'novo';
       await setMaturidadeChip(instanceName, mat);

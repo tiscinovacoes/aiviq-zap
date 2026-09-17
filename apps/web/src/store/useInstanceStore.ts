@@ -14,6 +14,7 @@ export interface InstanceView {
   capHoje?: number;
   cooldownAte?: string;
   cooldownMotivo?: string;
+  webhookOk?: boolean;
 }
 
 export const SELECTED_INSTANCE_KEY = 'aiviq_selected_instance';
@@ -34,6 +35,7 @@ interface InstanceState {
   setSelected: (instanceName: string) => void;
   setDispatchEnabled: (instanceName: string, enabled: boolean) => Promise<void>;
   setMaturidade: (instanceName: string, maturidade: 'novo' | 'maduro') => Promise<void>;
+  repararWebhook: (instanceName: string) => Promise<boolean>;
 }
 
 export const useInstanceStore = create<InstanceState>((set, get) => ({
@@ -62,6 +64,23 @@ export const useInstanceStore = create<InstanceState>((set, get) => ({
       }
     } catch {
       set({ isLoading: false });
+    }
+  },
+
+  // Reconfigura o webhook de uma instancia surda: sem ele a Evolution nao tem
+  // para onde avisar respostas nem acks, e a campanha coleta zero em silencio.
+  repararWebhook: async (instanceName: string) => {
+    try {
+      const res = await fetch(`/api/instances/${encodeURIComponent(instanceName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'fix_webhook' }),
+      });
+      const data = await res.json();
+      await get().fetchInstances();
+      return Boolean(data?.success);
+    } catch {
+      return false;
     }
   },
 

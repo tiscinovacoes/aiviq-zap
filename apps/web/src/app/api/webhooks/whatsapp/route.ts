@@ -4,7 +4,8 @@ import { addInboundMessage, addBotDispatchedMessage } from '@/lib/conversationSt
 import { invalidateEvolutionCache, sendRealMessageDetailed } from '@/lib/evolutionService';
 import { persistMessageByJid } from '@/lib/conversationRepo';
 import { isOptOut } from '@/lib/spintax';
-import { registrarOptOut } from '@/lib/dispatchQueue';
+import { registrarOptOut, processarAckEntrega } from '@/lib/dispatchQueue';
+import { ANTIBAN } from '@/lib/antiBan';
 import {
   getPesquisaSessionByPhone,
   savePesquisaSession,
@@ -124,6 +125,44 @@ export async function POST(req: NextRequest) {
       externalId: string;
       name?: string;
     }> = [];
+
+    // ============ 0. ACK DE ENTREGA (MESSAGES_UPDATE) ============
+    // O HTTP 200 do sendText so significa "aceitei para enfileirar". O veredito
+    // real de entrega chega aqui, depois. Em 17/09 um chip ficou 1h13 com o
+    // painel verde e nada chegando porque este evento era ignorado: 11 contatos
+    // foram marcados como enviados sem nunca terem recebido nada.
+    const eventoAck =
+      payload.event === 'messages.update' || payload.event === 'MESSAGES_UPDATE';
+
+    if (eventoAck && instanceName) {
+      const d = payload.data || {};
+      // A Evolution v2 varia a forma entre versoes: ora keyId, ora key.id.
+      const msgId: string | undefined =
+        d.keyId || d.messageId || d.key?.id || d.id || undefined;
+      const ack: string = String(d.status || d.ack || '').toUpperCase();
+      const fromMe = d.fromMe ?? d.key?.fromMe ?? true;
+
+      // So os nossos envios interessam: ack de mensagem recebida nao diz nada
+      // sobre a saude do chip.
+      if (msgId && ack && fromMe) {
+        try {
+          const r = await processarAckEntrega(instanceName, msgId, ack, {
+            maxErros: ANTIBAN.MAX_ACKS_ERRO,
+            cooldownMin: ANTIBAN.COOLDOWN_ACK_MIN,
+          });
+          if (r.conhecido && !r.entregue) {
+            console.warn(
+              `[ack] ${instanceName} recusou entrega (${ack})` +
+                `${r.devolvido ? ' — contato devolvido à fila' : ''}` +
+                `${r.chipDesativado ? ' — CHIP REMOVIDO DO POOL' : ''}`
+            );
+          }
+        } catch (e) {
+          console.error('[ack] falha ao processar MESSAGES_UPDATE:', e);
+        }
+      }
+      return NextResponse.json({ success: true, handled: 'ack' });
+    }
 
     // ================= 1. EVENTO DA EVOLUTION API (Baileys) =================
     if (

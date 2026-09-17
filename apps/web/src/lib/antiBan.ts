@@ -53,6 +53,11 @@ export const ANTIBAN = {
   // Pausa por lote: quebra a cadencia mecanica de um chip que dispara sem parar.
   LOTE_TAMANHO: 25,
   PAUSA_LOTE_MIN: 12,
+  // Entrega recusada (ack ERROR) e mais grave que falha de envio: o chip esta
+  // aceitando e nao entregando, entao cada disparo QUEIMA um contato. Gatilho
+  // mais curto, e o chip sai do pool em vez de so esfriar.
+  MAX_ACKS_ERRO: 3,
+  COOLDOWN_ACK_MIN: 180,
 };
 
 /** Intervalo até o próximo envio DAQUELE chip: 60s fixo (1 por minuto). */

@@ -1150,3 +1150,30 @@ Origem: o operador trouxe um documento de especificação anti-ban bem pesquisad
   - [ ] **`017_warmup_saude_optout.sql` precisa ser aplicada no SQL Editor** (MCP de migration barrado pelo modo automático).
   - [ ] Após aplicar, **declarar a maturidade de cada chip** em Configurações — todos entram como `novo` (30/dia) por padrão.
 
+
+---
+
+## DATA: 17/09/2026 — Ack de Entrega como Fonte de Verdade + Instâncias Nasciam Sem Webhook (v3.1.0)
+
+### Claude
+Dois problemas graves em produção, ambos invisíveis no painel porque ele só mostrava **envios**.
+
+- 🔥 **Chip disparando no vazio (shadowban não detectado)**:
+  - O operador relatou que o `67998454509` não estava disparando. O contador e a fila diziam o contrário (10 envios). A foto do aparelho mostrou **uma única conversa às 15:41 com ✓ simples** — e o relógio marcando 16:54.
+  - Consulta aos acks na Evolution: a mensagem das 15:41 estava **`(sem ack)`** e as 9 seguintes com **`ERROR`**. O chip estava `open`, aceitava o `sendText`, devolvia HTTP 200 — e **nunca entregou nada em 1h13**.
+  - Causa: tratávamos HTTP 200 como entrega. Ele só significa "aceitei para enfileirar"; o veredito chega depois no `MESSAGES_UPDATE`, que não era escutado. O circuit breaker da v3.0.0 ficou mudo o tempo todo porque conta **falhas de envio** e aqui não houve nenhuma.
+  - Dano: 11 contatos marcados como enviados sem nunca terem recebido, e nunca mais tentados.
+  - **Correção (`018` + `processarAckEntrega`)**: `dispatch_queue.message_id` liga a linha à mensagem; o webhook passa a tratar `MESSAGES_UPDATE`; ack de recusa **devolve o contato à fila** (sem carimbo de chip, para outra instância pegar) e alimenta um circuit breaker próprio (`registrar_ack_chip`, 3 erros seguidos → 3h de cooldown **e saída do pool**). Separado do contador de lote da 017 de propósito: o ack chega depois do envio e contaria em dobro.
+  - Ação em produção (autorizada): chip retirado do pool, **11 contatos devolvidos à fila**, instância `67998454509` excluída (logout + delete).
+- 🔥 **Instâncias nasciam surdas — a campanha coletava zero**:
+  - `webhook/find` devolvia `null` para `paloma` e `thome`: **sem webhook configurado**.
+  - Confirmação no funil: `aguardando_voto1` parado desde **16:17 UTC**, exatamente o último envio do `Khomp` (o único chip que tinha webhook, configurado por fora). Desde então, **69 eleitores receberam a saudação, responderam, e o robô nunca respondeu**. Nenhum voto registrado.
+  - Causa raiz no nosso código: `POST /api/instances` criava a instância com `qrcode` e `integration` e **nunca configurava o webhook**. Toda instância criada pelo painel nascia surda.
+  - **Correção**: `configurarWebhookInstancia()` + `getWebhookInstancia()` em `evolutionService` (tenta o payload novo da Evolution v2 e cai para o antigo); chamada automática na criação da instância; ação `fix_webhook`; `webhookOk` por instância no GET; badge vermelho **"SEM WEBHOOK ⟳"** clicável no painel, que repara em um clique.
+  - Ação em produção (autorizada): webhook configurado em `paloma` e `thome` com `MESSAGES_UPSERT`, `MESSAGES_UPDATE` e `CONNECTION_UPDATE`. Verificado ativo nos dois.
+  - ⚠️ Os 69 parados em `disparado` **não se recuperam**: as respostas já se perderam, a Evolution não as enfileira. Só as novas chegam.
+- ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
+- ⏳ Bloqueado por:
+  - [ ] **`018_ack_entrega.sql` precisa ser aplicada no SQL Editor** — sem ela `registrar_ack_chip` não existe e o tratamento de ack falha (o webhook loga o erro e segue, sem quebrar o fluxo de respostas).
+  - [ ] Definir `EVOLUTION_WEBHOOK_URL` (ou `NEXT_PUBLIC_APP_URL`) nas envs da Vercel — sem isso o auto-configure na criação não sabe qual URL usar.
+

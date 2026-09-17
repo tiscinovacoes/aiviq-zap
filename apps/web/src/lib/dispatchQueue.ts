@@ -409,7 +409,11 @@ export async function reapStaleClaims(): Promise<number> {
   return typeof data === 'number' ? data : 0;
 }
 
-export async function markItemSent(id: string, instanceName: string): Promise<void> {
+export async function markItemSent(
+  id: string,
+  instanceName: string,
+  messageId?: string
+): Promise<void> {
   if (isPlaceholderEnv()) {
     const it = (global.__aiviq_queue || []).find((i) => i.id === id);
     if (it) it.status = 'enviado';
@@ -419,7 +423,15 @@ export async function markItemSent(id: string, instanceName: string): Promise<vo
   if (!ctx) return;
   await ctx.db
     .from('dispatch_queue')
-    .update({ status: 'enviado', sent_at: new Date().toISOString(), instance_name: instanceName })
+    .update({
+      status: 'enviado',
+      sent_at: new Date().toISOString(),
+      instance_name: instanceName,
+      // Guarda o id da mensagem para que o ack de entrega -- que chega depois,
+      // de forma assincrona, pelo MESSAGES_UPDATE -- consiga encontrar este
+      // contato de volta e devolve-lo a fila se a entrega for recusada.
+      message_id: messageId || null,
+    })
     .eq('organization_id', ctx.organizationId)
     .eq('id', id);
 }
@@ -877,4 +889,91 @@ export async function setMaturidadeChip(
     },
     { onConflict: 'organization_id,instance_name' }
   );
+}
+
+// ==================== ACK DE ENTREGA ====================
+// A verdade sobre entrega nao esta no HTTP 200 do sendText -- esse so quer
+// dizer "aceitei para enfileirar". Ela chega depois, de forma assincrona, no
+// evento MESSAGES_UPDATE. Em 17/09 um chip passou 1h13 "disparando" com o
+// painel verde e nada chegando, porque ninguem escutava esse evento.
+
+/** Acks que significam que a mensagem chegou (ou passou) do servidor. */
+const ACK_OK = ['SERVER_ACK', 'DELIVERY_ACK', 'READ', 'PLAYED'];
+/** Acks que significam que a mensagem NAO foi entregue. */
+const ACK_FALHA = ['ERROR', 'FAILED'];
+
+export interface ResultadoAck {
+  conhecido: boolean;
+  entregue: boolean;
+  /** Contato devolvido a fila porque a entrega foi recusada. */
+  devolvido: boolean;
+  acksErroSeguidos?: number;
+  chipDesativado?: boolean;
+}
+
+/**
+ * Processa um ack de entrega. Em caso de recusa:
+ *   1. devolve o contato a fila (ele nao recebeu nada -- marcar como enviado
+ *      seria queima-lo: nunca mais seria tentado);
+ *   2. alimenta o circuit breaker por ack, que tira o chip do pool.
+ */
+export async function processarAckEntrega(
+  instance: string,
+  messageId: string,
+  ack: string,
+  cfg: { maxErros: number; cooldownMin: number }
+): Promise<ResultadoAck> {
+  const status = (ack || '').toUpperCase();
+  const falhou = ACK_FALHA.includes(status);
+  const ok = ACK_OK.includes(status);
+  if (!falhou && !ok) return { conhecido: false, entregue: false, devolvido: false };
+
+  if (isPlaceholderEnv()) return { conhecido: true, entregue: ok, devolvido: false };
+
+  const ctx = await getServiceContext();
+  if (!ctx) return { conhecido: true, entregue: ok, devolvido: false };
+
+  let devolvido = false;
+
+  if (falhou && messageId) {
+    // Devolve o contato: nunca recebeu nada. Limpa o carimbo de chip para que
+    // outra instancia o pegue -- insistir no mesmo chip repetiria a recusa.
+    const { data } = await ctx.db
+      .from('dispatch_queue')
+      .update({
+        status: 'pendente',
+        attempts: 0,
+        sent_at: null,
+        instance_name: null,
+        assigned_instance: null,
+        message_id: null,
+        claimed_at: null,
+        error: null,
+      })
+      .eq('organization_id', ctx.organizationId)
+      .eq('message_id', messageId)
+      .eq('status', 'enviado')
+      .select('id');
+    devolvido = (data?.length || 0) > 0;
+  }
+
+  const { data: saude } = await ctx.db.rpc('registrar_ack_chip', {
+    p_org: ctx.organizationId,
+    p_instance: instance,
+    p_ok: ok,
+    p_ack: status,
+    p_max_erros: cfg.maxErros,
+    p_cooldown_min: cfg.cooldownMin,
+  });
+
+  const linha = Array.isArray(saude) ? saude[0] : saude;
+  const seguidos = (linha as any)?.acks_erro_seguidos ?? 0;
+
+  return {
+    conhecido: true,
+    entregue: ok,
+    devolvido,
+    acksErroSeguidos: seguidos,
+    chipDesativado: falhou && seguidos >= cfg.maxErros,
+  };
 }
