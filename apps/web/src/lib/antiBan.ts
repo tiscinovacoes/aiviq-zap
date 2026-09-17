@@ -26,8 +26,8 @@ export const ANTIBAN = {
   DAILY_CAP: 800, // teto máximo por chip/dia
   HORA_INICIO: 8, // 08:00 MS
   HORA_FIM: 20, // 20:00 MS (exclusivo)
-  GAP_MIN_S: 40, // intervalo mínimo entre disparos
-  GAP_MAX_S: 90,
+  GAP_MIN_S: 35, // intervalo mínimo entre disparos (35s)
+  GAP_MAX_S: 75, // intervalo máximo entre disparos (75s dinâmico/aleatório)
   PRESENCA_MS: 1200, // "digitando..." antes de cada disparo em massa (humaniza)
 };
 

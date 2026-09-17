@@ -887,5 +887,22 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
   - [ ] Executar a migration `011_dispatch_queue.sql` no SQL Editor do Supabase de produção.
   - [ ] Criar a variável `CRON_SECRET` nas Environment Variables da Vercel.
   - [ ] Confirmar plano da Vercel (1 min = plano Pro; Hobby = 1x/dia).
-  - [ ] Fazer o commit e deploy para a Vercel.
+  - [x] Fazer o commit e deploy para a Vercel (commit `146a0e0`).
+
+---
+
+## DATA: 17/09/2026 — Aceleração do Disparo: Cadência Dinâmica e Aleatória de 35s a 75s (v2.5.1)
+
+### Antigravity & Claude
+- ✅ Concluído:
+  - [x] **Intervalo Anti-Ban Aleatório 35s–75s (`lib/antiBan.ts`)**:
+    - `GAP_MIN_S` redefinido para 35 segundos e `GAP_MAX_S` para 75 segundos.
+    - Sorteio randômico genuíno (`Math.floor(Math.random() * (75 - 35 + 1)) + 35`), garantindo que não fique fixado em 75s.
+  - [x] **Otimização de Vazão no Cron (`/api/pesquisa/senado/tick`)**:
+    - Adicionado `export const maxDuration = 30` na rota serverless.
+    - Implementada espera curta inteligente (se faltam até 16s para liberar o próximo envio de 75s no cron de 60s, a função aguarda internamente e dispara pontualmente em vez de pular o minuto inteiro).
+    - Permite atingir até ~60 disparos por hora e ~720 disparos por dia com total segurança contra ban.
+  - [x] **Atualização da Interface (`PesquisaSenadoKanban.tsx`)**:
+    - Banner atualizado para `Fila Anti-Ban no Servidor (35s a 75s aleatório · 8h–20h · máx 800/dia)`.
+
 

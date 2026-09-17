@@ -18,6 +18,7 @@ import {
 } from '@/lib/dispatchQueue';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 function safeEqual(a: string, b: string): boolean {
   const ba = Buffer.from(a);
@@ -59,9 +60,17 @@ async function runTick(req: NextRequest) {
     return NextResponse.json({ success: true, skipped: 'fora_horario' });
   }
 
-  // 3. Intervalo anti-ban desde o último envio.
+  // 3. Intervalo anti-ban dinâmico (35s a 75s) desde o último envio.
   if (ctrl.nextAllowedAtMs && Date.now() < ctrl.nextAllowedAtMs) {
-    return NextResponse.json({ success: true, skipped: 'aguardando_intervalo', faltamMs: ctrl.nextAllowedAtMs - Date.now() });
+    const faltamMs = ctrl.nextAllowedAtMs - Date.now();
+    // Como o cron da Vercel roda a cada 60s e o gap aleatório é entre 35s e 75s,
+    // se faltam até 16 segundos, aguarda esse tempinho restante na própria execução
+    // para disparar pontualmente sem perder o minuto inteiro.
+    if (faltamMs > 0 && faltamMs <= 16000) {
+      await new Promise((resolve) => setTimeout(resolve, faltamMs));
+    } else {
+      return NextResponse.json({ success: true, skipped: 'aguardando_intervalo', faltamMs });
+    }
   }
 
   // 4. Instância ativa + teto diário/warmup.

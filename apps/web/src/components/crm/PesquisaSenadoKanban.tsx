@@ -456,7 +456,7 @@ export default function PesquisaSenadoKanban() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Fila Anti-Ban no Servidor (40s a 90s · 8h–20h · máx 800/dia):</span>
+              <span>Fila Anti-Ban no Servidor (35s a 75s aleatório · 8h–20h · máx 800/dia):</span>
             </div>
             <span className="text-emerald-700">
               Progresso: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados
