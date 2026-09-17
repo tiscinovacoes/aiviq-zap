@@ -398,11 +398,26 @@ export async function sendRealMessage(
   text: string,
   instanceName?: string
 ): Promise<boolean> {
-  const inst = resolveInstanceName(instanceName);
-  // Se não estiver conectado, rejeita imediatamente
-  const isConnected = await isEvolutionConnected(inst);
+  let inst = resolveInstanceName(instanceName);
+  let isConnected = await isEvolutionConnected(inst);
+
+  // Fallback anti-"parece que enviou": se a instância resolvida (ex.: a padrão)
+  // não estiver conectada, procura QUALQUER instância conectada no servidor
+  // Evolution e envia por ela. Sem isso, o envio falhava calado enquanto a msg
+  // aparecia no Inbox.
   if (!isConnected) {
-    console.warn(`[Evolution Send Real] Tentativa de envio com WhatsApp desconectado (${inst}).`);
+    try {
+      const live = await fetchLiveEvolutionInstances();
+      const conectada = live.find((i) => i.status === 'connected');
+      if (conectada) {
+        inst = conectada.instanceName;
+        isConnected = true;
+      }
+    } catch {}
+  }
+
+  if (!isConnected) {
+    console.warn(`[Evolution Send Real] Nenhuma instância conectada para envio (tentada: ${inst}).`);
     return false;
   }
 

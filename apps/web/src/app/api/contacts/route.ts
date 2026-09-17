@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Contact } from '@/types';
-import { getRealContacts } from '@/lib/evolutionService';
+import { getRealContacts, fetchLiveEvolutionInstances } from '@/lib/evolutionService';
 import { getCustomContacts, addCustomContact } from '@/lib/conversationStore';
 import { mockCidadaos } from '@/lib/mockOuvidoria';
 import { getDbContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
@@ -91,6 +91,74 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
+    // ===== Importar a carteira do WhatsApp (Evolution) para o banco =====
+    // Ex.: { action:'import_whatsapp', ddd:'67' } — grava os contatos reais da
+    // instância conectada cujo telefone começa com 55<ddd>. Dedup por telefone.
+    if (body?.action === 'import_whatsapp') {
+      if (isPlaceholderEnv()) {
+        return NextResponse.json({ error: 'Importação requer Supabase configurado' }, { status: 400 });
+      }
+      const ctx = await getDbContext();
+      if (!ctx) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
+      // Instância conectada (a passada, ou a primeira 'connected' do servidor).
+      let instance: string | undefined = body.instance;
+      if (!instance) {
+        try {
+          const live = await fetchLiveEvolutionInstances();
+          instance = live.find((i) => i.status === 'connected')?.instanceName;
+        } catch {}
+      }
+
+      const ddd = String(body.ddd || '67').replace(/\D/g, '');
+      const prefixo = `55${ddd}`;
+      const reais = await getRealContacts(instance);
+      const vistos = new Set<string>();
+      const linhas = reais
+        .map((c) => ({ nome: (c.name || '').trim(), tel: (c.phone || '').replace(/\D/g, '') }))
+        .filter((c) => {
+          if (!c.tel.startsWith(prefixo) || c.tel.length < 12) return false;
+          if (vistos.has(c.tel)) return false;
+          vistos.add(c.tel);
+          return true;
+        })
+        .map((c) => ({
+          organization_id: ctx.organizationId,
+          name: c.nome || `WhatsApp ${c.tel.slice(-4)}`,
+          phone: c.tel,
+          tags: ['WhatsApp Oficial', `Eleitor ${ddd === '67' ? 'MS' : ddd}`],
+        }));
+
+      if (linhas.length === 0) {
+        return NextResponse.json({
+          success: true,
+          imported: 0,
+          message: instance
+            ? `Nenhum contato +55 (${ddd}) encontrado na instância ${instance}.`
+            : 'Nenhuma instância WhatsApp conectada.',
+        });
+      }
+
+      // Upsert em lotes de 500 (dedup por unique(org, phone)).
+      let imported = 0;
+      for (let i = 0; i < linhas.length; i += 500) {
+        const lote = linhas.slice(i, i + 500);
+        const { error } = await ctx.db
+          .from('contacts')
+          .upsert(lote, { onConflict: 'organization_id,phone', ignoreDuplicates: true });
+        if (error) {
+          return NextResponse.json(
+            { success: false, error: 'Falha ao importar', message: error.message, importedAntes: imported },
+            { status: 500 }
+          );
+        }
+        imported += lote.length;
+      }
+
+      return NextResponse.json({ success: true, imported, instance, ddd });
+    }
+
     const { name, phone, email, company, cpf, bairro, tags = [], assigned_to = 'Equipe de Ouvidoria' } = body;
 
     if (!name || !name.trim()) {
