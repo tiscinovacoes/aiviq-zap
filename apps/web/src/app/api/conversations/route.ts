@@ -59,9 +59,9 @@ export async function GET(req: NextRequest) {
 
         conversations = Array.from(map.values());
       } else {
-        // Se desconectado, expurga conversas antigas de WhatsApp da memória (só desta instância)
-        clearWhatsAppConversations(instance);
-        conversations = [];
+        // Se desconectado da Evolution, mantém as conversas ativas da plataforma (pesquisas e campanhas)
+        const memoryChats = getAllConversations(instance);
+        conversations = memoryChats;
       }
     }
 

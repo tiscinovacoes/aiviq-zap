@@ -53,13 +53,42 @@ export function sortearDelaySegundos(min = 35, max = 75): number {
 }
 
 export function carregarFila(itens: Array<{ name: string; phone: string; bairro?: string }>): EstadoDisparador {
-  const filaFormatada: ItemFilaDisparo[] = itens.map((it, idx) => ({
-    id: `fila-${Date.now()}-${idx}`,
-    name: it.name || 'Eleitor',
-    phone: it.phone.replace(/\D/g, ''),
-    bairro: it.bairro,
-    status: 'pendente',
-  }));
+  const filaFormatada: ItemFilaDisparo[] = itens.map((it, idx) => {
+    const cleanPhone = it.phone.replace(/\D/g, '');
+    const cleanName = it.name?.trim() || 'Eleitor';
+    const bairro = it.bairro || 'Mato Grosso do Sul';
+
+    // 1. Registra imediatamente o eleitor na sessão da Pesquisa para aparecer no Kanban
+    try {
+      createOrUpdateSessionByPhone(cleanPhone, cleanName, {
+        bairro,
+        etapa: 'disparado',
+      });
+    } catch (e) {
+      console.error('[Disparador] Erro ao registrar sessão da pesquisa:', e);
+    }
+
+    // 2. Registra imediatamente a conversa no Inbox para acompanhamento ao vivo
+    try {
+      const msg1Previa = gerarMensagem1(cleanName);
+      addBotDispatchedMessage({
+        toPhone: cleanPhone,
+        name: cleanName,
+        text: msg1Previa,
+        botName: 'Robô Pesquisa Senado',
+      });
+    } catch (e) {
+      console.error('[Disparador] Erro ao registrar conversa no inbox:', e);
+    }
+
+    return {
+      id: `fila-${Date.now()}-${idx}`,
+      name: cleanName,
+      phone: cleanPhone,
+      bairro,
+      status: 'pendente',
+    };
+  });
 
   global.__aiviq_disparador_senado = {
     ativo: false,

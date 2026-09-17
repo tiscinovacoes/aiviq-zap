@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic';
 // Origem da app configurável por ambiente (evita domínio Vercel hardcoded).
 // Só usada como fallback quando a origem da requisição não está disponível.
 const APP_ORIGIN =
-  process.env.NEXT_PUBLIC_APP_URL || 'https://aiviq-zap-web.vercel.app';
+  process.env.NEXT_PUBLIC_APP_URL ||
+  'https://aiviq-zap-web-tiscinovacoes-projects.vercel.app';
 
 interface WhatsAppConfig {
   phoneNumberId: string;

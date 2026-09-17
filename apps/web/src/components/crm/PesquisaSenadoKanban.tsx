@@ -251,6 +251,16 @@ export default function PesquisaSenadoKanban() {
         setIsExcelModalOpen(false);
         setPlanilhaContatos([]);
         setPlanilhaNomeArquivo('');
+        // Recarrega imediatamente o Kanban e as métricas na tela
+        await fetchDados();
+        await fetchDisparador();
+        // Inicia automaticamente o processamento da fila com o delay anti-ban
+        await fetch('/api/pesquisa/senado/disparador', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'iniciar' }),
+        });
+        await fetchDisparador();
       }
     } catch (err) {
       console.error('Erro ao carregar fila:', err);
