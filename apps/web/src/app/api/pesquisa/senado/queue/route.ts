@@ -8,6 +8,7 @@ import {
   requeueFailedItems,
   filterDispatchPool,
   getProgressoPorChip,
+  prepararDisparoSimultaneo,
 } from '@/lib/dispatchQueue';
 import { triggerServerDispatchCycle, stopServerDispatchWorker } from '@/lib/serverDispatchWorker';
 import { getConnectedDispatchInstances } from '@/lib/evolutionService';
@@ -92,14 +93,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (action === 'retomar' || action === 'resume') {
+    if (action === 'retomar' || action === 'resume' || action === 'iniciar') {
+      const preparo = await prepararDisparoSimultaneo();
       await setPaused(false);
       // Retoma imediatamente os disparos em segundo plano
       triggerServerDispatchCycle(true).catch((e) =>
         console.error('[queue POST retomar] Erro ao acionar worker:', e)
       );
       return NextResponse.json(
-        { success: true, status: await getQueueStatus() },
+        {
+          success: true,
+          status: await getQueueStatus(),
+          preparo,
+          porChip: await getProgressoPorChip(),
+        },
+        { headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    if (action === 'sincronizar_chips' || action === 'preparar') {
+      const preparo = await prepararDisparoSimultaneo();
+      return NextResponse.json(
+        {
+          success: true,
+          status: await getQueueStatus(),
+          preparo,
+          porChip: await getProgressoPorChip(),
+        },
         { headers: NO_CACHE_HEADERS }
       );
     }

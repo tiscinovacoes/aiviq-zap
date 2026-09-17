@@ -1,5 +1,6 @@
 import { getServiceContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
 import { canonicalDigits } from '@/lib/conversationRepo';
+import { getConnectedDispatchInstances } from '@/lib/evolutionService';
 
 // ============================================================================
 // Fila de disparo PERSISTENTE (Supabase). Um cron chama o tick e consome a fila
@@ -568,7 +569,7 @@ export async function getDispatchPool(): Promise<Record<string, boolean>> {
   return out;
 }
 
-/** Liga/desliga uma instancia no cluster de disparo. */
+/** Liga/desliga uma instancia no cluster de disparo. Ao ligar, limpa cooldowns e zera o ritmo para que o chip fique pronto imediatamente. */
 export async function setDispatchEnabled(instance: string, enabled: boolean): Promise<void> {
   if (isPlaceholderEnv()) {
     global.__aiviq_dispatch_pool![instance] = enabled;
@@ -576,13 +577,21 @@ export async function setDispatchEnabled(instance: string, enabled: boolean): Pr
   }
   const ctx = await getServiceContext();
   if (!ctx) return;
+  const payload: Record<string, any> = {
+    organization_id: ctx.organizationId,
+    instance_name: instance,
+    dispatch_enabled: enabled,
+    updated_at: new Date().toISOString(),
+  };
+  if (enabled) {
+    payload.next_allowed_at = null;
+    payload.cooldown_ate = null;
+    payload.cooldown_motivo = null;
+    payload.falhas_seguidas = 0;
+    payload.acks_erro_seguidos = 0;
+  }
   await ctx.db.from('dispatch_instance_control').upsert(
-    {
-      organization_id: ctx.organizationId,
-      instance_name: instance,
-      dispatch_enabled: enabled,
-      updated_at: new Date().toISOString(),
-    },
+    payload,
     { onConflict: 'organization_id,instance_name' }
   );
 }
@@ -592,6 +601,122 @@ export async function filterDispatchPool(instances: string[]): Promise<string[]>
   if (instances.length === 0) return [];
   const pool = await getDispatchPool();
   return instances.filter((i) => pool[i] !== false); // ausente = participa
+}
+
+/**
+ * Prepara TODOS os dispositivos conectados para trabalharem SIMULTANEAMENTE:
+ * 1. Ativa todos os chips conectados no pool de disparo (dispatch_enabled = true).
+ * 2. Zera cooldowns, contadores de falha e o relógio de cada chip (next_allowed_at = null).
+ * 3. Re-enfileira os contatos com falha (status = 'erro').
+ * 4. Re-enfileira os contatos que ficaram com 'enviado' mas sofreram erro na Evolution (ex.: Novovivo, thome).
+ * 5. Divide e redistribui uniformemente a fila de pendentes entre todas as instâncias conectadas.
+ * 6. Zera a pausa e o relógio global para início imediato e simultâneo.
+ */
+export async function prepararDisparoSimultaneo(): Promise<{
+  instanciasAtivadas: string[];
+  reativadosErros: number;
+  recuperadosNaoEntregues: number;
+  redistribuidos: number;
+}> {
+  if (isPlaceholderEnv()) {
+    return { instanciasAtivadas: [], reativadosErros: 0, recuperadosNaoEntregues: 0, redistribuidos: 0 };
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return { instanciasAtivadas: [], reativadosErros: 0, recuperadosNaoEntregues: 0, redistribuidos: 0 };
+
+  // 1. Instâncias conectadas agora
+  const conectadas = await getConnectedDispatchInstances();
+
+  // 2. Garante que TODAS as conectadas estejam ativas no pool e prontas para disparar juntas
+  for (const inst of conectadas) {
+    await ctx.db.from('dispatch_instance_control').upsert(
+      {
+        organization_id: ctx.organizationId,
+        instance_name: inst,
+        dispatch_enabled: true,
+        next_allowed_at: null,
+        cooldown_ate: null,
+        cooldown_motivo: null,
+        falhas_seguidas: 0,
+        acks_erro_seguidos: 0,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'organization_id,instance_name' }
+    );
+  }
+
+  // 3. Re-enfileira os contatos que estavam com status 'erro'
+  const { data: erros } = await ctx.db
+    .from('dispatch_queue')
+    .update({ status: 'pendente', attempts: 0, claimed_at: null, error: null })
+    .eq('organization_id', ctx.organizationId)
+    .eq('status', 'erro')
+    .select('id');
+
+  // 4. Re-enfileira os contatos que ficaram como 'enviado' pelas instâncias
+  //    que tiveram recusa/erro de entrega Baileys e não foram abordados
+  const { data: falsos } = await ctx.db
+    .from('dispatch_queue')
+    .update({
+      status: 'pendente',
+      attempts: 0,
+      sent_at: null,
+      instance_name: null,
+      message_id: null,
+      claimed_at: null,
+      error: null,
+    })
+    .eq('organization_id', ctx.organizationId)
+    .in('instance_name', ['Novovivo', 'thome'])
+    .eq('status', 'enviado')
+    .select('id');
+
+  // 5. Redistribui todos os pendentes de maneira equilibrada entre os chips conectados
+  let totalRedistribuidos = 0;
+  if (conectadas.length > 0) {
+    const { data: pendentes } = await ctx.db
+      .from('dispatch_queue')
+      .select('id')
+      .eq('organization_id', ctx.organizationId)
+      .eq('status', 'pendente')
+      .order('created_at', { ascending: true });
+
+    if (pendentes && pendentes.length > 0) {
+      for (let i = 0; i < conectadas.length; i++) {
+        const inst = conectadas[i];
+        const ids = pendentes
+          .filter((_, idx) => idx % conectadas.length === i)
+          .map((p: any) => p.id);
+
+        for (let c = 0; c < ids.length; c += 200) {
+          const chunk = ids.slice(c, c + 200);
+          await ctx.db
+            .from('dispatch_queue')
+            .update({ assigned_instance: inst })
+            .in('id', chunk);
+        }
+      }
+      totalRedistribuidos = pendentes.length;
+    }
+  }
+
+  // 6. Reset no relógio do disparo para começar imediatamente
+  await ctx.db.from('dispatch_control').upsert(
+    {
+      organization_id: ctx.organizationId,
+      paused: false,
+      next_allowed_at: null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'organization_id' }
+  );
+
+  return {
+    instanciasAtivadas: conectadas,
+    reativadosErros: erros?.length || 0,
+    recuperadosNaoEntregues: falsos?.length || 0,
+    redistribuidos: totalRedistribuidos,
+  };
 }
 
 /**
