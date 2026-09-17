@@ -679,16 +679,24 @@ export { getDefaultInstanceName };
 /** Eventos indispensaveis: respostas, ack de entrega e queda de conexao. */
 export const EVENTOS_WEBHOOK = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'];
 
-export function urlDoWebhook(): string {
+/**
+ * URL para onde a Evolution deve avisar. Aceita uma origem detectada em tempo
+ * de requisicao como ultimo recurso: depender so de env transforma uma variavel
+ * esquecida em instancia surda -- e essa e uma falha silenciosa, porque a
+ * campanha dispara normalmente e simplesmente nao coleta nada.
+ */
+export function urlDoWebhook(origemDetectada?: string): string {
   const base =
     process.env.EVOLUTION_WEBHOOK_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
+    origemDetectada ||
     '';
   if (!base) return '';
   return base.endsWith('/api/webhooks/whatsapp')
     ? base
     : `${base.replace(/\/$/, '')}/api/webhooks/whatsapp`;
 }
+
 
 /** Le a configuracao de webhook da instancia (null = nao configurado). */
 export async function getWebhookInstancia(
@@ -718,12 +726,13 @@ export async function getWebhookInstancia(
  */
 export async function configurarWebhookInstancia(
   instanceName: string,
-  url?: string
+  url?: string,
+  origemDetectada?: string
 ): Promise<{ ok: boolean; url?: string; error?: string }> {
   if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
     return { ok: false, error: 'Servidor Evolution não configurado.' };
   }
-  const alvo = url || urlDoWebhook();
+  const alvo = url || urlDoWebhook(origemDetectada);
   if (!alvo) {
     return {
       ok: false,

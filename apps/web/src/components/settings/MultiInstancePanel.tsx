@@ -77,6 +77,17 @@ export default function MultiInstancePanel() {
       });
       const data = await res.json();
       if (data.success) {
+        // Instancia criada mas sem webhook e o pior cenario: ela conecta, dispara
+        // normalmente e nao coleta NADA -- e o painel so mostra envios, entao o
+        // problema passa despercebido por horas. Avisa alto na hora.
+        if (data.webhookConfigurado === false) {
+          setError(
+            'Número criado, mas o webhook NÃO foi configurado' +
+              (data.webhookErro ? ' (' + data.webhookErro + ')' : '') +
+              '. Ele vai disparar sem receber respostas nem confirmações de entrega. ' +
+              'Use o botão SEM WEBHOOK na lista para corrigir antes de usá-lo em campanha.'
+          );
+        }
         setShowAdd(false);
         setNewName('');
         setNewLabel('');

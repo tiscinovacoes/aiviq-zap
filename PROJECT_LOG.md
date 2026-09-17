@@ -1177,3 +1177,16 @@ Dois problemas graves em produção, ambos invisíveis no painel porque ele só 
   - [ ] **`018_ack_entrega.sql` precisa ser aplicada no SQL Editor** — sem ela `registrar_ack_chip` não existe e o tratamento de ack falha (o webhook loga o erro e segue, sem quebrar o fluxo de respostas).
   - [ ] Definir `EVOLUTION_WEBHOOK_URL` (ou `NEXT_PUBLIC_APP_URL`) nas envs da Vercel — sem isso o auto-configure na criação não sabe qual URL usar.
 
+
+---
+
+## DATA: 17/09/2026 — Garantia de Webhook em Todo Número Novo (v3.1.1)
+
+### Claude
+Pergunta do operador: "toda vez que conectar um novo número vai rodar certo?". A resposta honesta era "quase" — e o "quase" era uma falha silenciosa. Fechados os dois furos:
+
+- ✅ **Dependência de env deixou de ser ponto único de falha**: `urlDoWebhook()` aceita a origem detectada na própria requisição (`req.nextUrl.origin`) como último recurso, depois de `EVOLUTION_WEBHOOK_URL` e `NEXT_PUBLIC_APP_URL`. Sem isso, uma variável esquecida na Vercel produziria de novo uma instância surda — e surda é justamente o defeito que não aparece na tela, porque o painel só mostra envios.
+- ✅ **Criação sem webhook passou a avisar alto**: `POST /api/instances` já devolvia `webhookConfigurado`, mas o painel ignorava. Agora, se a configuração falhar, aparece um alerta explícito dizendo que o número vai disparar sem receber respostas nem confirmações, e apontando o botão de correção.
+- 📌 Cobertura resultante: criado pelo painel → automático; criado direto na Evolution → nasce surdo, mas o badge vermelho **SEM WEBHOOK ⟳** aparece na lista e conserta em um clique; reconexão por QR novo → a configuração persiste na instância.
+- ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
+

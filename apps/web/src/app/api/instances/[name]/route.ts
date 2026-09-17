@@ -150,7 +150,7 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
     // disparo por aqui nao diz nada sobre a idade real do chip.
     // Repara o webhook de uma instancia que nasceu (ou ficou) surda.
     if (action === 'fix_webhook') {
-      const r = await configurarWebhookInstancia(instanceName);
+      const r = await configurarWebhookInstancia(instanceName, undefined, req.nextUrl?.origin);
       return NextResponse.json({
         success: r.ok,
         instanceName,

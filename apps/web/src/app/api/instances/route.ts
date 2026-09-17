@@ -209,7 +209,10 @@ export async function POST(req: NextRequest) {
     // Sem isto a instancia nasce SURDA: a Evolution nao teria para onde avisar
     // respostas nem acks de entrega, e a campanha coletaria zero sem nenhum
     // sinal na tela -- foi o que aconteceu em 17/09 com 69 eleitores.
-    const wh = await configurarWebhookInstancia(instanceName);
+    // Origem da propria requisicao como ultimo recurso: se a env nao estiver
+    // definida, ainda assim a instancia nasce ouvindo.
+    const origem = req.nextUrl?.origin || undefined;
+    const wh = await configurarWebhookInstancia(instanceName, undefined, origem);
     if (!wh.ok) {
       console.error('[instances] webhook nao configurado em ' + instanceName + ': ' + wh.error);
     }
