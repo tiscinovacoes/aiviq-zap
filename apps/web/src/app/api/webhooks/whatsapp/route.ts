@@ -307,7 +307,7 @@ export async function POST(req: NextRequest) {
             if (rOpt.cancelados > 0) {
               console.log(`[Opt-out] ${msg.from}: ${rOpt.cancelados} disparo(s) pendente(s) cancelado(s)`);
             }
-            await botReply(msg.from, session.name, 'Tudo bem, não vamos mais te enviar mensagens. Obrigado! 🙏', stickyInst);
+            await botReply(msg.from, session.name, 'Combinado! Já retirei seu contato da lista e você não vai mais receber mensagens. Desculpe qualquer incômodo e um abraço! 👍', stickyInst);
             sincronizarContatoEleitor({
               name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'recusado',
             }).catch((e) => console.error('[Webhook] Erro sync opt-out:', e));
@@ -331,7 +331,7 @@ export async function POST(req: NextRequest) {
           else if (session.etapa === 'aguardando_voto1') {
             const votoValido = validarVoto(cleanText);
             if (!votoValido) {
-              await botReply(msg.from, session.name, 'Por favor, digite apenas o número correspondente à sua opção (de 1 a 12).', stickyInst);
+              await botReply(msg.from, session.name, 'Opa, não consegui identificar direitinho por aqui 😅 Pode me mandar só o número da opção (de 1 a 12)?', stickyInst);
             } else {
               const candidato1 = obterCandidatoPorId(votoValido);
               if (candidato1) {
@@ -354,9 +354,9 @@ export async function POST(req: NextRequest) {
           else if (session.etapa === 'aguardando_voto2') {
             const votoValido = validarVoto(cleanText);
             if (!votoValido) {
-              await botReply(msg.from, session.name, 'Por favor, digite apenas o número da sua escolha para o segundo voto.', stickyInst);
+              await botReply(msg.from, session.name, 'Opa, não consegui identificar por aqui 😅 Pode me mandar só o número da sua segunda escolha?', stickyInst);
             } else if (session.voto1Id && session.voto1Id === votoValido && votoValido <= 10) {
-              await botReply(msg.from, session.name, 'O segundo voto deve ser diferente do primeiro.\nPor favor, escolha outro candidato da lista acima.', stickyInst);
+              await botReply(msg.from, session.name, 'Como a gente tem direito a dois votos para candidatos diferentes, essa segunda escolha precisa ser em outro nome 🙂\nDá uma olhadinha na lista e me fala quem seria sua segunda opção:', stickyInst);
             } else {
               const candidato2 = obterCandidatoPorId(votoValido);
               if (candidato2) {
