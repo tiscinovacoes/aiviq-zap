@@ -112,12 +112,24 @@ export function gerarMensagem1(nome?: string, seed?: string): string {
   return spin(`${alvo}, ${saudacao}{!|,}\n{tudo bem|como vai|espero que esteja bem|tudo certo}?`, seed);
 }
 
-// Mensagem 2: Contextualização da pesquisa
+// Mensagem 2: Contextualização da pesquisa + saída de descadastro.
+//
+// O rodapé de opt-out fica AQUI, e não na Msg 1: a saudação é curta e casual
+// ("Olá Alfredo, boa tarde, tudo bem?") e um aviso de descadastro nela faria a
+// abertura parecer disparo em massa — o oposto do que se quer. Esta é a
+// mensagem em que a pesquisa se apresenta, então é onde a saída pertence.
+// Exigência de LGPD e, na prática, anti-ban: quem tem como pedir para sair não
+// precisa usar o botão de denunciar, que é o que derruba chip.
 export function gerarMensagem2(seed?: string): string {
-  return spin(
+  const corpo = spin(
     `{Estou realizando|Estamos fazendo|Faço parte de} uma pesquisa {de opinião|rápida de opinião|de opinião pública} sobre a eleição para o Senado {Federal |}em Mato Grosso do Sul.`,
     seed
   );
+  const saida = spin(
+    `{Se preferir não participar, responda SAIR|Caso não queira receber, é só responder SAIR|Para não receber mais, responda SAIR}.`,
+    seed
+  );
+  return `${corpo}\n\n${saida}`;
 }
 
 // Mensagem 3: Opções do 1º voto

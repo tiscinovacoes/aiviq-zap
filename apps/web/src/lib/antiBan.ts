@@ -31,9 +31,11 @@ export { spin, isOptOut } from '@/lib/spintax';
 // (claimInstanceSlot) para que dois ticks concorrentes nunca facam o mesmo chip
 // enviar duas vezes no mesmo segundo.
 export const ANTIBAN = {
-  WARMUP_BASE: 480, // sem rampa artificial (teto cheio desde o 1º dia)
-  WARMUP_STEP: 0,
-  DAILY_CAP: 480, // teto máximo por chip/dia
+  // WARM-UP: chip declarado "novo" comeca baixo e sobe. Numero novo despejando
+  // centenas de mensagens no primeiro dia e o perfil de ban mais classico.
+  WARMUP_BASE: 30, // teto do dia 0
+  WARMUP_STEP: 20, // ganho por dia ate alcancar DAILY_CAP (~23 dias)
+  DAILY_CAP: 480, // teto de regime, por chip/dia
   HORA_INICIO: 8, // 08:00 MS
   HORA_FIM: 20, // 20:00 MS (exclusivo)
   // Cadência definida pelo operador: 1 envio por minuto POR CHIP (60s fixo).
@@ -42,6 +44,15 @@ export const ANTIBAN = {
   GAP_MIN_S: 60,
   GAP_MAX_S: 60,
   PRESENCA_MS: 1200, // "digitando..." antes de cada disparo em massa (humaniza)
+
+  // SAUDE DO CHIP
+  // Falhas seguidas costumam ser o sinal PRECOCE de shadowban -- aparecem
+  // antes de a conexao cair, entao reagir so a connectionStatus chega tarde.
+  MAX_FALHAS_SEGUIDAS: 5,
+  COOLDOWN_MIN: 60, // resfriamento apos as falhas seguidas
+  // Pausa por lote: quebra a cadencia mecanica de um chip que dispara sem parar.
+  LOTE_TAMANHO: 25,
+  PAUSA_LOTE_MIN: 12,
 };
 
 /** Intervalo até o próximo envio DAQUELE chip: 60s fixo (1 por minuto). */
@@ -112,7 +123,7 @@ export async function checkDispatchGate(instanceName?: string): Promise<Dispatch
     const rec = global.__aiviq_dispatch_counters![inst];
     const firstDay = rec?.firstDay || day;
     const sentToday = rec && rec.day === day ? rec.sent : 0;
-    const cap = warmupCap(diffDays(firstDay, day));
+    const cap = await capDoChip(inst, day);
     return { allowed: sentToday < cap, reason: sentToday < cap ? undefined : 'teto_diario', sentToday, dailyCap: cap, hora: hour };
   }
 
@@ -128,18 +139,9 @@ export async function checkDispatchGate(instanceName?: string): Promise<Dispatch
     .eq('day', day)
     .maybeSingle();
 
-  const { data: first } = await ctx.db
-    .from('dispatch_counters')
-    .select('day')
-    .eq('organization_id', ctx.organizationId)
-    .eq('instance_name', inst)
-    .order('day', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  const firstDay = (first?.day as string) || day;
   const sentToday = (today?.sent_count as number) || 0;
-  const cap = warmupCap(diffDays(firstDay, day));
+  // Mesma fonte de verdade da reserva: maturidade declarada + curva de warm-up.
+  const cap = await capDoChip(inst, day);
   return {
     allowed: sentToday < cap,
     reason: sentToday < cap ? undefined : 'teto_diario',
@@ -167,6 +169,34 @@ export interface SlotReservation {
 }
 
 /**
+ * Teto do DIA para este chip.
+ *
+ * "maduro" -> teto de regime cheio. "novo" -> curva de warm-up contada a partir
+ * do dia em que o warm-up comecou. A maturidade e DECLARADA pelo operador, nao
+ * inferida: o primeiro disparo por aqui nao diz nada sobre a idade real do
+ * numero -- um chip em uso ha anos apareceria como "dia zero" e seria
+ * estrangulado sem ganho nenhum de seguranca.
+ */
+export async function capDoChip(inst: string, hoje: string): Promise<number> {
+  if (isPlaceholderEnv()) return ANTIBAN.DAILY_CAP;
+  const ctx = await getServiceContext();
+  if (!ctx) return ANTIBAN.WARMUP_BASE; // sem contexto, erra para o lado seguro
+
+  const { data } = await ctx.db
+    .from('dispatch_instance_control')
+    .select('maturidade, warmup_started_on')
+    .eq('organization_id', ctx.organizationId)
+    .eq('instance_name', inst)
+    .maybeSingle();
+
+  const linha = data as { maturidade?: string; warmup_started_on?: string } | null;
+  if (linha?.maturidade === 'maduro') return ANTIBAN.DAILY_CAP;
+
+  const dias = linha?.warmup_started_on ? diffDays(linha.warmup_started_on, hoje) : 0;
+  return warmupCap(dias);
+}
+
+/**
  * Reserva 1 slot no teto diário do chip. Só devolve ok=true se a reserva foi
  * efetivada — só então pode enviar. Em caso de falha no envio, chame
  * releaseDispatchSlot() para devolver o slot.
@@ -174,7 +204,7 @@ export interface SlotReservation {
 export async function reserveDispatchSlot(instanceName?: string): Promise<SlotReservation> {
   const inst = resolveInstanceName(instanceName);
   const { day } = nowInMS();
-  const cap = ANTIBAN.DAILY_CAP;
+  const cap = await capDoChip(inst, day);
 
   if (!dentroDaJanela()) {
     return { ok: false, reason: 'fora_horario', sentToday: 0, dailyCap: cap };

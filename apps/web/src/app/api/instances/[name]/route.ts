@@ -6,7 +6,7 @@ import {
   DEFAULT_INSTANCE,
 } from '@/lib/instanceRegistry';
 import { invalidateEvolutionCache } from '@/lib/evolutionService';
-import { setDispatchEnabled } from '@/lib/dispatchQueue';
+import { setDispatchEnabled, setMaturidadeChip } from '@/lib/dispatchQueue';
 
 import { cookies } from 'next/headers';
 
@@ -146,6 +146,22 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
     // Liga/desliga a instancia no CLUSTER DE DISPARO (selecao multipla).
     // Nao confundir com o "ATIVO" da tela, que e o radio de visualizacao do
     // Inbox e vive no localStorage do navegador.
+    // Declara se o numero ja esta aquecido. Nao da para inferir: o primeiro
+    // disparo por aqui nao diz nada sobre a idade real do chip.
+    if (action === 'set_maturidade') {
+      const mat = body.maturidade === 'maduro' ? 'maduro' : 'novo';
+      await setMaturidadeChip(instanceName, mat);
+      return NextResponse.json({
+        success: true,
+        instanceName,
+        maturidade: mat,
+        message:
+          mat === 'maduro'
+            ? 'Numero marcado como aquecido: usa o teto de regime.'
+            : 'Numero em warm-up: o teto comeca baixo e cresce a cada dia.',
+      });
+    }
+
     if (action === 'set_dispatch') {
       const enabled = body.enabled !== false;
       await setDispatchEnabled(instanceName, enabled);

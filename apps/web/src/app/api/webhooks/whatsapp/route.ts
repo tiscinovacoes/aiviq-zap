@@ -4,6 +4,7 @@ import { addInboundMessage, addBotDispatchedMessage } from '@/lib/conversationSt
 import { invalidateEvolutionCache, sendRealMessageDetailed } from '@/lib/evolutionService';
 import { persistMessageByJid } from '@/lib/conversationRepo';
 import { isOptOut } from '@/lib/spintax';
+import { registrarOptOut } from '@/lib/dispatchQueue';
 import {
   getPesquisaSessionByPhone,
   savePesquisaSession,
@@ -259,6 +260,14 @@ export async function POST(req: NextRequest) {
           if (isOptOut(cleanText)) {
             session.etapa = 'recusado';
             await savePesquisaSession(session);
+            // Entra na lista de opt-out e CANCELA os disparos pendentes dele em
+            // qualquer campanha. Antes a sessao virava 'recusado' mas a linha
+            // seguia pendente na fila: a pessoa seria reabordada depois de ter
+            // pedido para sair.
+            const rOpt = await registrarOptOut(msg.from, 'respondeu opt-out no WhatsApp');
+            if (rOpt.cancelados > 0) {
+              console.log(`[Opt-out] ${msg.from}: ${rOpt.cancelados} disparo(s) pendente(s) cancelado(s)`);
+            }
             await botReply(msg.from, session.name, 'Tudo bem, não vamos mais te enviar mensagens. Obrigado! 🙏', stickyInst);
             sincronizarContatoEleitor({
               name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'recusado',

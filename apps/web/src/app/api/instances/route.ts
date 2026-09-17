@@ -7,7 +7,8 @@ import {
   DEFAULT_INSTANCE,
 } from '@/lib/instanceRegistry';
 import { fetchLiveEvolutionInstances, EvolutionLiveInstance } from '@/lib/evolutionService';
-import { getDispatchPool } from '@/lib/dispatchQueue';
+import { getDispatchPool, getMaturidadeChips } from '@/lib/dispatchQueue';
+import { capDoChip, ANTIBAN } from '@/lib/antiBan';
 
 import { cookies } from 'next/headers';
 
@@ -55,6 +56,13 @@ export interface InstanceView {
   profilePicUrl?: string;
   /** Participa do cluster de disparo (multiplo, por organizacao). */
   dispatchEnabled: boolean;
+  /** 'novo' entra na curva de warm-up; 'maduro' usa o teto de regime. */
+  maturidade: 'novo' | 'maduro';
+  /** Teto de mensagens permitido HOJE para este chip. */
+  capHoje: number;
+  /** Fora do pool ate este horario (resfriamento por falhas ou pausa de lote). */
+  cooldownAte?: string;
+  cooldownMotivo?: string;
 }
 
 // GET: lista todas as instâncias conhecidas (registro local + servidor Evolution),
@@ -64,7 +72,12 @@ export async function GET() {
     const unauthorized = await requireUser();
     if (unauthorized) return unauthorized;
 
-    const [live, pool] = await Promise.all([fetchLiveEvolutionInstances(), getDispatchPool()]);
+    const [live, pool, maturidades] = await Promise.all([
+      fetchLiveEvolutionInstances(),
+      getDispatchPool(),
+      getMaturidadeChips(),
+    ]);
+    const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Campo_Grande' });
     const liveByName = new Map(live.map((i) => [i.instanceName, i]));
 
     // Qualquer instância que exista no servidor mas não no registro local é auto-registrada,
@@ -76,19 +89,26 @@ export async function GET() {
     }
 
     const known = listKnownInstances();
-    const instances: InstanceView[] = known.map((k) => {
-      const l = liveByName.get(k.instanceName);
-      return {
-        instanceName: k.instanceName,
-        label: k.label,
-        isDefault: k.instanceName === DEFAULT_INSTANCE,
-        status: l?.status || 'disconnected',
-        phoneNumber: l?.phoneNumber,
-        profileName: l?.profileName,
-        profilePicUrl: l?.profilePicUrl,
-        dispatchEnabled: pool[k.instanceName] !== false, // ausente = participa
-      };
-    });
+    const instances: InstanceView[] = await Promise.all(
+      known.map(async (k) => {
+        const l = liveByName.get(k.instanceName);
+        const m = maturidades[k.instanceName];
+        return {
+          instanceName: k.instanceName,
+          label: k.label,
+          isDefault: k.instanceName === DEFAULT_INSTANCE,
+          status: l?.status || 'disconnected',
+          phoneNumber: l?.phoneNumber,
+          profileName: l?.profileName,
+          profilePicUrl: l?.profilePicUrl,
+          dispatchEnabled: pool[k.instanceName] !== false, // ausente = participa
+          maturidade: (m?.maturidade || 'novo') as 'novo' | 'maduro',
+          capHoje: await capDoChip(k.instanceName, hoje),
+          cooldownAte: m?.cooldownAte,
+          cooldownMotivo: m?.cooldownMotivo,
+        };
+      })
+    );
 
     return NextResponse.json({ success: true, instances });
   } catch (err: any) {

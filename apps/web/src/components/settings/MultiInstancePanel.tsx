@@ -22,7 +22,8 @@ const statusStyle: Record<string, { dot: string; text: string; label: string }> 
 };
 
 export default function MultiInstancePanel() {
-  const { instances, selected, fetchInstances, setSelected, setDispatchEnabled } = useInstanceStore();
+  const { instances, selected, fetchInstances, setSelected, setDispatchEnabled, setMaturidade } =
+    useInstanceStore();
 
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
@@ -242,8 +243,11 @@ export default function MultiInstancePanel() {
                 </span>
               )}
               {' · '}
-              capacidade de <strong className="text-slate-800">{prontos.length * 480} mensagens/dia</strong>
-              {prontos.length > 0 && ` (${prontos.length} × 480)`}
+              capacidade de{' '}
+              <strong className="text-slate-800">
+                {prontos.reduce((s, i) => s + (i.capHoje ?? 0), 0)} mensagens hoje
+              </strong>
+              {prontos.length > 0 && ' (' + prontos.map((i) => i.capHoje ?? 0).join(' + ') + ')'}
             </p>
           </div>
         );
@@ -266,6 +270,16 @@ export default function MultiInstancePanel() {
               }`}
             >
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${st.dot}`} />
+              {i.cooldownAte && new Date(i.cooldownAte) > new Date() && (
+                <span
+                  title={'Fora do disparo até ' +
+                    new Date(i.cooldownAte).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) +
+                    (i.cooldownMotivo === 'falhas_seguidas' ? ' (falhas seguidas)' : ' (pausa de lote)')}
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0"
+                >
+                  {i.cooldownMotivo === 'falhas_seguidas' ? 'RESFRIANDO' : 'PAUSA DE LOTE'}
+                </span>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-slate-800 truncate">{i.label}</span>
@@ -285,6 +299,29 @@ export default function MultiInstancePanel() {
                   {' · '}
                   <span className={st.text}>{i.phoneNumber || st.label}</span>
                 </div>
+              </div>
+
+              {/* WARM-UP: teto do dia e declaracao de maturidade. Um numero
+                  novo despejando centenas de mensagens no primeiro dia e o
+                  perfil de ban mais classico; um numero antigo estrangulado a
+                  30/dia e perda pura. Por isso quem decide e o operador. */}
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <select
+                  value={i.maturidade || 'novo'}
+                  onChange={(e) => setMaturidade(i.instanceName, e.target.value as 'novo' | 'maduro')}
+                  title="Número novo entra na curva de warm-up. Número já aquecido usa o teto cheio."
+                  className={`text-[11px] font-semibold rounded-lg border px-2 py-1 cursor-pointer ${
+                    i.maturidade === 'maduro'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-amber-200 bg-amber-50 text-amber-800'
+                  }`}
+                >
+                  <option value="novo">Em warm-up</option>
+                  <option value="maduro">Já aquecido</option>
+                </select>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  teto hoje: {i.capHoje ?? '—'}/dia
+                </span>
               </div>
 
               {/* SELECAO MULTIPLA: quais chips entram no rodizio da campanha.

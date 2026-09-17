@@ -5,6 +5,8 @@ import {
   releaseDispatchSlot,
   dentroDaJanela,
   sortearGapSegundos,
+  capDoChip,
+  checkDispatchGate,
   ANTIBAN,
 } from '@/lib/antiBan';
 import { gerarMensagem1 } from '@/lib/pesquisaSenado';
@@ -23,6 +25,7 @@ import {
   reapStaleClaims,
   filterDispatchPool,
   claimInstanceSlot,
+  registrarResultadoChip,
   markItemSent,
   markItemError,
   getQueueStatus,
@@ -60,6 +63,27 @@ export interface TickCoreResult {
   error?: string;
 }
 
+/**
+ * Registra sucesso/falha do chip e deixa o banco decidir o resfriamento:
+ * N falhas seguidas (sinal precoce de shadowban, aparece antes de a conexao
+ * cair) ou lote cheio (pausa longa para quebrar a cadencia mecanica).
+ */
+async function registrarSaude(instancia: string, sucesso: boolean): Promise<void> {
+  try {
+    const r = await registrarResultadoChip(instancia, sucesso, {
+      maxFalhas: ANTIBAN.MAX_FALHAS_SEGUIDAS,
+      cooldownMin: ANTIBAN.COOLDOWN_MIN,
+      loteTamanho: ANTIBAN.LOTE_TAMANHO,
+      pausaLoteMin: ANTIBAN.PAUSA_LOTE_MIN,
+    });
+    if (r?.cooldownAte && r.motivo) {
+      console.warn(`[tick] chip ${instancia} em resfriamento (${r.motivo}) ate ${r.cooldownAte}`);
+    }
+  } catch (e) {
+    console.error('[tick] registrarSaude:', e);
+  }
+}
+
 /** Dispara 1 contato por um chip especifico. Devolve o slot se o envio falhar. */
 async function dispararContato(item: QueueItem, instancia: string): Promise<boolean> {
   try {
@@ -79,6 +103,7 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
     if (!r.ok) {
       await markItemError(item.id, item.attempts || 0, r.error || 'Falha no envio pelo WhatsApp', instancia);
       await releaseDispatchSlot(instancia); // nada saiu do chip: devolve a cota
+      await registrarSaude(instancia, false);
       return false;
     }
 
@@ -111,10 +136,12 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
       etapa: 'disparado',
     }).catch((e) => console.error('[tick] sync contato:', e));
 
+    await registrarSaude(instancia, true);
     return true;
   } catch (err: any) {
     await markItemError(item.id, item.attempts || 0, err?.message || 'Erro inesperado no envio', instancia);
     await releaseDispatchSlot(instancia);
+    await registrarSaude(instancia, false);
     return false;
   }
 }
@@ -157,8 +184,19 @@ export async function runTickCore(): Promise<TickCoreResult> {
   //    concorrentes que perderem saem sem enviar. Isso e o que impede o MESMO
   //    chip de mandar duas mensagens no mesmo segundo quando o cron, o worker
   //    e as abas abertas disparam o tick ao mesmo tempo.
+  // Ordem de atendimento: MENOR carga relativa (sentToday/cap) primeiro. Com o
+  // warm-up ligado os tetos ficam diferentes entre os chips, entao round-robin
+  // cego sobrecarregaria o chip novo enquanto o maduro fica ocioso.
+  const carga = await Promise.all(
+    conectadas.map(async (inst) => {
+      const gate = await checkDispatchGate(inst);
+      return { inst, rel: gate.sentToday / (gate.dailyCap || 1) };
+    })
+  );
+  const ordenadas = carga.sort((a, b) => a.rel - b.rel).map((c) => c.inst);
+
   const prontas: string[] = [];
-  for (const inst of conectadas) {
+  for (const inst of ordenadas) {
     const venceu = await claimInstanceSlot(inst, sortearGapSegundos());
     if (venceu) prontas.push(inst);
   }

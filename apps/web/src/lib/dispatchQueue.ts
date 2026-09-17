@@ -51,6 +51,8 @@ export interface EnqueueResult {
   jaEnviados: number;
   /** Quantos contatos couberam a cada chip (divisao previa da lista). */
   divisaoPorChip: Record<string, number>;
+  /** Pulados por terem pedido opt-out. */
+  optOut: number;
 }
 
 /**
@@ -88,11 +90,11 @@ export async function enqueueContacts(
       q.push({ id: `q-${Date.now()}-${n}`, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente', attempts: 0 });
       n++;
     }
-    return { enfileirados: n, ignorados: unicos.length - n - ja, jaEnviados: ja, divisaoPorChip: {} };
+    return { enfileirados: n, ignorados: unicos.length - n - ja, jaEnviados: ja, divisaoPorChip: {}, optOut: 0 };
   }
 
   const ctx = await getServiceContext();
-  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, divisaoPorChip: {} };
+  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, divisaoPorChip: {}, optOut: 0 };
 
   // Ja na fila (pendente/processando) -> pula sempre.
   const { data: pend } = await ctx.db
@@ -101,6 +103,10 @@ export async function enqueueContacts(
     .eq('organization_id', ctx.organizationId)
     .in('status', ['pendente', 'processando']);
   const naFila = new Set((pend || []).map((r: any) => r.phone));
+
+  // Quem pediu para sair NUNCA volta para a fila, nem com permitirReenvio.
+  const optOut = await getOptOutSet();
+  let puladosOptOut = 0;
 
   // Ja abordado -> pula, a menos que o operador peca reenvio explicitamente.
   let jaEnviados = new Set<string>();
@@ -117,6 +123,7 @@ export async function enqueueContacts(
   const rows = unicos
     .filter((c) => {
       if (naFila.has(c.phone)) return false;
+      if (optOut.has(c.phone)) { puladosOptOut++; return false; }
       if (jaEnviados.has(c.phone)) { puladosPorEnvio++; return false; }
       return true;
     })
@@ -168,9 +175,10 @@ export async function enqueueContacts(
 
   return {
     enfileirados: inseridos,
-    ignorados: unicos.length - rows.length - puladosPorEnvio + colisoes,
+    ignorados: unicos.length - rows.length - puladosPorEnvio - puladosOptOut + colisoes,
     jaEnviados: puladosPorEnvio,
     divisaoPorChip,
+    optOut: puladosOptOut,
   };
 }
 
@@ -687,4 +695,186 @@ export async function getProgressoPorChip(): Promise<ProgressoChip[]> {
     else if (r.status === 'erro') alvo.erros++;
   }
   return Array.from(mapa.values()).sort((a, b) => a.instancia.localeCompare(b.instancia));
+}
+
+// ==================== SAUDE DO CHIP ====================
+// Pausa por lote e circuit breaker por falhas seguidas. O gatilho de falhas e o
+// que o healthcheck de conexao nao pega: uma sequencia de recusas costuma
+// aparecer ANTES de a instancia cair, e e o sinal precoce de shadowban.
+
+export interface ResultadoChip {
+  falhasSeguidas: number;
+  cooldownAte?: string;
+  motivo?: string;
+}
+
+export async function registrarResultadoChip(
+  instance: string,
+  sucesso: boolean,
+  cfg: {
+    maxFalhas: number;
+    cooldownMin: number;
+    loteTamanho: number;
+    pausaLoteMin: number;
+  }
+): Promise<ResultadoChip | null> {
+  if (isPlaceholderEnv()) return null;
+  const ctx = await getServiceContext();
+  if (!ctx) return null;
+  const { data, error } = await ctx.db.rpc('registrar_resultado_chip', {
+    p_org: ctx.organizationId,
+    p_instance: instance,
+    p_sucesso: sucesso,
+    p_max_falhas: cfg.maxFalhas,
+    p_cooldown_min: cfg.cooldownMin,
+    p_lote_tamanho: cfg.loteTamanho,
+    p_pausa_lote_min: cfg.pausaLoteMin,
+  });
+  if (error) {
+    console.error('[dispatchQueue] registrar_resultado_chip falhou:', error.message);
+    return null;
+  }
+  const linha = Array.isArray(data) ? data[0] : data;
+  if (!linha) return null;
+  return {
+    falhasSeguidas: (linha as any).falhas_seguidas ?? 0,
+    cooldownAte: (linha as any).cooldown_ate ?? undefined,
+    motivo: (linha as any).cooldown_motivo ?? undefined,
+  };
+}
+
+/** Chips em resfriamento agora (fora do pool ate cooldown_ate). */
+export async function getChipsEmCooldown(): Promise<Record<string, { ate: string; motivo?: string }>> {
+  if (isPlaceholderEnv()) return {};
+  const ctx = await getServiceContext();
+  if (!ctx) return {};
+  const { data } = await ctx.db
+    .from('dispatch_instance_control')
+    .select('instance_name, cooldown_ate, cooldown_motivo')
+    .eq('organization_id', ctx.organizationId)
+    .gt('cooldown_ate', new Date().toISOString());
+  const out: Record<string, { ate: string; motivo?: string }> = {};
+  for (const r of (data || []) as any[]) {
+    out[r.instance_name] = { ate: r.cooldown_ate, motivo: r.cooldown_motivo || undefined };
+  }
+  return out;
+}
+
+// ==================== OPT-OUT ====================
+// Quem pede SAIR entra na lista e tem TODOS os disparos pendentes cancelados,
+// em qualquer campanha da organizacao. Antes a sessao virava 'recusado' mas a
+// linha seguia pendente na fila -- a pessoa seria reabordada depois de pedir
+// para sair. Alem do problema legal, e o caminho mais curto para uma denuncia.
+
+export async function registrarOptOut(
+  phone: string,
+  motivo?: string
+): Promise<{ cancelados: number }> {
+  const alvo = canonicalDigits(phone);
+  if (!alvo) return { cancelados: 0 };
+
+  if (isPlaceholderEnv()) {
+    let n = 0;
+    (global.__aiviq_queue || []).forEach((i) => {
+      if (i.phone === alvo && (i.status === 'pendente' || i.status === 'processando')) {
+        i.status = 'erro';
+        n++;
+      }
+    });
+    return { cancelados: n };
+  }
+
+  const ctx = await getServiceContext();
+  if (!ctx) return { cancelados: 0 };
+
+  await ctx.db
+    .from('opt_out')
+    .upsert(
+      { organization_id: ctx.organizationId, phone: alvo, motivo: motivo || 'pediu para sair' },
+      { onConflict: 'organization_id,phone' }
+    );
+
+  // Remove da fila em vez de marcar erro: nao e falha de entrega, e uma pessoa
+  // que pediu para nao ser mais abordada -- nao deve voltar num re-enfileiramento.
+  const { data } = await ctx.db
+    .from('dispatch_queue')
+    .delete()
+    .eq('organization_id', ctx.organizationId)
+    .eq('phone', alvo)
+    .in('status', ['pendente', 'processando'])
+    .select('id');
+
+  return { cancelados: data?.length || 0 };
+}
+
+/** Telefones que pediram opt-out (para filtrar no enfileiramento). */
+export async function getOptOutSet(): Promise<Set<string>> {
+  if (isPlaceholderEnv()) return new Set();
+  const ctx = await getServiceContext();
+  if (!ctx) return new Set();
+  const { data } = await ctx.db
+    .from('opt_out')
+    .select('phone')
+    .eq('organization_id', ctx.organizationId);
+  return new Set((data || []).map((r: any) => r.phone));
+}
+
+export interface MaturidadeChip {
+  maturidade: 'novo' | 'maduro';
+  warmupStartedOn?: string;
+  cooldownAte?: string;
+  cooldownMotivo?: string;
+}
+
+export async function getMaturidadeChips(): Promise<Record<string, MaturidadeChip>> {
+  if (isPlaceholderEnv()) return {};
+  const ctx = await getServiceContext();
+  if (!ctx) return {};
+  const { data } = await ctx.db
+    .from('dispatch_instance_control')
+    .select('instance_name, maturidade, warmup_started_on, cooldown_ate, cooldown_motivo')
+    .eq('organization_id', ctx.organizationId);
+  const out: Record<string, MaturidadeChip> = {};
+  for (const r of (data || []) as any[]) {
+    out[r.instance_name] = {
+      maturidade: r.maturidade === 'maduro' ? 'maduro' : 'novo',
+      warmupStartedOn: r.warmup_started_on || undefined,
+      cooldownAte: r.cooldown_ate || undefined,
+      cooldownMotivo: r.cooldown_motivo || undefined,
+    };
+  }
+  return out;
+}
+
+/**
+ * Declara a maturidade do chip. Ao marcar como 'novo', o warm-up passa a contar
+ * a partir de hoje (a menos que ja tenha uma data), porque e quando o operador
+ * esta dizendo "este numero comeca agora".
+ */
+export async function setMaturidadeChip(
+  instance: string,
+  maturidade: 'novo' | 'maduro'
+): Promise<void> {
+  if (isPlaceholderEnv()) return;
+  const ctx = await getServiceContext();
+  if (!ctx) return;
+  const hoje = new Date().toISOString().slice(0, 10);
+  const { data: atual } = await ctx.db
+    .from('dispatch_instance_control')
+    .select('warmup_started_on')
+    .eq('organization_id', ctx.organizationId)
+    .eq('instance_name', instance)
+    .maybeSingle();
+
+  await ctx.db.from('dispatch_instance_control').upsert(
+    {
+      organization_id: ctx.organizationId,
+      instance_name: instance,
+      maturidade,
+      warmup_started_on:
+        maturidade === 'novo' ? (atual as any)?.warmup_started_on || hoje : (atual as any)?.warmup_started_on || null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'organization_id,instance_name' }
+  );
 }

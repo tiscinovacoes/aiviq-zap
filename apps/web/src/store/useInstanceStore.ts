@@ -10,6 +10,10 @@ export interface InstanceView {
   profilePicUrl?: string;
   /** Participa do cluster de disparo (selecao MULTIPLA, salva no servidor). */
   dispatchEnabled?: boolean;
+  maturidade?: 'novo' | 'maduro';
+  capHoje?: number;
+  cooldownAte?: string;
+  cooldownMotivo?: string;
 }
 
 export const SELECTED_INSTANCE_KEY = 'aiviq_selected_instance';
@@ -29,6 +33,7 @@ interface InstanceState {
   fetchInstances: () => Promise<void>;
   setSelected: (instanceName: string) => void;
   setDispatchEnabled: (instanceName: string, enabled: boolean) => Promise<void>;
+  setMaturidade: (instanceName: string, maturidade: 'novo' | 'maduro') => Promise<void>;
 }
 
 export const useInstanceStore = create<InstanceState>((set, get) => ({
@@ -57,6 +62,26 @@ export const useInstanceStore = create<InstanceState>((set, get) => ({
       }
     } catch {
       set({ isLoading: false });
+    }
+  },
+
+  // Declara se o numero ja esta aquecido. Nao e inferido: o primeiro disparo
+  // por aqui nao diz nada sobre a idade real do chip, entao um numero em uso ha
+  // anos apareceria como "dia zero" e seria estrangulado sem ganho nenhum.
+  setMaturidade: async (instanceName: string, maturidade: 'novo' | 'maduro') => {
+    set({
+      instances: get().instances.map((i) =>
+        i.instanceName === instanceName ? { ...i, maturidade } : i
+      ),
+    });
+    try {
+      await fetch(`/api/instances/${encodeURIComponent(instanceName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_maturidade', maturidade }),
+      });
+    } finally {
+      await get().fetchInstances();
     }
   },
 

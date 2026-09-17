@@ -1122,3 +1122,31 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
 - ⏳ Bloqueado por:
   - [ ] **`016_assigned_instance.sql` precisa ser aplicada no SQL Editor** (MCP de migration barrado pelo modo automático). Sem ela `claim_dispatch_items_for_instance` não existe e o disparo para — falha fechada.
 
+
+---
+
+## DATA: 17/09/2026 — Warm-up por Chip, Saúde do Chip e Opt-out que Aborta a Fila (v3.0.0)
+
+### Claude
+Origem: o operador trouxe um documento de especificação anti-ban bem pesquisado (escrito para n8n). A seção de entregáveis não se aplica — o motor é Next.js + Supabase + cron da Vercel — e boa parte da seção de regras já existia aqui, em alguns casos mais robusta. O que foi aproveitado:
+
+- ✅ **WARM-UP progressivo (`017` + `antiBan.ts`)** — o achado mais importante:
+  - Diagnóstico: **os 5 chips estavam com `dias_de_uso = 0` e teto de 480**. Número novo despejando centenas de mensagens no primeiro dia é o perfil de ban mais clássico que existe. A máquina de warm-up já existia no código (`warmupCap`, `first_dispatch_at`), desligada em `WARMUP_BASE: 480, WARMUP_STEP: 0`.
+  - `WARMUP_BASE: 30`, `WARMUP_STEP: 20` → chip novo começa em 30/dia e alcança o regime de 480 em ~23 dias.
+  - **Maturidade é DECLARADA pelo operador, não inferida.** `first_dispatch_at` só sabe quando o número começou a disparar por aqui: um chip em uso há anos apareceria como "dia zero" e seria estrangulado sem ganho nenhum de segurança. Coluna `maturidade` (`novo`|`maduro`, default `novo` — o lado seguro) + seletor por número em Configurações, mostrando o teto do dia.
+  - `capDoChip()` virou a fonte única de verdade do teto, usada tanto por `reserveDispatchSlot()` quanto por `checkDispatchGate()`.
+- ✅ **Rotação por menor carga relativa** (`sentToday/cap`, no lugar de round-robin): com warm-up os tetos ficam diferentes entre chips, e round-robin cego sobrecarregaria o chip novo enquanto o maduro fica ocioso.
+- ✅ **Saúde do chip (`registrar_resultado_chip`)**:
+  - **Circuit breaker**: 5 falhas seguidas → 60 min de resfriamento. Reagir só a `connectionStatus` chega tarde; uma sequência de recusas aparece **antes** de a instância cair e é o sinal precoce de shadowban.
+  - **Pausa por lote**: a cada 25 disparos, 12 min de pausa — quebra a cadência mecânica de um chip que dispara sem parar (agravada pela decisão de 60s fixo).
+  - `claim_instance_slot` passou a respeitar `cooldown_ate`: chip em resfriamento não ganha o slot nem com o intervalo vencido. Badge `RESFRIANDO` / `PAUSA DE LOTE` na tela.
+- ✅ **Opt-out aborta a fila (`opt_out` + `registrarOptOut`)**:
+  - Antes o webhook marcava a sessão como `recusado` e respondia educadamente, mas **a linha seguia pendente**: a pessoa seria reabordada depois de ter pedido para sair. Além do problema de LGPD, é o caminho mais curto para uma denúncia — que derruba chip.
+  - Agora entra na tabela `opt_out` e **todos os disparos pendentes dele são removidos** (removidos, não marcados como erro: não é falha de entrega e não pode voltar num re-enfileiramento). O enfileiramento também filtra a lista de opt-out, inclusive com `permitirReenvio`.
+- ✅ **Saída de descadastro na Msg 2, não na Msg 1**: a saudação é curta e casual ("Olá Alfredo, boa tarde, tudo bem?") — um aviso de descadastro nela faria a abertura parecer disparo em massa, o oposto do pretendido. A Msg 2 é onde a pesquisa se apresenta, então é onde a saída pertence.
+- 📌 **Divergências do documento registradas para o operador**: ele diz "nunca usar intervalos fixos" (jitter 25–65s) enquanto a cadência escolhida horas antes foi 60s fixo; e sugere 200–300/dia como teto de chip **maduro**, contra os 480 configurados aqui.
+- ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
+- ⏳ Bloqueado por:
+  - [ ] **`017_warmup_saude_optout.sql` precisa ser aplicada no SQL Editor** (MCP de migration barrado pelo modo automático).
+  - [ ] Após aplicar, **declarar a maturidade de cada chip** em Configurações — todos entram como `novo` (30/dia) por padrão.
+
