@@ -6,6 +6,8 @@ import {
   addCampaignStore,
   computeCampaignMetrics,
 } from '@/lib/campaignStore';
+import { enqueueContacts } from '@/lib/dispatchQueue';
+import { triggerServerDispatchCycle } from '@/lib/serverDispatchWorker';
 
 export const dynamic = 'force-dynamic';
 
@@ -150,6 +152,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: `Não foi possível salvar a campanha: ${error.message}. Aplique a migration 010 no Supabase.` },
         { status: 500 }
+      );
+    }
+
+    if (Array.isArray(body.importedLeads) && body.importedLeads.length > 0) {
+      const contatosParaFila = body.importedLeads.map((l: any) => ({
+        name: l.nome || '',
+        phone: l.telefone || '',
+      }));
+      enqueueContacts(contatosParaFila).catch((e) =>
+        console.error('[campaigns POST] Erro ao enfileirar contatos:', e)
+      );
+      triggerServerDispatchCycle(true).catch((e) =>
+        console.error('[campaigns POST] Erro ao acionar worker:', e)
       );
     }
 

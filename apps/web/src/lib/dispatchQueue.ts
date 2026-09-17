@@ -195,20 +195,24 @@ export async function setNextAllowedAt(ms: number): Promise<void> {
 }
 
 export async function nextPendingItem(): Promise<QueueItem | null> {
+  const items = await nextPendingItems(1);
+  return items.length > 0 ? items[0] : null;
+}
+
+export async function nextPendingItems(count = 2): Promise<QueueItem[]> {
   if (isPlaceholderEnv()) {
-    return (global.__aiviq_queue || []).find((i) => i.status === 'pendente') || null;
+    return (global.__aiviq_queue || []).filter((i) => i.status === 'pendente').slice(0, count);
   }
   const ctx = await getServiceContext();
-  if (!ctx) return null;
+  if (!ctx) return [];
   const { data } = await ctx.db
     .from('dispatch_queue')
     .select('id, phone, name, bairro, status, attempts')
     .eq('organization_id', ctx.organizationId)
     .eq('status', 'pendente')
     .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  return data ? (data as QueueItem) : null;
+    .limit(count);
+  return (data || []) as QueueItem[];
 }
 
 export async function markItemSent(id: string, instanceName: string): Promise<void> {

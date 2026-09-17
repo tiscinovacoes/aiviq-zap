@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { setPaused } from '@/lib/dispatchQueue';
+import { triggerServerDispatchCycle, stopServerDispatchWorker } from '@/lib/serverDispatchWorker';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,12 +32,21 @@ export async function POST(
         .eq('id', params.id);
     }
 
+    if (newStatus === 'running') {
+      await setPaused(false);
+      triggerServerDispatchCycle(true).catch((e) =>
+        console.error('[campaign dispatch] Erro ao disparar worker:', e)
+      );
+    } else {
+      await setPaused(true);
+      stopServerDispatchWorker();
+    }
+
     return NextResponse.json({
       success: true,
-      simulated: true,
       campaignId: params.id,
       status: newStatus,
-      message: action === 'pause' ? 'Campanha pausada.' : 'Disparo simulado com sucesso (integração WhatsApp Cloud em fila simulada).',
+      message: action === 'pause' ? 'Campanha pausada.' : 'Disparo em segundo plano ativado (2 contatos simultâneos por minuto).',
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -44,4 +55,3 @@ export async function POST(
     );
   }
 }
-

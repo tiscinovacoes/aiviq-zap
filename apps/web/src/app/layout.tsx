@@ -13,6 +13,8 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
+import GlobalDispatchRunner from "@/components/layout/GlobalDispatchRunner";
+
 export const metadata: Metadata = {
   title: "AIVIQ-ZAP | Plataforma Inteligente de Atendimento WhatsApp",
   description: "Plataforma de Atendimento Multicanal, CRM & Automação com Inteligência Artificial para WhatsApp",
@@ -29,6 +31,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <GlobalDispatchRunner />
       </body>
     </html>
   );

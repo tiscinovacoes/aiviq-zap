@@ -920,5 +920,29 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
     - Banner atualizado para `Fila Anti-Ban no Servidor (2 por min · 35s a 75s aleatório · máx 800/dia)`.
     - Feedback de enfileiramento atualizado para refletir a nova taxa de ~2 contatos/min.
 
+---
+
+## DATA: 17/09/2026 — Disparo Simultâneo (2 Contatos ao Mesmo Tempo/min) + Execução em Segundo Plano (v2.6.0)
+
+### Antigravity & Claude
+- ✅ Concluído:
+  - [x] **Disparo Simultâneo de 2 Contatos ao Mesmo Tempo (`pesquisaSenadoDispatcher.ts` & `/api/pesquisa/senado/tick`)**:
+    - `nextPendingItems(2)` com despacho em paralelo via `Promise.allSettled`.
+    - Ambos os contatos saem exatamente juntos no início de cada ciclo de 60 segundos.
+    - Intervalo fixado em exatamente 60s por rodada simultânea (~120 disparos/hora).
+  - [x] **Execução Contínua em Segundo Plano ao Sair da Tela (`GlobalDispatchRunner.tsx` & `layout.tsx`)**:
+    - Componente runner montado no nível raiz (`RootLayout`), sobrevivendo à navegação entre qualquer tela (`/inbox`, `/crm`, `/campaigns`, `/contacts`, `/reports`).
+    - Web Worker nativo (blob) para execução ininterrupta de timers, imune a congelamentos/throttling de abas em segundo plano ou minimizadas.
+    - Floating banner de telemetria visível em outras abas para acompanhar o progresso, pausar e retomar com 1 clique.
+  - [x] **Worker Autônomo de Segundo Plano no Servidor (`serverDispatchWorker.ts`)**:
+    - Loop autônomo disparado ao enfileirar contatos ou retomar a fila (`/api/pesquisa/senado/queue`).
+    - Processa a fila no backend Node mesmo com a aba fechada.
+  - [x] **Unificação com o Módulo de Campanhas (`/campaigns`)**:
+    - Wizard de campanhas enfileira automaticamente contatos importados de CSV/Excel na fila e aciona o worker em 2º plano.
+    - Botão de Pausar/Retomar em `/api/campaigns/[id]/dispatch` sincronizado com a fila do motor.
+  - [x] **Build & Validação Completa**:
+    - `next build` 100% aprovado (16/16 rotas estáticas e dinâmicas geradas com sucesso).
+
+
 
 
