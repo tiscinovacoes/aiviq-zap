@@ -102,6 +102,7 @@ export default function GlobalDispatchRunner() {
           total: s.total || 0,
           enviados: s.enviados || 0,
           erros: s.erros || 0,
+          emRetentativa: s.emRetentativa || 0,
           segundosRestantesProximo: s.segundosRestantesProximo || 0,
           fila: [],
         };
@@ -160,6 +161,7 @@ export default function GlobalDispatchRunner() {
           total: s.total || 0,
           enviados: s.enviados || 0,
           erros: s.erros || 0,
+          emRetentativa: s.emRetentativa || 0,
           segundosRestantesProximo: s.segundosRestantesProximo || 60,
           fila: [],
         };

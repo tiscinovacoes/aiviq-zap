@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import {
+  Smartphone,
   MessageSquare,
   Users,
   Vote,
@@ -180,6 +181,7 @@ export default function PesquisaSenadoKanban() {
           total: s.total || 0,
           enviados: s.enviados || 0,
           erros: s.erros || 0,
+          emRetentativa: s.emRetentativa || 0,
           segundosRestantesProximo: s.segundosRestantesProximo || 0,
           contatoAtual: undefined,
           fila: [],
@@ -367,10 +369,11 @@ export default function PesquisaSenadoKanban() {
 
   const handleExportarFalhasCSV = () => {
     if (falhasList.length === 0) return;
-    const headers = ['Telefone', 'Nome', 'Motivo da Falha', 'Tentativas', 'Data'];
+    const headers = ['Telefone', 'Nome', 'Chip que tentou', 'Motivo da Falha', 'Tentativas', 'Data'];
     const rows = falhasList.map((f) => [
       `"${f.phone}"`,
       `"${(f.name || '').replace(/"/g, '""')}"`,
+      `"${(f.instanceName || 'não registrado').replace(/"/g, '""')}"`,
       `"${(f.error || 'Falha de entrega').replace(/"/g, '""')}"`,
       f.attempts || 1,
       `"${f.createdAt || ''}"`,
@@ -640,7 +643,14 @@ export default function PesquisaSenadoKanban() {
               </span>
             )}
           </div>
-          <p className="text-[11px] text-rose-600/80 font-medium">Números s/ WhatsApp ou erro</p>
+          <p className="text-[11px] text-rose-600/80 font-medium">
+            Números s/ WhatsApp ou erro
+            {(estadoDisparador?.emRetentativa || 0) > 0 && (
+              <span className="block text-amber-700">
+                + {estadoDisparador?.emRetentativa} em retentativa
+              </span>
+            )}
+          </p>
         </div>
       </div>
 
@@ -798,6 +808,12 @@ export default function PesquisaSenadoKanban() {
                           <p className="font-semibold text-xs text-slate-900">{e.name}</p>
                           <p className="text-[11px] text-slate-500">{e.phone}</p>
                           {e.bairro && <p className="text-[10px] text-slate-400 truncate">{e.bairro}</p>}
+                          {e.instanceName && (
+                            <p className="mt-1 inline-flex items-center gap-1 text-[9px] font-mono text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5" title="Chip que abordou este eleitor">
+                              <Smartphone className="w-2.5 h-2.5 text-emerald-600" />
+                              {e.instanceName}
+                            </p>
+                          )}
                           {e.voto2Nome && (
                             <div className="mt-1.5 pt-1.5 border-t border-slate-100 text-[10px] text-slate-600 flex justify-between">
                               <span>2º voto dado:</span>
@@ -857,6 +873,12 @@ export default function PesquisaSenadoKanban() {
                           <p className="font-semibold text-xs text-slate-900">{e.name}</p>
                           <p className="text-[11px] text-slate-500">{e.phone}</p>
                           {e.bairro && <p className="text-[10px] text-slate-400 truncate">{e.bairro}</p>}
+                          {e.instanceName && (
+                            <p className="mt-1 inline-flex items-center gap-1 text-[9px] font-mono text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5" title="Chip que abordou este eleitor">
+                              <Smartphone className="w-2.5 h-2.5 text-emerald-600" />
+                              {e.instanceName}
+                            </p>
+                          )}
                           {e.voto1Nome && (
                             <div className="mt-1.5 pt-1.5 border-t border-slate-100 text-[10px] text-slate-600 flex justify-between">
                               <span>1º voto foi:</span>
@@ -1241,6 +1263,7 @@ export default function PesquisaSenadoKanban() {
                       <tr>
                         <th className="p-3">Eleitor</th>
                         <th className="p-3">Telefone</th>
+                        <th className="p-3">Chip que tentou</th>
                         <th className="p-3">Motivo da Falha</th>
                         <th className="p-3 text-center">Tentativas</th>
                         <th className="p-3 text-right">Ação</th>
@@ -1254,6 +1277,15 @@ export default function PesquisaSenadoKanban() {
                           </td>
                           <td className="p-3 font-mono text-slate-600">
                             {falha.phone}
+                          </td>
+                          <td className="p-3">
+                            {falha.instanceName ? (
+                              <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[11px] font-mono text-slate-700">
+                                {falha.instanceName}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">não registrado</span>
+                            )}
                           </td>
                           <td className="p-3 text-rose-700">
                             <span className="inline-flex items-center gap-1 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-[11px] font-medium">

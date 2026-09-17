@@ -14,6 +14,7 @@ export interface QueueItem {
   bairro?: string;
   status: 'pendente' | 'processando' | 'enviado' | 'erro';
   attempts: number;
+  instanceName?: string;
 }
 
 export interface QueueStatus {
@@ -21,6 +22,8 @@ export interface QueueStatus {
   enviados: number;
   erros: number;
   pendentes: number;
+  /** Pendentes que JA falharam ao menos uma vez e estao em retentativa. */
+  emRetentativa: number;
   pausado: boolean;
   ativo: boolean;
   segundosRestantesProximo: number;
@@ -166,12 +169,13 @@ export async function getQueueStatus(): Promise<QueueStatus> {
     const ctrl = global.__aiviq_queue_ctrl!;
     return {
       total: q.length, enviados, erros, pendentes,
+      emRetentativa: q.filter((i) => i.status === 'pendente' && i.attempts > 0).length,
       pausado: ctrl.paused, ativo: pendentes > 0 && !ctrl.paused,
       segundosRestantesProximo: secsUntil(ctrl.nextAllowedAt),
     };
   }
   const ctx = await getServiceContext();
-  if (!ctx) return { total: 0, enviados: 0, erros: 0, pendentes: 0, pausado: false, ativo: false, segundosRestantesProximo: 0 };
+  if (!ctx) return { total: 0, enviados: 0, erros: 0, pendentes: 0, emRetentativa: 0, pausado: false, ativo: false, segundosRestantesProximo: 0 };
 
   const counts: Record<string, number> = { pendente: 0, processando: 0, enviado: 0, erro: 0 };
   // Conta por status (3 queries baratas por índice, evita puxar linhas).
@@ -183,6 +187,15 @@ export async function getQueueStatus(): Promise<QueueStatus> {
       .eq('status', s);
     counts[s] = count || 0;
   }
+  // Pendentes que ja falharam ao menos uma vez (falha parcial, invisivel antes:
+  // so viravam 'erro' na 3a tentativa).
+  const { count: retry } = await ctx.db
+    .from('dispatch_queue')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', ctx.organizationId)
+    .eq('status', 'pendente')
+    .gt('attempts', 0);
+
   const { data: ctrl } = await ctx.db
     .from('dispatch_control')
     .select('paused, next_allowed_at')
@@ -195,6 +208,7 @@ export async function getQueueStatus(): Promise<QueueStatus> {
     enviados: counts.enviado,
     erros: counts.erro,
     pendentes: counts.pendente + counts.processando,
+    emRetentativa: retry || 0,
     pausado: paused,
     ativo: counts.pendente + counts.processando > 0 && !paused,
     segundosRestantesProximo: secsUntil(nextMs),
@@ -362,7 +376,12 @@ export async function markItemSent(id: string, instanceName: string): Promise<vo
 }
 
 /** Incrementa tentativas; marca 'erro' após 3 falhas. Retorna se falhou de vez. */
-export async function markItemError(id: string, attempts: number, err: string): Promise<{ failed: boolean }> {
+export async function markItemError(
+  id: string,
+  attempts: number,
+  err: string,
+  instanceName?: string
+): Promise<{ failed: boolean }> {
   const failed = attempts + 1 >= 3;
   if (isPlaceholderEnv()) {
     const it = (global.__aiviq_queue || []).find((i) => i.id === id);
@@ -373,7 +392,15 @@ export async function markItemError(id: string, attempts: number, err: string): 
   if (!ctx) return { failed };
   await ctx.db
     .from('dispatch_queue')
-    .update({ attempts: attempts + 1, error: err.slice(0, 300), status: failed ? 'erro' : 'pendente' })
+    .update({
+      attempts: attempts + 1,
+      error: err.slice(0, 300),
+      status: failed ? 'erro' : 'pendente',
+      // Registra em QUAL chip a falha aconteceu -- antes so o sucesso gravava
+      // isso, entao a auditoria de falhas nao sabia dizer qual numero falhou.
+      ...(instanceName ? { instance_name: instanceName } : {}),
+      claimed_at: null,
+    })
     .eq('organization_id', ctx.organizationId)
     .eq('id', id);
   return { failed };
@@ -386,6 +413,7 @@ export interface FailedQueueItem {
   bairro?: string;
   error?: string;
   attempts: number;
+  instanceName?: string;
   createdAt?: string;
 }
 
@@ -407,7 +435,7 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
   if (!ctx) return [];
   const { data } = await ctx.db
     .from('dispatch_queue')
-    .select('id, phone, name, bairro, error, attempts, created_at')
+    .select('id, phone, name, bairro, error, attempts, instance_name, created_at')
     .eq('organization_id', ctx.organizationId)
     .eq('status', 'erro')
     .order('created_at', { ascending: false })
@@ -419,6 +447,7 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
     name: r.name,
     bairro: r.bairro,
     error: r.error || 'Falha de entrega no WhatsApp',
+    instanceName: r.instance_name || undefined,
     attempts: r.attempts || 1,
     createdAt: r.created_at,
   }));
@@ -440,7 +469,8 @@ export async function requeueFailedItems(): Promise<number> {
   if (!ctx) return 0;
   const { data } = await ctx.db
     .from('dispatch_queue')
-    .update({ status: 'pendente', attempts: 0, error: null })
+    // Preserva o texto do erro anterior: zerar apagava o historico da auditoria.
+    .update({ status: 'pendente', attempts: 0, claimed_at: null })
     .eq('organization_id', ctx.organizationId)
     .eq('status', 'erro')
     .select('id');

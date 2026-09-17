@@ -75,7 +75,7 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
     const r = await sendRealMessageDetailed(item.phone, msg1, instancia, ANTIBAN.PRESENCA_MS);
 
     if (!r.ok) {
-      await markItemError(item.id, item.attempts || 0, r.error || 'Falha no envio pelo WhatsApp');
+      await markItemError(item.id, item.attempts || 0, r.error || 'Falha no envio pelo WhatsApp', instancia);
       await releaseDispatchSlot(instancia); // nada saiu do chip: devolve a cota
       return false;
     }
@@ -111,7 +111,7 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
 
     return true;
   } catch (err: any) {
-    await markItemError(item.id, item.attempts || 0, err?.message || 'Erro inesperado no envio');
+    await markItemError(item.id, item.attempts || 0, err?.message || 'Erro inesperado no envio', instancia);
     await releaseDispatchSlot(instancia);
     return false;
   }

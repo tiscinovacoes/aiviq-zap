@@ -578,6 +578,31 @@ function mapConnectionStatus(raw?: string): EvolutionLiveInstance['status'] {
 let liveInstancesCache: CacheEntry<EvolutionLiveInstance[]> | null = null;
 
 /** Consulta o servidor Evolution e retorna TODAS as instâncias existentes nele. */
+/**
+ * Reconciliacao de status: o /instance/fetchInstances devolve um
+ * `connectionStatus` que fica preso em "connecting" para sessoes que na
+ * verdade ja morreram (socket Baileys derrubado, device_removed, etc.). O
+ * /instance/connectionState de cada instancia diz a verdade.
+ *
+ * Sem isso a tela pinta de amarelo "Conectando..." um chip que esta `close`, e
+ * o operador fica esperando uma conexao que nunca vem -- achando que tem N
+ * chips no cluster quando tem menos.
+ */
+async function confirmarConnecting(name: string): Promise<EvolutionLiveInstance['status']> {
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${encodeURIComponent(name)}`, {
+      headers: { apikey: EVOLUTION_API_KEY },
+      signal: AbortSignal.timeout(3500),
+    });
+    if (!res.ok) return 'disconnected';
+    const data = await res.json().catch(() => ({}));
+    return mapConnectionStatus(data?.instance?.state || data?.state);
+  } catch {
+    return 'disconnected';
+  }
+}
+
+/** Consulta o servidor Evolution e retorna TODAS as instâncias existentes nele. */
 export async function fetchLiveEvolutionInstances(forceRefresh = false): Promise<EvolutionLiveInstance[]> {
   const now = Date.now();
   if (!forceRefresh && liveInstancesCache && now - liveInstancesCache.timestamp < DATA_CACHE_TTL_MS) {
@@ -600,6 +625,16 @@ export async function fetchLiveEvolutionInstances(forceRefresh = false): Promise
       profileName: i.profileName || i.instance?.profileName || undefined,
       profilePicUrl: i.profilePicUrl || i.instance?.profilePicUrl || undefined,
     })).filter((i: EvolutionLiveInstance) => i.instanceName);
+
+    // So os "connecting" precisam de segunda opiniao: 'open' e 'close' a lista
+    // reporta corretamente. Em paralelo, para nao somar latencia.
+    const pendentes = instances.filter((i: EvolutionLiveInstance) => i.status === 'connecting');
+    if (pendentes.length > 0) {
+      const reais = await Promise.all(pendentes.map((i: EvolutionLiveInstance) => confirmarConnecting(i.instanceName)));
+      pendentes.forEach((i: EvolutionLiveInstance, idx: number) => {
+        i.status = reais[idx];
+      });
+    }
 
     liveInstancesCache = { data: instances, timestamp: now };
     return instances;

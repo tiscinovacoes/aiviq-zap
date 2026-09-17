@@ -1060,3 +1060,30 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
   - [ ] **`014_claim_instance_slot.sql` ainda NÃO aplicada em produção** — a aplicação via MCP foi barrada pelo classificador de modo automático (ação classificada como deploy de produção). Precisa ser aplicada no SQL Editor antes do teste, senão `claimInstanceSlot()` falha e (por segurança) nenhum chip envia.
   - [ ] Deploy da v2.8.0/v2.8.1/v2.8.2 não confirmado — MCP da Vercel segue sem enxergar a conta (`teams: []`).
 
+
+---
+
+## DATA: 17/09/2026 — Status Real das Instâncias, Chip na Auditoria e Integridade da Fila (v2.8.3)
+
+### Claude
+- 🐛 **Status "Conectando…" fantasma**: o usuário relatou ter 3 instâncias mas a tela mostrar 1. Consulta direta ao servidor Evolution mostrou que a **tela estava certa sobre o total** (só `paloma` = `open`), mas errada no meio-termo: o `/instance/fetchInstances` devolve `connectionStatus: "connecting"` para sessões que o `/instance/connectionState/<inst>` reporta como `close` (Khomp e aiviq_inbox_01). A tela pintava de amarelo "Conectando…" chips mortos, e o operador ficava esperando uma conexão que nunca viria — daí a contagem errada.
+  - **Correção (`evolutionService.ts`)**: `fetchLiveEvolutionInstances()` agora reconcilia — só os `connecting` levam uma segunda consulta ao `connectionState` (em paralelo, sem somar latência); `open` e `close` a lista reporta corretamente. Chip morto passa a aparecer como **Desconectado**, com botão de QR.
+  - Nota: o disparo nunca esteve em risco por isso — `getConnectedDispatchInstances()` filtra por `status === 'connected'`, que só casa com `open`.
+- ✅ **Registro do chip que enviou** (pedido do usuário):
+  - `markItemError()` passou a gravar `instance_name` — antes **só o sucesso** registrava o chip, e os 7 erros em produção estavam com o campo nulo.
+  - Coluna **"Chip que tentou"** na tabela de auditoria de falhas e no CSV exportado.
+  - Badge com o chip nos cards de eleitor do Kanban (`e.instanceName`), mostrando por qual número a pessoa foi abordada.
+- ✅ **Falhas no KPI** (pedido do usuário):
+  - `getQueueStatus()` passou a expor `emRetentativa` = pendentes que já falharam ao menos uma vez. Antes, um contato só aparecia no KPI na **3ª** falha (quando vira `erro`); as duas primeiras eram invisíveis e um chip falhando tudo parecia "parado".
+  - O card "Falhas no Disparo" mostra a linha `+ N em retentativa`.
+  - `requeueFailedItems()` deixou de zerar o campo `error` — apagava o histórico da auditoria ao reenfileirar.
+- ✅ **Separação da lista / anti-duplicidade entre chips** (pedido do usuário):
+  - `db/migrations/015_queue_integrity.sql`: índice **único parcial** `(organization_id, phone) WHERE status IN ('pendente','processando')`.
+  - O dedup de `enqueueContacts()` é no aplicativo e portanto sujeito a corrida: duas importações simultâneas leem a fila antes de qualquer uma inserir, as duas passam, e o contato entra duplicado. Como o claim distribui 1 linha por chip, as duas linhas do mesmo telefone iriam para **chips diferentes** e a pessoa receberia a pesquisa duas vezes.
+  - O índice é parcial (só linhas ativas), então uma campanha futura ainda pode reabordar quem já foi concluído.
+  - A migration limpa duplicatas ativas pré-existentes antes de criar o índice (hoje são 0: 1.398 linhas, 1.398 telefones distintos).
+  - `canonicalDigits()` já colapsava o 9º dígito (55+DDD+8 finais), então as variantes de 12 e 13 dígitos do mesmo número já caíam na mesma chave.
+- ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
+- ⏳ Bloqueado por:
+  - [ ] **`015_queue_integrity.sql` precisa ser aplicada no SQL Editor** — o MCP de migration está barrado pelo classificador de modo automático.
+
