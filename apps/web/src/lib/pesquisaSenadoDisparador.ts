@@ -2,6 +2,7 @@ import { createOrUpdateSessionByPhone } from './pesquisaSenadoStore';
 import { gerarMensagem1 } from './pesquisaSenado';
 import { sendRealMessage } from './evolutionService';
 import { addBotDispatchedMessage } from './conversationStore';
+import { sincronizarContatoEleitor } from './pesquisaContatoSync';
 
 export interface ItemFilaDisparo {
   id: string;
@@ -79,6 +80,18 @@ export function carregarFila(itens: Array<{ name: string; phone: string; bairro?
       });
     } catch (e) {
       console.error('[Disparador] Erro ao registrar conversa no inbox:', e);
+    }
+
+    // 3. Registra e persiste imediatamente o contato e informações no Banco de Dados (CRM)
+    try {
+      sincronizarContatoEleitor({
+        name: cleanName,
+        phone: cleanPhone,
+        bairro,
+        etapa: 'disparado',
+      });
+    } catch (e) {
+      console.error('[Disparador] Erro ao sincronizar contato no banco:', e);
     }
 
     return {
@@ -174,11 +187,25 @@ export async function processarProximoDisparo(): Promise<void> {
       proximo.enviadoEm = new Date().toISOString();
       estado.enviados += 1;
       console.log(`[Disparador Pesquisa Senado] Msg 1 enviada para ${proximo.name} (${proximo.phone})`);
+      
+      sincronizarContatoEleitor({
+        name: proximo.name,
+        phone: proximo.phone,
+        bairro: proximo.bairro,
+        etapa: 'enviado',
+      }).catch((e) => console.error('[Disparador] Erro ao atualizar status no banco:', e));
     } else {
       proximo.status = 'erro';
       proximo.erroMsg = 'Falha no envio pelo WhatsApp';
       estado.erros += 1;
       console.warn(`[Disparador Pesquisa Senado] Falha ao enviar para ${proximo.phone}`);
+
+      sincronizarContatoEleitor({
+        name: proximo.name,
+        phone: proximo.phone,
+        bairro: proximo.bairro,
+        etapa: 'erro_envio',
+      }).catch((e) => console.error('[Disparador] Erro ao atualizar status de erro no banco:', e));
     }
   } catch (err: any) {
     proximo.status = 'erro';

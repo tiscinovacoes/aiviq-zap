@@ -16,6 +16,7 @@ import {
 } from '@/lib/pesquisaSenado';
 import { sendRealMessage } from '@/lib/evolutionService';
 import { addBotDispatchedMessage } from '@/lib/conversationStore';
+import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,6 +82,14 @@ export async function POST(req: NextRequest) {
         console.error('[Pesquisa Manual Inbox Sync Error]:', err);
       }
 
+      // Sincroniza imediatamente o contato com o banco de dados
+      sincronizarContatoEleitor({
+        name: session.name,
+        phone: cleanPhone,
+        bairro,
+        etapa: 'disparado',
+      }).catch((e) => console.error('[API Pesquisa] Erro sync contato:', e));
+
       return NextResponse.json({
         success: true,
         message: 'Pesquisa iniciada com sucesso (Msg 1 enviada)',
@@ -96,6 +105,13 @@ export async function POST(req: NextRequest) {
       if (session.etapa === 'disparado') {
         session.etapa = 'aguardando_voto1';
         savePesquisaSession(session);
+        sincronizarContatoEleitor({
+          name: session.name,
+          phone: cleanPhone,
+          bairro: session.bairro,
+          etapa: 'aguardando_voto1',
+        }).catch((e) => console.error('[API Pesquisa] Erro sync contato:', e));
+
         return NextResponse.json({
           success: true,
           proximaMensagem: `${gerarMensagem2()}\n\n${gerarMensagem3()}`,
@@ -110,6 +126,14 @@ export async function POST(req: NextRequest) {
           session.voto1Nome = c1.nome;
           session.etapa = 'aguardando_voto2';
           savePesquisaSession(session);
+          sincronizarContatoEleitor({
+            name: session.name,
+            phone: cleanPhone,
+            bairro: session.bairro,
+            voto1Nome: c1.nome,
+            etapa: 'aguardando_voto2',
+          }).catch((e) => console.error('[API Pesquisa] Erro sync contato:', e));
+
           return NextResponse.json({
             success: true,
             proximaMensagem: gerarMensagemSegundoVoto(c1.id),
@@ -125,6 +149,15 @@ export async function POST(req: NextRequest) {
           session.voto2Nome = c2.nome;
           session.etapa = 'concluido';
           savePesquisaSession(session);
+          sincronizarContatoEleitor({
+            name: session.name,
+            phone: cleanPhone,
+            bairro: session.bairro,
+            voto1Nome: session.voto1Nome,
+            voto2Nome: c2.nome,
+            etapa: 'concluido',
+          }).catch((e) => console.error('[API Pesquisa] Erro sync contato:', e));
+
           return NextResponse.json({
             success: true,
             proximaMensagem: gerarMensagemAgradecimento(),

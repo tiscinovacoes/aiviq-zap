@@ -63,7 +63,9 @@ export default function ContactsPage() {
     setIsModalOpen(false);
   };
 
-  const allTags = ['all', 'Urgente', 'Saúde', 'Infraestrutura', 'Iluminação', 'Zeladoria Urbana'];
+  const baseTags = ['all', 'Pesquisa Senado MS', 'Eleitor MS', 'Urgente', 'Saúde', 'Infraestrutura'];
+  const contactTags = Array.from(new Set(contacts.flatMap((c) => c.tags || [])));
+  const allTags = Array.from(new Set([...baseTags, ...contactTags])).slice(0, 16);
 
   return (
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
@@ -202,19 +204,30 @@ export default function ContactsPage() {
 
                       {/* Tags */}
                       <td className="py-4 px-6">
-                        <div className="flex gap-1.5 flex-wrap">
-                          {contact.tags.map((t) => (
-                            <span
-                              key={t}
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                                t === 'Urgente'
-                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              }`}
-                            >
-                              {t}
-                            </span>
-                          ))}
+                        <div className="flex gap-1.5 flex-wrap max-w-sm">
+                          {contact.tags.map((t) => {
+                            const isUrgent = t === 'Urgente';
+                            const isPesquisa = t.includes('Pesquisa') || t.includes('Eleitor');
+                            const isVoto1 = t.includes('1º Voto');
+                            const isVoto2 = t.includes('2º Voto');
+                            const isStatus = t.startsWith('Status:');
+
+                            let cls = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                            if (isUrgent) cls = 'bg-rose-50 text-rose-700 border-rose-200 font-semibold';
+                            else if (isVoto1) cls = 'bg-indigo-50 text-indigo-700 border-indigo-200 font-semibold';
+                            else if (isVoto2) cls = 'bg-purple-50 text-purple-700 border-purple-200 font-semibold';
+                            else if (isPesquisa) cls = 'bg-blue-50 text-blue-700 border-blue-200 font-medium';
+                            else if (isStatus) cls = 'bg-amber-50 text-amber-700 border-amber-200';
+
+                            return (
+                              <span
+                                key={t}
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${cls}`}
+                              >
+                                {t}
+                              </span>
+                            );
+                          })}
                         </div>
                       </td>
 

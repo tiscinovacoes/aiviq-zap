@@ -16,6 +16,7 @@ import {
   validarVoto,
   obterCandidatoPorId,
 } from '@/lib/pesquisaSenado';
+import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -209,6 +210,12 @@ export async function POST(req: NextRequest) {
             if (session.etapa === 'disparado') {
               session.etapa = 'aguardando_voto1';
               savePesquisaSession(session);
+              sincronizarContatoEleitor({
+                name: session.name,
+                phone: msg.from,
+                bairro: session.bairro,
+                etapa: 'aguardando_voto1',
+              }).catch((e) => console.error('[Webhook] Erro sync contato:', e));
 
               const msg2 = gerarMensagem2();
               const msg3 = gerarMensagem3();
@@ -241,6 +248,13 @@ export async function POST(req: NextRequest) {
                   session.voto1Nome = candidato1.nome;
                   session.etapa = 'aguardando_voto2';
                   savePesquisaSession(session);
+                  sincronizarContatoEleitor({
+                    name: session.name,
+                    phone: msg.from,
+                    bairro: session.bairro,
+                    voto1Nome: candidato1.nome,
+                    etapa: 'aguardando_voto2',
+                  }).catch((e) => console.error('[Webhook] Erro sync contato 1º voto:', e));
 
                   // Envia Msg 4 com a lista atualizada (sem o candidato votado)
                   const msg4 = gerarMensagemSegundoVoto(candidato1.id);
@@ -274,6 +288,14 @@ export async function POST(req: NextRequest) {
                   session.voto2Nome = candidato2.nome;
                   session.etapa = 'concluido';
                   savePesquisaSession(session);
+                  sincronizarContatoEleitor({
+                    name: session.name,
+                    phone: msg.from,
+                    bairro: session.bairro,
+                    voto1Nome: session.voto1Nome,
+                    voto2Nome: candidato2.nome,
+                    etapa: 'concluido',
+                  }).catch((e) => console.error('[Webhook] Erro sync contato 2º voto:', e));
 
                   // Envia Msg 5 com despedida de acordo com o período MS
                   const msg5 = gerarMensagemAgradecimento();

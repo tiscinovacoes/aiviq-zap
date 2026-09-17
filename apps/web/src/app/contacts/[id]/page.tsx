@@ -17,6 +17,7 @@ import {
   Plus,
   MessageSquare,
   Loader2,
+  BarChart3,
 } from 'lucide-react';
 import NavigationRail from '@/components/layout/NavigationRail';
 import { crmService } from '@/services/crmService';
@@ -223,6 +224,45 @@ export default function CitizenCRMPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Cartão de Voto / Pesquisa Eleitoral se presente */}
+                {(contact.custom_attributes?.origem?.includes('Pesquisa') || contact.custom_attributes?.voto1) && (
+                  <div className="bg-gradient-to-br from-indigo-50/90 to-purple-50/70 border border-indigo-200 rounded-2xl p-5 shadow-xs text-left">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
+                          <BarChart3 className="w-4 h-4" />
+                        </div>
+                        <h3 className="text-xs font-bold text-indigo-950 uppercase tracking-wider">
+                          Pesquisa Senado MS 2026
+                        </h3>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200 uppercase tracking-wider">
+                        {contact.custom_attributes.etapa || 'Registrado'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 text-xs">
+                      <div className="p-2.5 rounded-xl bg-white border border-indigo-100 flex items-center justify-between shadow-2xs">
+                        <span className="text-slate-500 font-medium">1º Voto:</span>
+                        <span className="font-bold text-indigo-900">
+                          {contact.custom_attributes.voto1 || 'Aguardando voto'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-white border border-indigo-100 flex items-center justify-between shadow-2xs">
+                        <span className="text-slate-500 font-medium">2º Voto:</span>
+                        <span className="font-bold text-purple-900">
+                          {contact.custom_attributes.voto2 || 'Aguardando voto'}
+                        </span>
+                      </div>
+                      {contact.custom_attributes.atualizadoEm && (
+                        <p className="text-[10px] text-slate-400 text-right pt-1">
+                          Última atualização: {new Date(contact.custom_attributes.atualizadoEm).toLocaleString('pt-BR')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Resumo */}
                 <div className="grid grid-cols-3 gap-3">

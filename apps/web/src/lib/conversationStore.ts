@@ -67,11 +67,28 @@ export function getCustomContacts(): Contact[] {
 
 export function addCustomContact(contact: Contact) {
   if (!global.__aiviq_custom_contacts) global.__aiviq_custom_contacts = [];
-  // Evitar duplicados por telefone
-  const exists = global.__aiviq_custom_contacts.find(
-    (c) => c.phone && contact.phone && c.phone.replace(/\D/g, '') === contact.phone.replace(/\D/g, '')
+  const cleanPhone = contact.phone ? contact.phone.replace(/\D/g, '') : '';
+  
+  // Localiza contato existente pelo telefone
+  const existsIdx = global.__aiviq_custom_contacts.findIndex(
+    (c) => c.phone && cleanPhone && c.phone.replace(/\D/g, '') === cleanPhone
   );
-  if (!exists) {
+
+  if (existsIdx >= 0) {
+    const existing = global.__aiviq_custom_contacts[existsIdx];
+    const mergedTags = Array.from(new Set([...(existing.tags || []), ...(contact.tags || [])]));
+    const mergedCustom = {
+      ...(existing.custom_attributes || {}),
+      ...(contact.custom_attributes || {}),
+    };
+    global.__aiviq_custom_contacts[existsIdx] = {
+      ...existing,
+      name: contact.name && !contact.name.startsWith('WhatsApp') ? contact.name : existing.name,
+      bairro: contact.bairro || existing.bairro,
+      tags: mergedTags,
+      custom_attributes: mergedCustom,
+    };
+  } else {
     global.__aiviq_custom_contacts.unshift(contact);
   }
 }
