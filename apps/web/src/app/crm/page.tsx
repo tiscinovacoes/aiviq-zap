@@ -14,6 +14,7 @@ import {
   CalendarClock,
   Loader2,
   GripVertical,
+  Vote,
 } from 'lucide-react';
 import {
   DndContext,
@@ -30,6 +31,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import NavigationRail from '@/components/layout/NavigationRail';
+import PesquisaSenadoKanban from '@/components/crm/PesquisaSenadoKanban';
 import { useCRMStore } from '@/store/useCRMStore';
 import { Protocolo, ProtocoloStatus, TipoManifestacao, Prioridade } from '@/types';
 
@@ -231,6 +233,7 @@ export default function CRMPage() {
     isLoading,
   } = useCRMStore();
 
+  const [moduloAtivo, setModuloAtivo] = useState<'ouvidoria' | 'pesquisa_senado'>('pesquisa_senado');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [tipo, setTipo] = useState<TipoManifestacao>('solicitacao');
@@ -323,30 +326,56 @@ export default function CRMPage() {
 
       {/* Main Workspace */}
       <main className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
-        {/* Top Header */}
+        {/* Top Header com Tabs de Módulo */}
         <header className="h-16 px-8 border-b border-slate-200 flex items-center justify-between bg-white/95 backdrop-blur-md shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center">
-              <FileText className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="font-bold text-base text-slate-900">Protocolos da Ouvidoria (Kanban)</h1>
-              <p className="text-xs text-slate-500">
-                Acompanhamento das manifestações do cidadão por situação de atendimento
-              </p>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                onClick={() => setModuloAtivo('pesquisa_senado')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                  moduloAtivo === 'pesquisa_senado'
+                    ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Vote className="w-4 h-4 text-emerald-600" />
+                <span>Pesquisa Senado MS 2026</span>
+                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-emerald-100 text-emerald-800 uppercase">
+                  Robô Ativo
+                </span>
+              </button>
+
+              <button
+                onClick={() => setModuloAtivo('ouvidoria')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                  moduloAtivo === 'ouvidoria'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <FileText className="w-4 h-4 text-slate-500" />
+                <span>Protocolos Ouvidoria</span>
+              </button>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Novo Protocolo</span>
-            </button>
+            {moduloAtivo === 'ouvidoria' && (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Novo Protocolo</span>
+              </button>
+            )}
           </div>
         </header>
+
+        {moduloAtivo === 'pesquisa_senado' ? (
+          <PesquisaSenadoKanban />
+        ) : (
+          <>
 
         {/* Hero KPIs Bar */}
         <div className="px-8 py-4 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-4 shrink-0">
@@ -423,6 +452,8 @@ export default function CRMPage() {
               ) : null}
             </DragOverlay>
           </DndContext>
+        )}
+          </>
         )}
       </main>
 

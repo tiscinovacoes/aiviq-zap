@@ -3,7 +3,19 @@ import crypto from 'crypto';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { addInboundMessage } from '@/lib/conversationStore';
-import { invalidateEvolutionCache } from '@/lib/evolutionService';
+import { invalidateEvolutionCache, sendRealMessage } from '@/lib/evolutionService';
+import {
+  getPesquisaSessionByPhone,
+  savePesquisaSession,
+} from '@/lib/pesquisaSenadoStore';
+import {
+  gerarMensagem2,
+  gerarMensagem3,
+  gerarMensagemSegundoVoto,
+  gerarMensagemAgradecimento,
+  validarVoto,
+  obterCandidatoPorId,
+} from '@/lib/pesquisaSenado';
 
 export const dynamic = 'force-dynamic';
 
@@ -185,6 +197,93 @@ export async function POST(req: NextRequest) {
 
       // Invalida o cache desta instância para o novo recebido refletir de imediato.
       invalidateEvolutionCache(instanceName);
+
+      // ================= PROCESSAMENTO AUTOMÁTICO: PESQUISA ELEITORAL SENADO MS =================
+      for (const msg of incomingMessages) {
+        try {
+          const session = getPesquisaSessionByPhone(msg.from);
+          if (session && session.etapa !== 'concluido' && session.etapa !== 'recusado') {
+            const cleanText = msg.text.trim();
+
+            // Etapa 1: Lead respondeu à saudação inicial (Msg 1) -> Dispara Msg 2 e Msg 3
+            if (session.etapa === 'disparado') {
+              session.etapa = 'aguardando_voto1';
+              savePesquisaSession(session);
+
+              // Envia Msg 2
+              await sendRealMessage(msg.from, gerarMensagem2(), instanceName);
+              // Pequena pausa natural de leitura
+              await new Promise((r) => setTimeout(r, 600));
+              // Envia Msg 3
+              await sendRealMessage(msg.from, gerarMensagem3(), instanceName);
+              console.log(`[Pesquisa Senado MS] Respondeu saudação! Enviadas Msg 2 e Msg 3 para ${msg.from}`);
+            }
+
+            // Etapa 2: Aguardando 1º voto
+            else if (session.etapa === 'aguardando_voto1') {
+              const votoValido = validarVoto(cleanText);
+              if (!votoValido) {
+                await sendRealMessage(
+                  msg.from,
+                  `Por favor, digite apenas o número correspondente à sua opção (de 1 a 12).`,
+                  instanceName
+                );
+              } else {
+                const candidato1 = obterCandidatoPorId(votoValido);
+                if (candidato1) {
+                  session.voto1Id = candidato1.id;
+                  session.voto1Nome = candidato1.nome;
+                  session.etapa = 'aguardando_voto2';
+                  savePesquisaSession(session);
+
+                  // Envia Msg 4 com a lista atualizada (sem o candidato votado)
+                  const msg4 = gerarMensagemSegundoVoto(candidato1.id);
+                  await sendRealMessage(msg.from, msg4, instanceName);
+                  console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) computado para ${msg.from}. Msg 4 enviada.`);
+                }
+              }
+            }
+
+            // Etapa 3: Aguardando 2º voto
+            else if (session.etapa === 'aguardando_voto2') {
+              const votoValido = validarVoto(cleanText);
+              if (!votoValido) {
+                await sendRealMessage(
+                  msg.from,
+                  `Por favor, digite apenas o número da sua escolha para o segundo voto.`,
+                  instanceName
+                );
+              } else if (
+                session.voto1Id &&
+                session.voto1Id === votoValido &&
+                votoValido <= 10
+              ) {
+                // Segundo voto deve ser diferente do primeiro (conforme instrução)
+                await sendRealMessage(
+                  msg.from,
+                  `O segundo voto deve ser diferente do primeiro.\nPor favor, escolha outro candidato da lista acima.`,
+                  instanceName
+                );
+              } else {
+                const candidato2 = obterCandidatoPorId(votoValido);
+                if (candidato2) {
+                  session.voto2Id = candidato2.id;
+                  session.voto2Nome = candidato2.nome;
+                  session.etapa = 'concluido';
+                  savePesquisaSession(session);
+
+                  // Envia Msg 5 com despedida de acordo com o período MS
+                  const msg5 = gerarMensagemAgradecimento();
+                  await sendRealMessage(msg.from, msg5, instanceName);
+                  console.log(`[Pesquisa Senado MS] 2º Voto (${candidato2.nome}) computado para ${msg.from}. Pesquisa finalizada com sucesso!`);
+                }
+              }
+            }
+          }
+        } catch (pesqErr) {
+          console.error('[Pesquisa Senado Handler Error]:', pesqErr);
+        }
+      }
 
       // 2. Registra no Supabase caso configurado
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
