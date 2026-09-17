@@ -122,11 +122,12 @@ export async function runTickCore(): Promise<TickCoreResult> {
 
         enviadosNoTick.push(item.phone);
       } else {
-        await markItemError(item.id, item.attempts || 0, 'Falha no envio pelo WhatsApp');
+        const errorReason = r.error || 'Falha no envio pelo WhatsApp';
+        await markItemError(item.id, item.attempts || 0, errorReason);
         falhasNoTick.push(item.phone);
       }
     } catch (err: any) {
-      await markItemError(item.id, item.attempts || 0, err.message || 'erro');
+      await markItemError(item.id, item.attempts || 0, err.message || 'Erro inesperado no envio');
       falhasNoTick.push(item.phone);
     }
   });

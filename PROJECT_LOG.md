@@ -943,6 +943,26 @@ O commit `5cb3ba1` ("support demo credentials when Supabase is in placeholder/st
   - [x] **Build & Validação Completa**:
     - `next build` 100% aprovado (16/16 rotas estáticas e dinâmicas geradas com sucesso).
 
+---
+
+## DATA: 17/09/2026 — KPI de Falhas de Disparo + Auditoria e Re-enfileiramento + Sincronização Anti-Cache (v2.6.1)
+
+### Antigravity & Claude
+- ✅ Concluído:
+  - [x] **Sincronização em Tempo Real da Contagem (Anti-Cache)**:
+    - Adicionados cabeçalhos HTTP `Cache-Control: no-store, no-cache, must-revalidate` na rota `/api/pesquisa/senado/queue`.
+    - Chamadas do front-end com query string dinâmica `?t=Date.now()` para eliminar leituras de cache 304 do navegador.
+    - O progresso avança em tempo real conforme os disparos simultâneos acontecem.
+  - [x] **5º Card de KPI no Kanban ("Falhas no Disparo")**:
+    - Exibe contagem destacada de contatos rejeitados pela API ou sem WhatsApp.
+    - Card clicável com badge indicativo "Verificar ➔" quando houver falhas registradas.
+  - [x] **Modal de Auditoria e Re-enfileiramento de Falhas**:
+    - Lista detalhada de contatos falhos com Nome, Telefone, Motivo do Erro capturado pela Evolution API e contador de tentativas.
+    - Link rápido para testar o número no WhatsApp Web (`wa.me/<numero>`).
+    - Botão para exportar relatório analítico em formato CSV (`falhas_disparo_YYYY-MM-DD.csv`).
+    - Botão para "Tentar Novamente Todas" (re-enfileira os números falhos para nova tentativa automática de envio).
+
+
 
 
 

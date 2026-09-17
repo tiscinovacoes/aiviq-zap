@@ -247,3 +247,73 @@ export async function markItemError(id: string, attempts: number, err: string): 
     .eq('id', id);
   return { failed };
 }
+
+export interface FailedQueueItem {
+  id: string;
+  phone: string;
+  name?: string;
+  bairro?: string;
+  error?: string;
+  attempts: number;
+  createdAt?: string;
+}
+
+export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
+  if (isPlaceholderEnv()) {
+    return (global.__aiviq_queue || [])
+      .filter((i) => i.status === 'erro')
+      .slice(0, limit)
+      .map((i) => ({
+        id: i.id,
+        phone: i.phone,
+        name: i.name,
+        bairro: i.bairro,
+        error: 'Falha no envio WhatsApp',
+        attempts: i.attempts,
+      }));
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return [];
+  const { data } = await ctx.db
+    .from('dispatch_queue')
+    .select('id, phone, name, bairro, error, attempts, created_at')
+    .eq('organization_id', ctx.organizationId)
+    .eq('status', 'erro')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  return (data || []).map((r: any) => ({
+    id: r.id,
+    phone: r.phone,
+    name: r.name,
+    bairro: r.bairro,
+    error: r.error || 'Falha de entrega no WhatsApp',
+    attempts: r.attempts || 1,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function requeueFailedItems(): Promise<number> {
+  if (isPlaceholderEnv()) {
+    let count = 0;
+    (global.__aiviq_queue || []).forEach((i) => {
+      if (i.status === 'erro') {
+        i.status = 'pendente';
+        i.attempts = 0;
+        count++;
+      }
+    });
+    return count;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return 0;
+  const { data } = await ctx.db
+    .from('dispatch_queue')
+    .update({ status: 'pendente', attempts: 0, error: null })
+    .eq('organization_id', ctx.organizationId)
+    .eq('status', 'erro')
+    .select('id');
+
+  return data?.length || 0;
+}
+

@@ -1,22 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { enqueueContacts, setPaused, clearPending, getQueueStatus } from '@/lib/dispatchQueue';
+import {
+  enqueueContacts,
+  setPaused,
+  clearPending,
+  getQueueStatus,
+  getFailedItems,
+  requeueFailedItems,
+} from '@/lib/dispatchQueue';
 import { triggerServerDispatchCycle, stopServerDispatchWorker } from '@/lib/serverDispatchWorker';
 
 export const dynamic = 'force-dynamic';
 
-// GET: status da fila para a UI (progresso, pausado, próximo em Xs).
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+  Pragma: 'no-cache',
+  Expires: '0',
+};
+
+// GET: status da fila para a UI (progresso, pausado, próximo em Xs) + lista de falhas para auditoria.
 export async function GET() {
   try {
-    const status = await getQueueStatus();
+    const [status, falhas] = await Promise.all([
+      getQueueStatus(),
+      getFailedItems(100),
+    ]);
+
     // Se a fila estiver ativa com pendentes e sem timer rodando, aciona o worker em 2º plano
     if (status.ativo && status.pendentes > 0 && !status.pausado) {
       triggerServerDispatchCycle(false).catch((e) =>
         console.error('[queue GET] Erro ao engatilhar worker:', e)
       );
     }
-    return NextResponse.json({ success: true, status });
+
+    return NextResponse.json(
+      { success: true, status, falhas },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }
 
@@ -29,7 +53,10 @@ export async function POST(req: NextRequest) {
     if (action === 'enfileirar' || action === 'enqueue') {
       const contatos = Array.isArray(body.contatos) ? body.contatos : [];
       if (contatos.length === 0) {
-        return NextResponse.json({ success: false, error: 'Lista de contatos vazia' }, { status: 400 });
+        return NextResponse.json(
+          { success: false, error: 'Lista de contatos vazia' },
+          { status: 400, headers: NO_CACHE_HEADERS }
+        );
       }
       const r = await enqueueContacts(contatos);
       const status = await getQueueStatus();
@@ -39,13 +66,19 @@ export async function POST(req: NextRequest) {
         console.error('[queue POST enfileirar] Erro ao acionar worker:', e)
       );
 
-      return NextResponse.json({ success: true, ...r, status });
+      return NextResponse.json(
+        { success: true, ...r, status },
+        { headers: NO_CACHE_HEADERS }
+      );
     }
 
     if (action === 'pausar' || action === 'pause') {
       await setPaused(true);
       stopServerDispatchWorker();
-      return NextResponse.json({ success: true, status: await getQueueStatus() });
+      return NextResponse.json(
+        { success: true, status: await getQueueStatus() },
+        { headers: NO_CACHE_HEADERS }
+      );
     }
 
     if (action === 'retomar' || action === 'resume') {
@@ -54,18 +87,48 @@ export async function POST(req: NextRequest) {
       triggerServerDispatchCycle(true).catch((e) =>
         console.error('[queue POST retomar] Erro ao acionar worker:', e)
       );
-      return NextResponse.json({ success: true, status: await getQueueStatus() });
+      return NextResponse.json(
+        { success: true, status: await getQueueStatus() },
+        { headers: NO_CACHE_HEADERS }
+      );
     }
 
     if (action === 'parar' || action === 'clear') {
       await clearPending();
       await setPaused(true);
       stopServerDispatchWorker();
-      return NextResponse.json({ success: true, status: await getQueueStatus() });
+      return NextResponse.json(
+        { success: true, status: await getQueueStatus() },
+        { headers: NO_CACHE_HEADERS }
+      );
     }
 
-    return NextResponse.json({ success: false, error: 'Ação não reconhecida' }, { status: 400 });
+    if (action === 'reenfileirar_falhas' || action === 'requeue_errors') {
+      const reativados = await requeueFailedItems();
+      await setPaused(false);
+      triggerServerDispatchCycle(true).catch((e) =>
+        console.error('[queue POST reenfileirar_falhas] Erro:', e)
+      );
+      return NextResponse.json(
+        {
+          success: true,
+          reativados,
+          message: `${reativados} contatos com falha foram re-enfileirados.`,
+          status: await getQueueStatus(),
+          falhas: await getFailedItems(100),
+        },
+        { headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    return NextResponse.json(
+      { success: false, error: 'Ação não reconhecida' },
+      { status: 400, headers: NO_CACHE_HEADERS }
+    );
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    );
   }
 }

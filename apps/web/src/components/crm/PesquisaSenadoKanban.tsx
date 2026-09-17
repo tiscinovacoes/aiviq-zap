@@ -28,6 +28,7 @@ import {
   Square,
   ShieldCheck,
   AlertCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   RespostaEleitor,
@@ -72,6 +73,9 @@ export default function PesquisaSenadoKanban() {
   // e um cron (Vercel) consome via /api/pesquisa/senado/tick. A aba só ENFILEIRA
   // e mostra o progresso (GET /queue); fechar a aba NÃO para mais o disparo.
   const [estadoDisparador, setEstadoDisparador] = useState<EstadoDisparador | null>(null);
+  const [falhasList, setFalhasList] = useState<any[]>([]);
+  const [isFalhasModalOpen, setIsFalhasModalOpen] = useState(false);
+  const [reenfileirandoFalhas, setReenfileirandoFalhas] = useState(false);
 
   const router = useRouter();
   const [assumindoTelefone, setAssumindoTelefone] = useState<string | null>(null);
@@ -109,7 +113,10 @@ export default function PesquisaSenadoKanban() {
   const fetchDados = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/pesquisa/senado');
+      const res = await fetch(`/api/pesquisa/senado?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       const data = await res.json();
       if (data.success) {
         setSessions(data.sessions || []);
@@ -136,15 +143,34 @@ export default function PesquisaSenadoKanban() {
     };
 
     carregarTudo();
-    const interval = setInterval(carregarTudo, 5000);
-    return () => clearInterval(interval);
+    const interval = setInterval(carregarTudo, 4000);
+
+    // Escuta evento em tempo real despachado pelo GlobalDispatchRunner ao disparar em segundo plano
+    const handleQueueUpdated = (e: any) => {
+      if (e.detail?.status) {
+        setEstadoDisparador(e.detail.status);
+      }
+      if (Array.isArray(e.detail?.falhas)) {
+        setFalhasList(e.detail.falhas);
+      }
+      fetchDados();
+    };
+
+    window.addEventListener('aiviq:queue-updated', handleQueueUpdated);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('aiviq:queue-updated', handleQueueUpdated);
+    };
   }, []);
 
-  // Status da fila PERSISTENTE no servidor (consumida pelo cron /tick). A aba só
-  // reflete o progresso — fechar/atualizar a página não para mais o disparo.
+  // Status da fila PERSISTENTE no servidor (consumida pelo runner/cron a 2 simultâneos/min).
   const fetchQueueStatus = async () => {
     try {
-      const res = await fetch('/api/pesquisa/senado/queue');
+      const res = await fetch(`/api/pesquisa/senado/queue?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       const data = await res.json();
       if (data?.success && data.status) {
         const s = data.status;
@@ -158,6 +184,9 @@ export default function PesquisaSenadoKanban() {
           contatoAtual: undefined,
           fila: [],
         });
+        if (Array.isArray(data.falhas)) {
+          setFalhasList(data.falhas);
+        }
       }
     } catch {
       // silencioso em background
@@ -336,6 +365,46 @@ export default function PesquisaSenadoKanban() {
     controlarFila('parar');
   };
 
+  const handleExportarFalhasCSV = () => {
+    if (falhasList.length === 0) return;
+    const headers = ['Telefone', 'Nome', 'Motivo da Falha', 'Tentativas', 'Data'];
+    const rows = falhasList.map((f) => [
+      `"${f.phone}"`,
+      `"${(f.name || '').replace(/"/g, '""')}"`,
+      `"${(f.error || 'Falha de entrega').replace(/"/g, '""')}"`,
+      f.attempts || 1,
+      `"${f.createdAt || ''}"`,
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const link = document.createElement('a');
+    link.setAttribute('href', encodeURI(csvContent));
+    link.setAttribute('download', `falhas_disparo_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleReenfileirarFalhas = async () => {
+    setReenfileirandoFalhas(true);
+    try {
+      const res = await fetch('/api/pesquisa/senado/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reenfileirar_falhas' }),
+      });
+      const data = await res.json();
+      if (data?.success) {
+        setMensagemSucesso(`✅ ${data.reativados || 0} contatos com falha foram devolvidos para a fila de disparo!`);
+        await fetchQueueStatus();
+        setTimeout(() => setMensagemSucesso(null), 6000);
+      }
+    } catch (e) {
+      console.error('Erro ao re-enfileirar falhas:', e);
+    } finally {
+      setReenfileirandoFalhas(false);
+    }
+  };
+
   const handleExportarCSV = () => {
     if (sessions.length === 0) return;
     const headers = ['ID', 'Nome', 'Telefone', 'Bairro', 'Status_Etapa', '1_Voto', '2_Voto', 'Data_Registro'];
@@ -507,8 +576,8 @@ export default function PesquisaSenadoKanban() {
         </div>
       )}
 
-      {/* Hero KPIs Bar da Pesquisa */}
-      <div className="px-8 py-3 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-4 shrink-0">
+      {/* Hero KPIs Bar da Pesquisa — agora com card exclusivo de Falhas */}
+      <div className="px-8 py-3 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-3 shrink-0">
         <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
           <div className="flex items-center justify-between text-xs text-slate-500 mb-0.5">
             <span className="font-medium">Total de Contatos Disparados</span>
@@ -547,6 +616,31 @@ export default function PesquisaSenadoKanban() {
               (stats?.porEtapa.aguardando_voto2 || 0)}
           </p>
           <p className="text-[11px] text-slate-400">Aguardando resposta</p>
+        </div>
+
+        {/* KPI EXCLUSIVO DE FALHAS COM BOTÃO DE VERIFICAÇÃO */}
+        <div
+          onClick={() => setIsFalhasModalOpen(true)}
+          className={`p-3 border rounded-xl cursor-pointer transition-all ${
+            (estadoDisparador?.erros || 0) > 0
+              ? 'bg-rose-50/70 border-rose-200 hover:bg-rose-100/60 shadow-xs'
+              : 'bg-slate-50 border-slate-200/80 hover:bg-slate-100/80'
+          }`}
+          title="Clique para inspecionar números com falha"
+        >
+          <div className="flex items-center justify-between text-xs text-slate-500 mb-0.5">
+            <span className="font-semibold text-rose-800">Falhas no Disparo</span>
+            <AlertTriangle className={`w-4 h-4 ${(estadoDisparador?.erros || 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`} />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <p className="text-xl font-bold text-rose-700">{estadoDisparador?.erros || 0}</p>
+            {(estadoDisparador?.erros || 0) > 0 && (
+              <span className="text-[10px] font-semibold text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded border border-rose-200 flex items-center gap-0.5">
+                Verificar ➔
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-rose-600/80 font-medium">Números s/ WhatsApp ou erro</p>
         </div>
       </div>
 
@@ -1060,6 +1154,149 @@ export default function PesquisaSenadoKanban() {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE INSPEÇÃO E AUDITORIA DE FALHAS */}
+      {isFalhasModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-3xl w-full overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-rose-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shadow-xs">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-base text-slate-900">Auditoria de Falhas de Disparo</h3>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                      {falhasList.length} registros
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Contatos que falharam ao enviar WhatsApp (número inexistente, sem WhatsApp ou timeout)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsFalhasModalOpen(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 text-sm font-bold flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Ações Rápidas */}
+            <div className="px-6 py-3 bg-slate-50 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="text-slate-600 font-medium">
+                Verifique o motivo da falha ou reative os números para tentar novamente.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportarFalhasCSV}
+                  disabled={falhasList.length === 0}
+                  className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Exportar CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReenfileirarFalhas}
+                  disabled={falhasList.length === 0 || reenfileirandoFalhas}
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-xs"
+                >
+                  {reenfileirandoFalhas ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Re-enfileirando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Tentar Novamente Todas</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Lista de Falhas */}
+            <div className="p-6 overflow-y-auto flex-1">
+              {falhasList.length === 0 ? (
+                <div className="py-12 text-center">
+                  <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
+                  <p className="font-semibold text-slate-800 text-sm">Nenhuma falha detectada</p>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                    Todos os contatos disparados até o momento foram entregues com sucesso aos eleitores.
+                  </p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase font-semibold text-[10px] tracking-wider">
+                      <tr>
+                        <th className="p-3">Eleitor</th>
+                        <th className="p-3">Telefone</th>
+                        <th className="p-3">Motivo da Falha</th>
+                        <th className="p-3 text-center">Tentativas</th>
+                        <th className="p-3 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {falhasList.map((falha, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="p-3 font-medium text-slate-800">
+                            {falha.name || 'Sem nome informado'}
+                          </td>
+                          <td className="p-3 font-mono text-slate-600">
+                            {falha.phone}
+                          </td>
+                          <td className="p-3 text-rose-700">
+                            <span className="inline-flex items-center gap-1 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-[11px] font-medium">
+                              <AlertCircle className="w-3 h-3 text-rose-500 shrink-0" />
+                              <span className="truncate max-w-[260px]" title={falha.error}>
+                                {falha.error || 'Número não possui WhatsApp ou rejeitado pela API'}
+                              </span>
+                            </span>
+                          </td>
+                          <td className="p-3 text-center text-slate-500 font-mono">
+                            {falha.attempts || 1}
+                          </td>
+                          <td className="p-3 text-right">
+                            <button
+                              onClick={() => {
+                                const clean = String(falha.phone).replace(/\D/g, '');
+                                window.open(`https://wa.me/${clean}`, '_blank');
+                              }}
+                              className="text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              Testar WhatsApp ↗
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs">
+              <span className="text-slate-400">
+                Mostrando {falhasList.length} números com falha
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsFalhasModalOpen(false)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-lg transition-colors"
+              >
+                Fechar
+              </button>
             </div>
           </div>
         </div>

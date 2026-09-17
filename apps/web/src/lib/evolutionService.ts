@@ -428,6 +428,7 @@ export interface SendResult {
   ok: boolean;
   messageId?: string; // id do WhatsApp/Evolution (para dedupe na persistência)
   instance: string;
+  error?: string;
 }
 
 /**
@@ -462,12 +463,14 @@ export async function sendRealMessageDetailed(
 
   if (!isConnected) {
     console.warn(`[Evolution Send Real] Nenhuma instância conectada para envio (tentada: ${inst}).`);
-    return { ok: false, instance: inst };
+    return { ok: false, instance: inst, error: 'Instância WhatsApp desconectada' };
   }
 
   try {
     const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
-    if (!cleanNumber || cleanNumber.length < 8) return { ok: false, instance: inst };
+    if (!cleanNumber || cleanNumber.length < 8) {
+      return { ok: false, instance: inst, error: 'Número de telefone inválido ou incompleto' };
+    }
 
     const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${inst}`, {
       method: 'POST',
@@ -496,10 +499,15 @@ export async function sendRealMessageDetailed(
 
     const err = await res.text();
     console.warn(`[Evolution Send Real Failed HTTP ${res.status}] (${inst}):`, err);
-    return { ok: false, instance: inst };
+    let msgErro = `Falha no envio (HTTP ${res.status})`;
+    try {
+      const parsed = JSON.parse(err);
+      msgErro = parsed?.response?.message || parsed?.message || msgErro;
+    } catch {}
+    return { ok: false, instance: inst, error: msgErro };
   } catch (err: any) {
     console.error(`[Evolution Send Real Error] (${inst}):`, err.message);
-    return { ok: false, instance: inst };
+    return { ok: false, instance: inst, error: err.message || 'Erro de conexão no envio' };
   }
 }
 

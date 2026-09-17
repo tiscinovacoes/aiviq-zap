@@ -89,7 +89,10 @@ export default function GlobalDispatchRunner() {
   // 2. Consulta o status da fila no servidor
   const consultarFila = async () => {
     try {
-      const res = await fetch('/api/pesquisa/senado/queue');
+      const res = await fetch(`/api/pesquisa/senado/queue?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       const data = await res.json();
       if (data?.success && data.status) {
         const s = data.status;
@@ -123,6 +126,13 @@ export default function GlobalDispatchRunner() {
 
         statusRef.current = novoStatus;
         setStatus(novoStatus);
+
+        // Notifica outros componentes (como o Kanban) da atualização em tempo real
+        window.dispatchEvent(
+          new CustomEvent('aiviq:queue-updated', {
+            detail: { status: novoStatus, falhas: data.falhas || [] },
+          })
+        );
       }
     } catch {
       // Silencioso em background
@@ -135,9 +145,10 @@ export default function GlobalDispatchRunner() {
     isTickRunningRef.current = true;
 
     try {
-      const res = await fetch('/api/pesquisa/senado/tick', {
+      const res = await fetch(`/api/pesquisa/senado/tick?t=${Date.now()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+        cache: 'no-store',
       });
       const data = await res.json();
 
@@ -154,6 +165,12 @@ export default function GlobalDispatchRunner() {
         };
         statusRef.current = novoStatus;
         setStatus(novoStatus);
+
+        window.dispatchEvent(
+          new CustomEvent('aiviq:queue-updated', {
+            detail: { status: novoStatus, falhas: [] },
+          })
+        );
       } else {
         await consultarFila();
       }
