@@ -22,8 +22,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const sessions = getPesquisaSessions();
-    const stats = getPesquisaStats();
+    const sessions = await getPesquisaSessions();
+    const stats = await getPesquisaStats();
     return NextResponse.json({
       success: true,
       sessions,
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     // Ação: Iniciar disparo da Pesquisa (Msg 1)
     if (!action || action === 'disparar') {
-      const session = createOrUpdateSessionByPhone(cleanPhone, name || `Eleitor ${cleanPhone.slice(-4)}`, {
+      const session = await createOrUpdateSessionByPhone(cleanPhone, name || `Eleitor ${cleanPhone.slice(-4)}`, {
         bairro,
         etapa: 'disparado',
         voto1Id: undefined,
@@ -100,11 +100,11 @@ export async function POST(req: NextRequest) {
 
     // Ação: Simulação de resposta no fluxo (ótimo para testes manuais no painel)
     if (action === 'simular_resposta') {
-      const session = createOrUpdateSessionByPhone(cleanPhone, name || 'Eleitor', {});
+      const session = await createOrUpdateSessionByPhone(cleanPhone, name || 'Eleitor', {});
 
       if (session.etapa === 'disparado') {
         session.etapa = 'aguardando_voto1';
-        savePesquisaSession(session);
+        await savePesquisaSession(session);
         sincronizarContatoEleitor({
           name: session.name,
           phone: cleanPhone,
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
           session.voto1Id = c1.id;
           session.voto1Nome = c1.nome;
           session.etapa = 'aguardando_voto2';
-          savePesquisaSession(session);
+          await savePesquisaSession(session);
           sincronizarContatoEleitor({
             name: session.name,
             phone: cleanPhone,
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
           session.voto2Id = c2.id;
           session.voto2Nome = c2.nome;
           session.etapa = 'concluido';
-          savePesquisaSession(session);
+          await savePesquisaSession(session);
           sincronizarContatoEleitor({
             name: session.name,
             phone: cleanPhone,

@@ -202,14 +202,14 @@ export async function POST(req: NextRequest) {
       // ================= PROCESSAMENTO AUTOMÁTICO: PESQUISA ELEITORAL SENADO MS =================
       for (const msg of incomingMessages) {
         try {
-          const session = getPesquisaSessionByPhone(msg.from);
+          const session = await getPesquisaSessionByPhone(msg.from);
           if (session && session.etapa !== 'concluido' && session.etapa !== 'recusado') {
             const cleanText = msg.text.trim();
 
             // Etapa 1: Lead respondeu à saudação inicial (Msg 1) -> Dispara Msg 2 e Msg 3
             if (session.etapa === 'disparado') {
               session.etapa = 'aguardando_voto1';
-              savePesquisaSession(session);
+              await savePesquisaSession(session);
               sincronizarContatoEleitor({
                 name: session.name,
                 phone: msg.from,
@@ -247,7 +247,7 @@ export async function POST(req: NextRequest) {
                   session.voto1Id = candidato1.id;
                   session.voto1Nome = candidato1.nome;
                   session.etapa = 'aguardando_voto2';
-                  savePesquisaSession(session);
+                  await savePesquisaSession(session);
                   sincronizarContatoEleitor({
                     name: session.name,
                     phone: msg.from,
@@ -287,7 +287,7 @@ export async function POST(req: NextRequest) {
                   session.voto2Id = candidato2.id;
                   session.voto2Nome = candidato2.nome;
                   session.etapa = 'concluido';
-                  savePesquisaSession(session);
+                  await savePesquisaSession(session);
                   sincronizarContatoEleitor({
                     name: session.name,
                     phone: msg.from,

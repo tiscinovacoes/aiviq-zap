@@ -62,17 +62,26 @@ export async function getDbContext(): Promise<DbContext | null> {
     return { db: ssr, organizationId, userId: user.id, isDemo: false };
   }
 
-  // 2. Sem usuário real → fallback demo (só quando permitido e com service-role).
+  // 2. Sem usuário real → fallback demo (só quando permitido).
+  if (!demoAllowed()) return null;
+  const svc = await getServiceContext();
+  if (!svc) return null;
+  return { ...svc, isDemo: true };
+}
+
+// Contexto service-role puro (server-only), independente de cookies/sessão.
+// Usado por processos server-to-server (webhook, disparo) e como base do
+// fallback demo. Escopa pela organização padrão (desempate estável por id — sem
+// ele, orgs com o mesmo created_at fariam a resolução variar entre requisições).
+export async function getServiceContext(): Promise<Omit<DbContext, 'isDemo'> | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!demoAllowed() || !url || !serviceKey) return null;
+  if (!url || !serviceKey) return null;
 
   const admin = createServiceClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Desempate estável por id — sem ele, orgs com o mesmo created_at fariam a
-  // resolução variar entre requisições (contato gravado numa org, listado noutra).
   const { data: org } = await admin
     .from('organizations')
     .select('id')
@@ -82,7 +91,6 @@ export async function getDbContext(): Promise<DbContext | null> {
     .maybeSingle();
   if (!org) return null;
 
-  // Usa um profile real da org como "usuário" (p/ FKs como assignee_id).
   const { data: prof } = await admin
     .from('profiles')
     .select('id')
@@ -94,6 +102,5 @@ export async function getDbContext(): Promise<DbContext | null> {
     db: admin,
     organizationId: org.id as string,
     userId: (prof?.id as string) || '00000000-0000-0000-0000-000000000001',
-    isDemo: true,
   };
 }

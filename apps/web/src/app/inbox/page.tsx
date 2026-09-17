@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   MessageSquare,
   Users,
@@ -18,14 +19,29 @@ import MessageComposer from '@/components/inbox/MessageComposer';
 import ContactInspector from '@/components/inbox/ContactInspector';
 import NavigationRail from '@/components/layout/NavigationRail';
 
-export default function InboxPage() {
+function InboxMain() {
   const { user, logout, fetchUser } = useAuth();
-  const { activeConversation, fetchConversations, syncConversations } = useInboxStore();
+  const {
+    activeConversation,
+    fetchConversations,
+    syncConversations,
+    selectConversationByPhoneOrId,
+  } = useInboxStore();
   const [inputText, setInputText] = useState('');
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     fetchUser();
-    fetchConversations();
+    fetchConversations().then(() => {
+      const targetPhoneOrId =
+        searchParams?.get('conversationId') ||
+        searchParams?.get('phone') ||
+        searchParams?.get('id');
+
+      if (targetPhoneOrId) {
+        selectConversationByPhoneOrId(targetPhoneOrId);
+      }
+    });
 
     let timeoutId: NodeJS.Timeout;
     let isCancelled = false;
@@ -61,7 +77,19 @@ export default function InboxPage() {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('aiviq:instance-changed', onInstanceChanged);
     };
-  }, [fetchUser, fetchConversations, syncConversations]);
+  }, [fetchUser, fetchConversations, syncConversations, searchParams, selectConversationByPhoneOrId]);
+
+  // Se o query param mudar com a tela já aberta, sincroniza seleção imediatamente
+  useEffect(() => {
+    const targetPhoneOrId =
+      searchParams?.get('conversationId') ||
+      searchParams?.get('phone') ||
+      searchParams?.get('id');
+
+    if (targetPhoneOrId) {
+      selectConversationByPhoneOrId(targetPhoneOrId);
+    }
+  }, [searchParams, selectConversationByPhoneOrId]);
 
   return (
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
@@ -97,5 +125,13 @@ export default function InboxPage() {
       {/* 4. Right Panel (Contextual CRM & Contact Inspector - 340px) */}
       {activeConversation && <ContactInspector />}
     </div>
+  );
+}
+
+export default function InboxPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen w-screen items-center justify-center bg-slate-50 text-slate-500 text-xs">Carregando Inbox...</div>}>
+      <InboxMain />
+    </Suspense>
   );
 }

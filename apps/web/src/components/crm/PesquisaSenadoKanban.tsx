@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import {
   MessageSquare,
@@ -74,6 +75,35 @@ export default function PesquisaSenadoKanban() {
   const filaRef = useRef<EstadoDisparador | null>(null);
   const disparoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const router = useRouter();
+  const [assumindoTelefone, setAssumindoTelefone] = useState<string | null>(null);
+
+  const handleAssumirConversa = async (eleitor: RespostaEleitor) => {
+    const cleanPhone = eleitor.phone.replace(/\D/g, '');
+    setAssumindoTelefone(cleanPhone);
+    try {
+      await fetch('/api/conversations/ensure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanPhone,
+          name: eleitor.name,
+          bairro: eleitor.bairro,
+          etapa: eleitor.etapa,
+          voto1Nome: eleitor.voto1Nome,
+          voto1Id: eleitor.voto1Id,
+          voto2Nome: eleitor.voto2Nome,
+          voto2Id: eleitor.voto2Id,
+        }),
+      });
+    } catch (e) {
+      console.error('Erro ao preparar conversa no servidor:', e);
+    } finally {
+      setAssumindoTelefone(null);
+    }
+    router.push(`/inbox?phone=${encodeURIComponent(cleanPhone)}&conversationId=${encodeURIComponent(cleanPhone + '@s.whatsapp.net')}`);
+  };
 
   const fetchDados = async () => {
     try {
@@ -683,14 +713,16 @@ export default function PesquisaSenadoKanban() {
                         )}
 
                         {/* Link direto para ver conversa no Inbox ou assumir o atendimento */}
-                        <Link
-                          href={`/inbox?conversationId=${encodeURIComponent(s.phone.replace(/\D/g, '') + '@s.whatsapp.net')}`}
-                          className="mt-2.5 w-full py-1.5 px-2 rounded-lg bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                        <button
+                          type="button"
+                          onClick={() => handleAssumirConversa(s)}
+                          disabled={assumindoTelefone === s.phone.replace(/\D/g, '')}
+                          className="mt-2.5 w-full py-1.5 px-2 rounded-lg bg-slate-50 hover:bg-emerald-50 active:bg-emerald-100 text-slate-700 hover:text-emerald-700 border border-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60 shadow-2xs"
                           title="Abrir chat no Inbox para acompanhar ou assumir o atendimento"
                         >
                           <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Ver conversa / Assumir</span>
-                        </Link>
+                          <span>{assumindoTelefone === s.phone.replace(/\D/g, '') ? 'Abrindo conversa...' : 'Ver conversa / Assumir'}</span>
+                        </button>
                       </div>
                     ))
                   )}
@@ -740,13 +772,15 @@ export default function PesquisaSenadoKanban() {
                               <span className="font-semibold text-purple-700">{e.voto2Nome}</span>
                             </div>
                           )}
-                          <Link
-                            href={`/inbox?conversationId=${encodeURIComponent(e.phone.replace(/\D/g, '') + '@s.whatsapp.net')}`}
-                            className="mt-2 w-full py-1 px-1.5 rounded bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 text-[10px] font-medium flex items-center justify-center gap-1 transition-colors"
+                          <button
+                            type="button"
+                            onClick={() => handleAssumirConversa(e)}
+                            disabled={assumindoTelefone === e.phone.replace(/\D/g, '')}
+                            className="mt-2 w-full py-1 px-1.5 rounded bg-slate-50 hover:bg-emerald-50 active:bg-emerald-100 text-slate-700 hover:text-emerald-700 border border-slate-200 text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-60 shadow-2xs"
                           >
                             <MessageSquare className="w-3 h-3 text-emerald-600" />
-                            <span>Ver chat</span>
-                          </Link>
+                            <span>{assumindoTelefone === e.phone.replace(/\D/g, '') ? 'Abrindo...' : 'Ver chat / Assumir'}</span>
+                          </button>
                         </div>
                       ))
                     )}
@@ -797,13 +831,15 @@ export default function PesquisaSenadoKanban() {
                               <span className="font-semibold text-blue-700">{e.voto1Nome}</span>
                             </div>
                           )}
-                          <Link
-                            href={`/inbox?conversationId=${encodeURIComponent(e.phone.replace(/\D/g, '') + '@s.whatsapp.net')}`}
-                            className="mt-2 w-full py-1 px-1.5 rounded bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 text-[10px] font-medium flex items-center justify-center gap-1 transition-colors"
+                          <button
+                            type="button"
+                            onClick={() => handleAssumirConversa(e)}
+                            disabled={assumindoTelefone === e.phone.replace(/\D/g, '')}
+                            className="mt-2 w-full py-1 px-1.5 rounded bg-slate-50 hover:bg-emerald-50 active:bg-emerald-100 text-slate-700 hover:text-emerald-700 border border-slate-200 text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-60 shadow-2xs"
                           >
                             <MessageSquare className="w-3 h-3 text-emerald-600" />
-                            <span>Ver chat</span>
-                          </Link>
+                            <span>{assumindoTelefone === e.phone.replace(/\D/g, '') ? 'Abrindo...' : 'Ver chat / Assumir'}</span>
+                          </button>
                         </div>
                       ))
                     )}

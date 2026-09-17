@@ -1,193 +1,142 @@
 import { RespostaEleitor, EtapaPesquisa, CANDIDATOS_SENADO_MS } from './pesquisaSenado';
+import { getServiceContext, isPlaceholderEnv } from './supabase/authContext';
+
+// Persistência das sessões da Pesquisa Senado.
+// - Com Supabase configurado: tabela `pesquisa_senado` (durável, sem flicker).
+// - Sem Supabase (dev): fallback em memória, começando VAZIO (sem seed mock).
 
 declare global {
   // eslint-disable-next-line no-var
   var __aiviq_pesquisa_senado: RespostaEleitor[] | undefined;
 }
-
-const SEED_RESPOSTAS: RespostaEleitor[] = [
-  {
-    id: 'ps-001',
-    phone: '5567991234001',
-    name: 'Marcos Vinicius Rezende',
-    bairro: 'Jardim dos Estados, Campo Grande',
-    etapa: 'concluido',
-    voto1Id: 5,
-    voto1Nome: 'Reinaldo Azambuja',
-    voto2Id: 2,
-    voto2Nome: 'Capitão Contar',
-    createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 23).toISOString(),
-  },
-  {
-    id: 'ps-002',
-    phone: '5567992345002',
-    name: 'Luciana M. Albuquerque',
-    bairro: 'Chácara Cachoeira, Campo Grande',
-    etapa: 'concluido',
-    voto1Id: 7,
-    voto1Nome: 'Soraya Thronicke',
-    voto2Id: 1,
-    voto2Nome: 'Beto do Movimento',
-    createdAt: new Date(Date.now() - 3600000 * 18).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 17).toISOString(),
-  },
-  {
-    id: 'ps-003',
-    phone: '5567993456003',
-    name: 'Carlos Eduardo Fontes',
-    bairro: 'Centro, Dourados',
-    etapa: 'concluido',
-    voto1Id: 2,
-    voto1Nome: 'Capitão Contar',
-    voto2Id: 5,
-    voto2Nome: 'Reinaldo Azambuja',
-    createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 11).toISOString(),
-  },
-  {
-    id: 'ps-004',
-    phone: '5567994567004',
-    name: 'Ana Paula Siqueira',
-    bairro: 'Vila Santo André, Três Lagoas',
-    etapa: 'concluido',
-    voto1Id: 10,
-    voto1Nome: 'Vander Loubet',
-    voto2Id: 3,
-    voto2Nome: 'Daniel Junior',
-    createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 7).toISOString(),
-  },
-  {
-    id: 'ps-005',
-    phone: '5567995678005',
-    name: 'Roberto Antunes Dias',
-    bairro: 'Universitário, Corumbá',
-    etapa: 'concluido',
-    voto1Id: 5,
-    voto1Nome: 'Reinaldo Azambuja',
-    voto2Id: 7,
-    voto2Nome: 'Soraya Thronicke',
-    createdAt: new Date(Date.now() - 3600000 * 6).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-  },
-  {
-    id: 'ps-006',
-    phone: '5567996789006',
-    name: 'Mariana Duarte Prado',
-    bairro: 'Taveirópolis, Campo Grande',
-    etapa: 'aguardando_voto2',
-    voto1Id: 6,
-    voto1Nome: 'Roberto Oshiro',
-    createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-  },
-  {
-    id: 'ps-007',
-    phone: '5567997890007',
-    name: 'Fernando Guimarães',
-    bairro: 'Vila Alba, Ponta Porã',
-    etapa: 'aguardando_voto1',
-    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-  },
-  {
-    id: 'ps-008',
-    phone: '5567998901008',
-    name: 'Juliana Castro Bueno',
-    bairro: 'Tiradentes, Campo Grande',
-    etapa: 'disparado',
-    createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-  },
-  {
-    id: 'ps-009',
-    phone: '5567999012009',
-    name: 'Thiago Mendes Ramos',
-    bairro: 'Guanandi, Campo Grande',
-    etapa: 'concluido',
-    voto1Id: 11,
-    voto1Nome: 'Branco/nulo',
-    voto2Id: 11,
-    voto2Nome: 'Branco/nulo',
-    createdAt: new Date(Date.now() - 3600000 * 15).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 14).toISOString(),
-  },
-  {
-    id: 'ps-010',
-    phone: '5567990123010',
-    name: 'Beatriz Vasconcelos',
-    bairro: 'Parque Alvorada, Dourados',
-    etapa: 'concluido',
-    voto1Id: 2,
-    voto1Nome: 'Capitão Contar',
-    voto2Id: 8,
-    voto2Nome: 'Valderi Garcia',
-    createdAt: new Date(Date.now() - 3600000 * 10).toISOString(),
-    lastMessageAt: new Date(Date.now() - 3600000 * 9).toISOString(),
-  },
-];
-
 if (!global.__aiviq_pesquisa_senado) {
-  global.__aiviq_pesquisa_senado = [...SEED_RESPOSTAS];
+  global.__aiviq_pesquisa_senado = [];
 }
 
-export function getPesquisaSessions(): RespostaEleitor[] {
-  return global.__aiviq_pesquisa_senado || [];
+const TABLE = 'pesquisa_senado';
+
+function rowToSession(r: any): RespostaEleitor {
+  return {
+    id: r.id,
+    phone: r.phone,
+    name: r.name,
+    bairro: r.bairro ?? undefined,
+    etapa: r.etapa as EtapaPesquisa,
+    voto1Id: r.voto1_id ?? undefined,
+    voto1Nome: r.voto1_nome ?? undefined,
+    voto2Id: r.voto2_id ?? undefined,
+    voto2Nome: r.voto2_nome ?? undefined,
+    createdAt: r.created_at,
+    lastMessageAt: r.updated_at,
+  };
 }
 
-export function getPesquisaSessionByPhone(phone: string): RespostaEleitor | undefined {
-  const clean = phone.replace(/\D/g, '');
-  return (global.__aiviq_pesquisa_senado || []).find((s) => {
-    const sClean = s.phone.replace(/\D/g, '');
-    return sClean === clean || sClean.endsWith(clean) || clean.endsWith(sClean);
-  });
+const cleanPhone = (p: string) => p.replace(/\D/g, '');
+
+export async function getPesquisaSessions(): Promise<RespostaEleitor[]> {
+  if (isPlaceholderEnv()) return global.__aiviq_pesquisa_senado || [];
+  const ctx = await getServiceContext();
+  if (!ctx) return [];
+  const { data } = await ctx.db
+    .from(TABLE)
+    .select('*')
+    .eq('organization_id', ctx.organizationId)
+    .order('updated_at', { ascending: false });
+  return (data ?? []).map(rowToSession);
 }
 
-export function savePesquisaSession(session: RespostaEleitor): RespostaEleitor {
-  if (!global.__aiviq_pesquisa_senado) {
-    global.__aiviq_pesquisa_senado = [];
+export async function getPesquisaSessionByPhone(
+  phone: string
+): Promise<RespostaEleitor | undefined> {
+  const clean = cleanPhone(phone);
+  if (isPlaceholderEnv()) {
+    return (global.__aiviq_pesquisa_senado || []).find((s) => {
+      const sc = cleanPhone(s.phone);
+      return sc === clean || sc.endsWith(clean) || clean.endsWith(sc);
+    });
   }
-  const idx = global.__aiviq_pesquisa_senado.findIndex((s) => s.id === session.id);
-  if (idx >= 0) {
-    global.__aiviq_pesquisa_senado[idx] = { ...session, lastMessageAt: new Date().toISOString() };
-    return global.__aiviq_pesquisa_senado[idx];
-  } else {
-    const created = {
-      ...session,
-      createdAt: session.createdAt || new Date().toISOString(),
-      lastMessageAt: new Date().toISOString(),
-    };
-    global.__aiviq_pesquisa_senado.unshift(created);
+  const ctx = await getServiceContext();
+  if (!ctx) return undefined;
+  // Match exato; fallback por sufixo (variações de DDI 55).
+  let { data } = await ctx.db
+    .from(TABLE)
+    .select('*')
+    .eq('organization_id', ctx.organizationId)
+    .eq('phone', clean)
+    .maybeSingle();
+  if (!data && clean.length >= 8) {
+    const sufixo = clean.slice(-8);
+    const res = await ctx.db
+      .from(TABLE)
+      .select('*')
+      .eq('organization_id', ctx.organizationId)
+      .ilike('phone', `%${sufixo}`)
+      .limit(1)
+      .maybeSingle();
+    data = res.data;
+  }
+  return data ? rowToSession(data) : undefined;
+}
+
+export async function savePesquisaSession(
+  session: RespostaEleitor
+): Promise<RespostaEleitor> {
+  const clean = cleanPhone(session.phone);
+  if (isPlaceholderEnv()) {
+    const list = global.__aiviq_pesquisa_senado!;
+    const idx = list.findIndex((s) => s.id === session.id || cleanPhone(s.phone) === clean);
+    const now = new Date().toISOString();
+    if (idx >= 0) {
+      list[idx] = { ...session, phone: clean, lastMessageAt: now };
+      return list[idx];
+    }
+    const created = { ...session, phone: clean, createdAt: session.createdAt || now, lastMessageAt: now };
+    list.unshift(created);
     return created;
   }
+
+  const ctx = await getServiceContext();
+  if (!ctx) throw new Error('Supabase indisponível para salvar pesquisa');
+  const { data, error } = await ctx.db
+    .from(TABLE)
+    .upsert(
+      {
+        organization_id: ctx.organizationId,
+        phone: clean,
+        name: session.name,
+        bairro: session.bairro ?? null,
+        etapa: session.etapa,
+        voto1_id: session.voto1Id ?? null,
+        voto1_nome: session.voto1Nome ?? null,
+        voto2_id: session.voto2Id ?? null,
+        voto2_nome: session.voto2Nome ?? null,
+      },
+      { onConflict: 'organization_id,phone' }
+    )
+    .select('*')
+    .single();
+  if (error) throw error;
+  return rowToSession(data);
 }
 
-export function createOrUpdateSessionByPhone(
+export async function createOrUpdateSessionByPhone(
   phone: string,
   name: string,
   updates: Partial<RespostaEleitor>
-): RespostaEleitor {
-  let session = getPesquisaSessionByPhone(phone);
-  if (!session) {
-    session = {
-      id: `ps-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      phone,
-      name,
-      etapa: 'disparado',
-      createdAt: new Date().toISOString(),
-      lastMessageAt: new Date().toISOString(),
-      ...updates,
-    };
-  } else {
-    session = {
-      ...session,
-      ...updates,
-      name: name || session.name,
-      lastMessageAt: new Date().toISOString(),
-    };
-  }
-  return savePesquisaSession(session);
+): Promise<RespostaEleitor> {
+  const existing = await getPesquisaSessionByPhone(phone);
+  const merged: RespostaEleitor = existing
+    ? { ...existing, ...updates, name: name || existing.name }
+    : {
+        id: `ps-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        phone: cleanPhone(phone),
+        name: name || `Eleitor ${cleanPhone(phone).slice(-4)}`,
+        etapa: 'disparado',
+        createdAt: new Date().toISOString(),
+        lastMessageAt: new Date().toISOString(),
+        ...updates,
+      };
+  return savePesquisaSession(merged);
 }
 
 export interface PesquisaStats {
@@ -200,8 +149,8 @@ export interface PesquisaStats {
   rankingGeral: Array<{ id: number; nome: string; rotulo: string; votos1: number; votos2: number; totalVotos: number; percentual: string }>;
 }
 
-export function getPesquisaStats(): PesquisaStats {
-  const sessions = getPesquisaSessions();
+export async function getPesquisaStats(): Promise<PesquisaStats> {
+  const sessions = await getPesquisaSessions();
   const totalEleitores = sessions.length;
   const concluidos = sessions.filter((s) => s.etapa === 'concluido');
   const totalConcluidos = concluidos.length;
@@ -215,22 +164,15 @@ export function getPesquisaStats(): PesquisaStats {
     concluido: 0,
     recusado: 0,
   };
-
   sessions.forEach((s) => {
     porEtapa[s.etapa] = (porEtapa[s.etapa] || 0) + 1;
   });
 
-  // Mapas de votos
   const mapVoto1: Record<number, number> = {};
   const mapVoto2: Record<number, number> = {};
-
   concluidos.forEach((s) => {
-    if (s.voto1Id) {
-      mapVoto1[s.voto1Id] = (mapVoto1[s.voto1Id] || 0) + 1;
-    }
-    if (s.voto2Id) {
-      mapVoto2[s.voto2Id] = (mapVoto2[s.voto2Id] || 0) + 1;
-    }
+    if (s.voto1Id) mapVoto1[s.voto1Id] = (mapVoto1[s.voto1Id] || 0) + 1;
+    if (s.voto2Id) mapVoto2[s.voto2Id] = (mapVoto2[s.voto2Id] || 0) + 1;
   });
 
   const rankingVoto1 = CANDIDATOS_SENADO_MS.map((c) => {
@@ -251,19 +193,9 @@ export function getPesquisaStats(): PesquisaStats {
     const votos2 = mapVoto2[c.id] || 0;
     const totalVotos = votos1 + votos2;
     const percentual =
-      totalVotosCombinados > 0
-        ? `${((totalVotos / totalVotosCombinados) * 100).toFixed(1)}%`
-        : '0.0%';
+      totalVotosCombinados > 0 ? `${((totalVotos / totalVotosCombinados) * 100).toFixed(1)}%` : '0.0%';
     return { id: c.id, nome: c.nome, rotulo: c.rotulo, votos1, votos2, totalVotos, percentual };
   }).sort((a, b) => b.totalVotos - a.totalVotos);
 
-  return {
-    totalEleitores,
-    totalConcluidos,
-    taxaConclusao,
-    porEtapa,
-    rankingVoto1,
-    rankingVoto2,
-    rankingGeral,
-  };
+  return { totalEleitores, totalConcluidos, taxaConclusao, porEtapa, rankingVoto1, rankingVoto2, rankingGeral };
 }

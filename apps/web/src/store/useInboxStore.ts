@@ -24,6 +24,7 @@ interface InboxState {
   fetchConversations: () => Promise<void>;
   syncConversations: () => Promise<void>;
   selectConversation: (conversation: Conversation) => Promise<void>;
+  selectConversationByPhoneOrId: (idOrPhone: string) => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   resolveConversation: (conversationId: string) => Promise<void>;
@@ -123,6 +124,40 @@ export const useInboxStore = create<InboxState>((set, get) => ({
     // Limpar mensagens imediatamente para evitar que mensagens de outra conversa vazem na tela
     set({ activeConversation: conversation, messages: [], isLoadingMessages: true });
     await get().fetchMessages(conversation.id);
+  },
+
+  selectConversationByPhoneOrId: async (idOrPhone: string) => {
+    if (!idOrPhone) return;
+    const clean = idOrPhone.replace(/\D/g, '');
+    const current = get().conversations;
+
+    let conv = current.find(
+      (c) =>
+        c.id === idOrPhone ||
+        c.id === `${clean}@s.whatsapp.net` ||
+        (clean && c.contact?.phone && c.contact.phone.replace(/\D/g, '').includes(clean)) ||
+        (clean && c.id.replace(/\D/g, '').includes(clean))
+    );
+
+    if (!conv) {
+      try {
+        const res = await fetch(`/api/conversations/ensure?phone=${encodeURIComponent(clean || idOrPhone)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.conversation) {
+            conv = data.conversation;
+            const updated = [conv!, ...get().conversations.filter((c) => c.id !== conv!.id)];
+            set({ conversations: updated });
+          }
+        }
+      } catch (err) {
+        console.error('[InboxStore] Erro ao buscar conversa solicitada:', err);
+      }
+    }
+
+    if (conv) {
+      await get().selectConversation(conv);
+    }
   },
 
   fetchMessages: async (conversationId) => {
