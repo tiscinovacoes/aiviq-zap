@@ -98,13 +98,21 @@ export default function PesquisaSenadoKanban() {
     }
   };
 
+  const isFetchingRef = useRef(false);
+
   useEffect(() => {
-    fetchDados();
-    fetchDisparador();
-    const interval = setInterval(() => {
-      fetchDados();
-      fetchDisparador();
-    }, 4000);
+    const carregarTudo = async () => {
+      if (document.visibilityState !== 'visible' || isFetchingRef.current) return;
+      isFetchingRef.current = true;
+      try {
+        await Promise.allSettled([fetchDados(), fetchDisparador()]);
+      } finally {
+        isFetchingRef.current = false;
+      }
+    };
+
+    carregarTudo();
+    const interval = setInterval(carregarTudo, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -593,6 +601,16 @@ export default function PesquisaSenadoKanban() {
                             )}
                           </div>
                         )}
+
+                        {/* Link direto para ver conversa no Inbox ou assumir o atendimento */}
+                        <Link
+                          href={`/inbox?conversationId=${encodeURIComponent(s.phone.replace(/\D/g, '') + '@s.whatsapp.net')}`}
+                          className="mt-2.5 w-full py-1.5 px-2 rounded-lg bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                          title="Abrir chat no Inbox para acompanhar ou assumir o atendimento"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Ver conversa / Assumir</span>
+                        </Link>
                       </div>
                     ))
                   )}
@@ -642,6 +660,13 @@ export default function PesquisaSenadoKanban() {
                               <span className="font-semibold text-purple-700">{e.voto2Nome}</span>
                             </div>
                           )}
+                          <Link
+                            href={`/inbox?conversationId=${encodeURIComponent(e.phone.replace(/\D/g, '') + '@s.whatsapp.net')}`}
+                            className="mt-2 w-full py-1 px-1.5 rounded bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 text-[10px] font-medium flex items-center justify-center gap-1 transition-colors"
+                          >
+                            <MessageSquare className="w-3 h-3 text-emerald-600" />
+                            <span>Ver chat</span>
+                          </Link>
                         </div>
                       ))
                     )}
@@ -692,6 +717,13 @@ export default function PesquisaSenadoKanban() {
                               <span className="font-semibold text-blue-700">{e.voto1Nome}</span>
                             </div>
                           )}
+                          <Link
+                            href={`/inbox?conversationId=${encodeURIComponent(e.phone.replace(/\D/g, '') + '@s.whatsapp.net')}`}
+                            className="mt-2 w-full py-1 px-1.5 rounded bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 text-[10px] font-medium flex items-center justify-center gap-1 transition-colors"
+                          >
+                            <MessageSquare className="w-3 h-3 text-emerald-600" />
+                            <span>Ver chat</span>
+                          </Link>
                         </div>
                       ))
                     )}
