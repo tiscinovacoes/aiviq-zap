@@ -645,6 +645,21 @@ export async function prepararDisparoSimultaneo(): Promise<{
     );
   }
 
+  // 2.1 Desativa do pool instâncias conhecidas que estejam desconectadas (ex.: thome banido)
+  const todasInstancias = ['thome', 'paloma', 'Novovivo', 'aiviq_inbox_01'];
+  const desconectadas = todasInstancias.filter((i) => !conectadas.includes(i));
+  for (const disc of desconectadas) {
+    await ctx.db.from('dispatch_instance_control').upsert(
+      {
+        organization_id: ctx.organizationId,
+        instance_name: disc,
+        dispatch_enabled: false,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'organization_id,instance_name' }
+    );
+  }
+
   // 3. Re-enfileira os contatos que estavam com status 'erro'
   const { data: erros } = await ctx.db
     .from('dispatch_queue')
@@ -679,7 +694,8 @@ export async function prepararDisparoSimultaneo(): Promise<{
       .select('id')
       .eq('organization_id', ctx.organizationId)
       .eq('status', 'pendente')
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(10000);
 
     if (pendentes && pendentes.length > 0) {
       for (let i = 0; i < conectadas.length; i++) {

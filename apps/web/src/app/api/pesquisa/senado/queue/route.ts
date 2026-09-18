@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'sincronizar_chips' || action === 'preparar') {
       const preparo = await prepararDisparoSimultaneo();
+      await setPaused(false);
       return NextResponse.json(
         {
           success: true,
