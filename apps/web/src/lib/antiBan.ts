@@ -206,12 +206,12 @@ export async function capDoChip(inst: string, hoje: string): Promise<number> {
  * efetivada — só então pode enviar. Em caso de falha no envio, chame
  * releaseDispatchSlot() para devolver o slot.
  */
-export async function reserveDispatchSlot(instanceName?: string): Promise<SlotReservation> {
+export async function reserveDispatchSlot(instanceName?: string, bypassHorario = false): Promise<SlotReservation> {
   const inst = resolveInstanceName(instanceName);
   const { day } = nowInMS();
   const cap = await capDoChip(inst, day);
 
-  if (!dentroDaJanela()) {
+  if (!bypassHorario && !dentroDaJanela()) {
     return { ok: false, reason: 'fora_horario', sentToday: 0, dailyCap: cap };
   }
 

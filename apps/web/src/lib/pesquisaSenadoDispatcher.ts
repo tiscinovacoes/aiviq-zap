@@ -226,7 +226,7 @@ export async function runTickCore(options?: {
   //    simultaneos.
   const habilitadas: string[] = [];
   for (const inst of prontas) {
-    const slot = await reserveDispatchSlot(inst);
+    const slot = await reserveDispatchSlot(inst, options?.bypassHorario);
     if (slot.ok) {
       habilitadas.push(inst);
     } else if (slot.reason === 'teto_diario') {
