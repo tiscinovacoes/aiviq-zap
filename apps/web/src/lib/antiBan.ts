@@ -38,26 +38,24 @@ export const ANTIBAN = {
   DAILY_CAP: 480, // teto de regime, por chip/dia
   HORA_INICIO: 8, // 08:00 MS
   HORA_FIM: 20, // 20:00 MS (exclusivo)
-  // Cadência definida pelo operador: 1 envio por minuto POR CHIP (60s fixo).
-  // Consequência registrada: a 1/min o chip cumpre as 480 em 8h e fica mudo as
-  // últimas 4h da janela. O teto continua sendo o limite rígido.
-  GAP_MIN_S: 60,
-  GAP_MAX_S: 60,
-  PRESENCA_MS: 1200, // "digitando..." antes de cada disparo em massa (humaniza)
+  // Cadência humanizada: intervalo com variação aleatória (45s a 75s, média 60s)
+  // para quebrar a previsibilidade mecânica detectada pelos algoritmos da Meta.
+  GAP_MIN_S: 45,
+  GAP_MAX_S: 75,
+  PRESENCA_MS: 1800, // "digitando..." antes de cada disparo em massa (humaniza)
 
   // SAUDE DO CHIP
   // Falhas seguidas costumam ser o sinal PRECOCE de shadowban -- aparecem
   // antes de a conexao cair, entao reagir so a connectionStatus chega tarde.
-  MAX_FALHAS_SEGUIDAS: 5,
+  MAX_FALHAS_SEGUIDAS: 3,
   COOLDOWN_MIN: 60, // resfriamento apos as falhas seguidas
   // Pausa por lote: quebra a cadencia mecanica de um chip que dispara sem parar.
-  LOTE_TAMANHO: 25,
-  PAUSA_LOTE_MIN: 12,
-  // Entrega recusada (ack ERROR) e mais grave que falha de envio: o chip esta
-  // aceitando e nao entregando, entao cada disparo QUEIMA um contato. Gatilho
-  // mais curto, e o chip sai do pool em vez de so esfriar.
-  MAX_ACKS_ERRO: 3,
-  COOLDOWN_ACK_MIN: 180,
+  LOTE_TAMANHO: 20,
+  PAUSA_LOTE_MIN: 15,
+  // Entrega recusada (ack ERROR) e gravíssimo: indica rejeição da Meta/Baileys.
+  // Interrompe imediatamente no 2º erro consecutivo para blindar e salvar o chip.
+  MAX_ACKS_ERRO: 2,
+  COOLDOWN_ACK_MIN: 120,
 };
 
 /** Intervalo até o próximo envio DAQUELE chip: 60s fixo (1 por minuto). */

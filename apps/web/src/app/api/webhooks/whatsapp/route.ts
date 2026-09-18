@@ -4,7 +4,7 @@ import { addInboundMessage, addBotDispatchedMessage } from '@/lib/conversationSt
 import { invalidateEvolutionCache, sendRealMessageDetailed } from '@/lib/evolutionService';
 import { persistMessageByJid } from '@/lib/conversationRepo';
 import { isOptOut } from '@/lib/spintax';
-import { registrarOptOut, processarAckEntrega } from '@/lib/dispatchQueue';
+import { registrarOptOut, processarAckEntrega, setDispatchEnabled } from '@/lib/dispatchQueue';
 import { ANTIBAN } from '@/lib/antiBan';
 import {
   getPesquisaSessionByPhone,
@@ -162,6 +162,32 @@ export async function POST(req: NextRequest) {
         }
       }
       return NextResponse.json({ success: true, handled: 'ack' });
+    }
+
+    // ============ 0b. STATUS DE CONEXÃO (CONNECTION_UPDATE) ============
+    // Plug-and-play: quando o operador lê o QR Code e a instância conecta ('open'),
+    // ela entra automaticamente no pool de disparo sem nenhuma ação manual.
+    // Se a conexão cair ou for recusada ('close'), é desligada do pool para blindagem.
+    const eventoConnection =
+      payload.event === 'connection.update' || payload.event === 'CONNECTION_UPDATE';
+
+    if (eventoConnection && instanceName) {
+      const state = String(payload.data?.state || payload.data?.connection || '').toLowerCase();
+      console.log(`[WhatsApp Webhook Connection Update] Instância: ${instanceName} | Estado: ${state}`);
+      if (state === 'open') {
+        try {
+          await setDispatchEnabled(instanceName, true);
+        } catch (e) {
+          console.error('[connection.update] Erro ao ativar instância no pool:', e);
+        }
+      } else if (state === 'close' || state === 'refused') {
+        try {
+          await setDispatchEnabled(instanceName, false);
+        } catch (e) {
+          console.error('[connection.update] Erro ao desativar instância do pool:', e);
+        }
+      }
+      return NextResponse.json({ success: true, handled: 'connection_update' });
     }
 
     // ================= 1. EVENTO DA EVOLUTION API (Baileys) =================

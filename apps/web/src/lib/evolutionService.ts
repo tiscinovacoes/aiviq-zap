@@ -569,7 +569,10 @@ export interface EvolutionLiveInstance {
   profilePicUrl?: string;
 }
 
-function mapConnectionStatus(raw?: string): EvolutionLiveInstance['status'] {
+function mapConnectionStatus(raw?: string, rawObj?: any): EvolutionLiveInstance['status'] {
+  if (rawObj?.disconnectionReasonCode === 401 || (rawObj?.disconnectionObject && String(rawObj.disconnectionObject).includes('device_removed'))) {
+    return 'disconnected';
+  }
   if (raw === 'open') return 'connected';
   if (raw === 'connecting') return 'connecting';
   return 'disconnected';
@@ -620,7 +623,7 @@ export async function fetchLiveEvolutionInstances(forceRefresh = false): Promise
     if (!Array.isArray(data)) return [];
     const instances = data.map((i: any) => ({
       instanceName: i.name || i.instanceName || i.instance?.instanceName || '',
-      status: mapConnectionStatus(i.connectionStatus || i.state || i.instance?.state),
+      status: mapConnectionStatus(i.connectionStatus || i.state || i.instance?.state, i),
       phoneNumber: formatCleanPhone(i.ownerJid || i.number || i.instance?.owner) || undefined,
       profileName: i.profileName || i.instance?.profileName || undefined,
       profilePicUrl: i.profilePicUrl || i.instance?.profilePicUrl || undefined,
@@ -686,13 +689,15 @@ export const EVENTOS_WEBHOOK = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTIO
  * campanha dispara normalmente e simplesmente nao coleta nada.
  */
 export function urlDoWebhook(origemDetectada?: string): string {
-  const base =
+  let base =
     process.env.EVOLUTION_WEBHOOK_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     origemDetectada ||
-    '';
-  if (!base) return '';
-  const token = process.env.EVOLUTION_WEBHOOK_TOKEN || process.env.EVOLUTION_API_KEY;
+    'https://aiviq-zap-web-tiscinovacoes-projects.vercel.app';
+  if (base.includes('aiviq-zap-web.vercel.app') && !base.includes('-tiscinovacoes-projects')) {
+    base = 'https://aiviq-zap-web-tiscinovacoes-projects.vercel.app';
+  }
+  const token = process.env.EVOLUTION_WEBHOOK_TOKEN || process.env.EVOLUTION_API_KEY || 'aiviq_zap_secret_2026';
   let target = base.endsWith('/api/webhooks/whatsapp')
     ? base
     : `${base.replace(/\/$/, '')}/api/webhooks/whatsapp`;

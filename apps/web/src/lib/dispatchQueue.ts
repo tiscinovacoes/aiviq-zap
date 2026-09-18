@@ -645,9 +645,17 @@ export async function prepararDisparoSimultaneo(): Promise<{
     );
   }
 
-  // 2.1 Desativa do pool instâncias conhecidas que estejam desconectadas (ex.: thome banido)
-  const todasInstancias = ['thome', 'paloma', 'Novovivo', 'aiviq_inbox_01'];
-  const desconectadas = todasInstancias.filter((i) => !conectadas.includes(i));
+  // 2.1 Desativa do pool qualquer instância no banco que não esteja mais conectada
+  const { data: dbInsts } = await ctx.db
+    .from('dispatch_instance_control')
+    .select('instance_name')
+    .eq('organization_id', ctx.organizationId);
+  
+  const conhecidas = Array.from(new Set([
+    ...(dbInsts || []).map((r: any) => r.instance_name),
+    'thome', 'paloma', 'Novovivo', 'Paloma', 'aiviq_inbox_01'
+  ]));
+  const desconectadas = conhecidas.filter((i) => !conectadas.includes(i));
   for (const disc of desconectadas) {
     await ctx.db.from('dispatch_instance_control').upsert(
       {
@@ -658,6 +666,22 @@ export async function prepararDisparoSimultaneo(): Promise<{
       },
       { onConflict: 'organization_id,instance_name' }
     );
+  }
+
+  // 2.2 Se houver instâncias desconectadas, libera seus contatos pendentes para que os chips ativos os assumam
+  if (desconectadas.length > 0) {
+    await ctx.db
+      .from('dispatch_queue')
+      .update({ assigned_instance: null })
+      .in('assigned_instance', desconectadas)
+      .eq('organization_id', ctx.organizationId)
+      .eq('status', 'pendente');
+
+    await ctx.db
+      .from('pesquisa_senado_fila')
+      .update({ instancia_alocada: null })
+      .in('instancia_alocada', desconectadas)
+      .eq('status', 'pendente');
   }
 
   // 3. Re-enfileira os contatos que estavam com status 'erro'
@@ -1095,6 +1119,20 @@ export async function processarAckEntrega(
       .eq('message_id', messageId)
       .eq('status', 'enviado')
       .select('id');
+    // Também devolve na fila da pesquisa do senado caso o disparo tenha vindo dela
+    try {
+      await ctx.db
+        .from('pesquisa_senado_fila')
+        .update({
+          status: 'pendente',
+          tentativas: 0,
+          instancia_alocada: null,
+          erro_motivo: `recusa_ack_${status}`,
+          abordado_em: null,
+        })
+        .eq('status', 'disparado')
+        .filter('detalhes->>messageId', 'eq', messageId);
+    } catch {}
     devolvido = (data?.length || 0) > 0;
   }
 
@@ -1109,12 +1147,37 @@ export async function processarAckEntrega(
 
   const linha = Array.isArray(saude) ? saude[0] : saude;
   const seguidos = (linha as any)?.acks_erro_seguidos ?? 0;
+  const chipDesativado = falhou && seguidos >= cfg.maxErros;
+
+  // Disjuntor imediato: se atingiu o teto de erros seguidos, desativa do pool
+  // imediatamente para salvar o chip contra banimento pelo WhatsApp.
+  if (chipDesativado) {
+    try {
+      await ctx.db
+        .from('dispatch_instance_control')
+        .update({
+          dispatch_enabled: false,
+          cooldown_ate: new Date(Date.now() + cfg.cooldownMin * 60 * 1000).toISOString(),
+          cooldown_motivo: `circuit_breaker_${seguidos}_erros_consecutivos`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('organization_id', ctx.organizationId)
+        .eq('instance_name', instance);
+
+      // Libera contatos presos neste chip
+      await ctx.db
+        .from('pesquisa_senado_fila')
+        .update({ instancia_alocada: null })
+        .eq('instancia_alocada', instance)
+        .eq('status', 'pendente');
+    } catch {}
+  }
 
   return {
     conhecido: true,
     entregue: ok,
     devolvido,
     acksErroSeguidos: seguidos,
-    chipDesativado: falhou && seguidos >= cfg.maxErros,
+    chipDesativado,
   };
 }
