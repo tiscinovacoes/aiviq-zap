@@ -115,11 +115,11 @@ export interface DispatchGate {
 }
 
 /** Verifica se PODE disparar agora (sem incrementar). */
-export async function checkDispatchGate(instanceName?: string): Promise<DispatchGate> {
+export async function checkDispatchGate(instanceName?: string, bypassHorario = false): Promise<DispatchGate> {
   const inst = resolveInstanceName(instanceName);
   const { hour, day } = nowInMS();
 
-  if (!dentroDaJanela()) {
+  if (!bypassHorario && !dentroDaJanela()) {
     return { allowed: false, reason: 'fora_horario', sentToday: 0, dailyCap: 0, hora: hour };
   }
 

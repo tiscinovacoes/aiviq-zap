@@ -49,7 +49,11 @@ async function handleRequest(req: NextRequest) {
     return NextResponse.json({ error: 'não autorizado' }, { status: 401 });
   }
 
-  const result = await runTickCore();
+  const force =
+    req.nextUrl.searchParams.get('force') === 'true' ||
+    req.nextUrl.searchParams.get('bypass') === 'true';
+
+  const result = await runTickCore({ bypassHorario: force, forceNow: force });
   return NextResponse.json(result);
 }
 

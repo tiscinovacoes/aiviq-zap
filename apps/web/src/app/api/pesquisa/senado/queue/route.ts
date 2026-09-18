@@ -12,6 +12,7 @@ import {
 } from '@/lib/dispatchQueue';
 import { triggerServerDispatchCycle, stopServerDispatchWorker } from '@/lib/serverDispatchWorker';
 import { getConnectedDispatchInstances } from '@/lib/evolutionService';
+import { runTickCore } from '@/lib/pesquisaSenadoDispatcher';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,6 +120,45 @@ export async function POST(req: NextRequest) {
           success: true,
           status: await getQueueStatus(),
           preparo,
+          porChip: await getProgressoPorChip(),
+        },
+        { headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    if (action === 'test_simultaneo') {
+      const rodadas = Math.min(Number(body.rodadas) || 3, 5);
+      const delayMs = Math.min(Number(body.delayEntreRodadasMs) || 5000, 15000);
+      const historicoRodadas: any[] = [];
+
+      // Sincroniza chips antes de iniciar o teste
+      await prepararDisparoSimultaneo();
+
+      for (let r = 1; r <= rodadas; r++) {
+        const tickRes = await runTickCore({ bypassHorario: true, forceNow: true });
+        historicoRodadas.push({
+          rodada: r,
+          timestamp: new Date().toISOString(),
+          enviados: tickRes.enviados || [],
+          totalEnviados: tickRes.totalEnviados || 0,
+          falhas: tickRes.falhas || [],
+          instanciasConectadas: tickRes.instanciasConectadas,
+          instanciasProntas: tickRes.instanciasProntas,
+          skipped: tickRes.skipped,
+        });
+
+        if (r < rodadas) {
+          await new Promise((res) => setTimeout(res, delayMs));
+        }
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          rodadasExecutadas: rodadas,
+          totalMensagensEnviadas: historicoRodadas.reduce((acc, cur) => acc + (cur.totalEnviados || 0), 0),
+          historicoRodadas,
+          status: await getQueueStatus(),
           porChip: await getProgressoPorChip(),
         },
         { headers: NO_CACHE_HEADERS }

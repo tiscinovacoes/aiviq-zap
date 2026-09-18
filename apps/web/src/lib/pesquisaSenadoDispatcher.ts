@@ -146,7 +146,10 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
   }
 }
 
-export async function runTickCore(): Promise<TickCoreResult> {
+export async function runTickCore(options?: {
+  bypassHorario?: boolean;
+  forceNow?: boolean;
+}): Promise<TickCoreResult> {
   if (isPlaceholderEnv()) {
     return { success: true, skipped: 'placeholder' };
   }
@@ -157,8 +160,8 @@ export async function runTickCore(): Promise<TickCoreResult> {
     return { success: true, skipped: 'pausado', status: await getQueueStatus() };
   }
 
-  // 2. Janela de horario (fuso MS: 8h-20h).
-  if (!dentroDaJanela()) {
+  // 2. Janela de horario (fuso MS: 8h-20h) — permite bypass em testes explicitamente autorizados
+  if (!options?.bypassHorario && !dentroDaJanela()) {
     return { success: true, skipped: 'fora_horario', status: await getQueueStatus() };
   }
 
@@ -179,6 +182,13 @@ export async function runTickCore(): Promise<TickCoreResult> {
     };
   }
 
+  // Se forceNow, zera o intervalo agendado de cada chip para que todos disparem no mesmo segundo
+  if (options?.forceNow) {
+    for (const inst of conectadas) {
+      await setInstanceNextAllowedAt(inst, 0);
+    }
+  }
+
   // 5. Disputa ATOMICA do ritmo de cada chip. Quem vence avanca o proprio
   //    next_allowed_at e ganha o direito de enviar neste ciclo; os ticks
   //    concorrentes que perderem saem sem enviar. Isso e o que impede o MESMO
@@ -189,7 +199,7 @@ export async function runTickCore(): Promise<TickCoreResult> {
   // cego sobrecarregaria o chip novo enquanto o maduro fica ocioso.
   const carga = await Promise.all(
     conectadas.map(async (inst) => {
-      const gate = await checkDispatchGate(inst);
+      const gate = await checkDispatchGate(inst, options?.bypassHorario);
       return { inst, rel: gate.sentToday / (gate.dailyCap || 1) };
     })
   );
