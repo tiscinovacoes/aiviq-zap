@@ -1239,3 +1239,21 @@ Decisão do operador: a lista do Senado cai de 10 candidatos para 5, em ordem al
 - ✅ Candidatos que saíram (Daniel Junior, Valter da Comagran…) só aparecem no painel e nos rankings se tiverem voto gravado, marcados "(fora da lista)".
 - ✅ Resposta por texto aceita nome sem acento e grafias alternativas ("soraya", "reinaldo", "branco", "não sei").
 - ✅ Validação: `tsc --noEmit` 0 erros; mensagens e parser conferidos com `tsx`.
+
+
+---
+
+## DATA: 23/09/2026 — Espera de 30s Após a 1ª Resposta e Msg 2 em 1ª Pessoa (v3.5.0)
+
+### Claude
+Pedido do operador: o eleitor responde a saudação em pedaços ("oi" … "tudo bem"); o robô deve esperar 30s antes da Msg 2/3. E a Msg 2 passa para a 1ª pessoa do singular.
+
+- 🐞 Antes: o "oi" disparava a Msg 2/3 na hora e o "tudo bem" caía na etapa do 1º voto, recebendo "não consegui identificar".
+- ✅ **Espera de 30s** (`ESPERA_SAUDACAO_S`, `020_pesquisa_espera_saudacao.sql`, aplicada):
+  - A 1ª resposta marca `saudacao_respondida_em` num UPDATE condicional (`etapa = 'disparado'`): com webhooks concorrentes, só a primeira mensagem vence.
+  - A Msg 2/3 sai 30s depois em segundo plano (`waitUntil` da Vercel, sem dependência nova); o webhook responde à Evolution na hora. `maxDuration = 60` no webhook.
+  - Mensagens que chegam enquanto a Msg 2/3 não saiu são ignoradas (não viram tentativa de voto).
+  - `msg3_enviada_em` é reservado de forma atômica antes do envio: a Msg 2/3 nunca sai duas vezes. Se o envio falha, a reserva é desfeita.
+  - **Rede de segurança no tick**: Msg 2/3 com a espera vencida há mais de 2 min e não enviada é reenviada (`reenviarMsg3Atrasadas`), inclusive com a fila pausada.
+- ✅ **Msg 2 em 1ª pessoa**: `{Estou fazendo|Estou realizando} uma pesquisa…` (saíram "Estamos fazendo" e "Faço parte de").
+- ✅ Validação: `tsc --noEmit` 0 erros; marcação/reserva conferidas em modo local com `tsx`.

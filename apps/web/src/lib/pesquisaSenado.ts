@@ -88,6 +88,10 @@ export interface RespostaEleitor {
   instanceName?: string;
   /** Versão da lista de candidatos que o eleitor recebeu (1 = antiga de 12, 2 = atual). */
   listaVersao?: number;
+  /** 1ª resposta do eleitor à saudação (abre a espera de 30s antes da Msg 2/3). */
+  saudacaoRespondidaEm?: string;
+  /** Quando a Msg 2/3 saiu. Nulo com saudacaoRespondidaEm preenchido = ainda esperando. */
+  msg3EnviadaEm?: string;
   lastMessageAt: string;
   createdAt: string;
 }
@@ -165,7 +169,7 @@ export function gerarMensagem1(nome?: string, seed?: string): string {
 // precisa usar o botão de denunciar, que é o que derruba chip.
 export function gerarMensagem2(seed?: string): string {
   const corpo = spin(
-    `{Estou realizando|Estamos fazendo|Faço parte de} uma pesquisa {de opinião|rápida de opinião|de opinião pública} sobre a eleição para o Senado {Federal |}em Mato Grosso do Sul.`,
+    `{Estou fazendo|Estou realizando} uma pesquisa {de opinião|rápida de opinião|de opinião pública} sobre a eleição para o Senado {Federal |}em Mato Grosso do Sul.`,
     seed
   );
   const saida = spin(

@@ -28,6 +28,8 @@ function rowToSession(r: any): RespostaEleitor {
     voto2Nome: r.voto2_nome ?? undefined,
     instanceName: r.instance_name ?? r.instanceName ?? undefined,
     listaVersao: r.lista_versao ?? undefined,
+    saudacaoRespondidaEm: r.saudacao_respondida_em ?? undefined,
+    msg3EnviadaEm: r.msg3_enviada_em ?? undefined,
     createdAt: r.created_at,
     lastMessageAt: r.updated_at,
   };
@@ -252,4 +254,102 @@ export async function getPesquisaStats(base?: RespostaEleitor[]): Promise<Pesqui
   }).sort((a, b) => b.totalVotos - a.totalVotos);
 
   return { totalEleitores, totalConcluidos, taxaConclusao, porEtapa, rankingVoto1, rankingVoto2, rankingGeral };
+}
+
+// ---------------------------------------------------------------------------
+// ESPERA DE 30s ENTRE A 1ª RESPOSTA E A MSG 2/3 (020)
+// O eleitor costuma responder a saudação em pedaços ("oi" ... "tudo bem"). A 1ª
+// mensagem marca a sessão e agenda a Msg 2/3 para 30s depois; as seguintes,
+// enquanto a Msg 2/3 não saiu, são ignoradas. As duas marcações são UPDATEs
+// condicionais (atômicos): com webhooks concorrentes, só um vence.
+// ---------------------------------------------------------------------------
+export const ESPERA_SAUDACAO_S = 30;
+
+/** 1ª resposta à saudação: disparado -> aguardando_voto1. true = esta chamada venceu. */
+export async function marcarSaudacaoRespondida(id: string, listaVersao: number): Promise<boolean> {
+  const agora = new Date().toISOString();
+  if (isPlaceholderEnv()) {
+    const s = (global.__aiviq_pesquisa_senado || []).find((x) => x.id === id);
+    if (!s || s.etapa !== 'disparado') return false;
+    Object.assign(s, { etapa: 'aguardando_voto1', listaVersao, saudacaoRespondidaEm: agora, lastMessageAt: agora });
+    return true;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return false;
+  const { data, error } = await ctx.db
+    .from(TABLE)
+    .update({ etapa: 'aguardando_voto1', lista_versao: listaVersao, saudacao_respondida_em: agora })
+    .eq('organization_id', ctx.organizationId)
+    .eq('id', id)
+    .eq('etapa', 'disparado')
+    .select('id');
+  if (error) {
+    console.error('[pesquisa] marcarSaudacaoRespondida:', error.message);
+    return false;
+  }
+  return (data?.length || 0) > 0;
+}
+
+/** Reserva o envio da Msg 2/3 para ESTE processo. true = pode enviar. */
+export async function reivindicarEnvioMsg3(id: string): Promise<boolean> {
+  const agora = new Date().toISOString();
+  if (isPlaceholderEnv()) {
+    const s = (global.__aiviq_pesquisa_senado || []).find((x) => x.id === id);
+    if (!s || s.msg3EnviadaEm) return false;
+    s.msg3EnviadaEm = agora;
+    return true;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return false;
+  const { data, error } = await ctx.db
+    .from(TABLE)
+    .update({ msg3_enviada_em: agora })
+    .eq('organization_id', ctx.organizationId)
+    .eq('id', id)
+    .eq('etapa', 'aguardando_voto1')
+    .is('msg3_enviada_em', null)
+    .select('id');
+  if (error) {
+    console.error('[pesquisa] reivindicarEnvioMsg3:', error.message);
+    return false;
+  }
+  return (data?.length || 0) > 0;
+}
+
+/** Desfaz a reserva quando o envio falhou (o tick tenta de novo depois). */
+export async function liberarEnvioMsg3(id: string): Promise<void> {
+  if (isPlaceholderEnv()) {
+    const s = (global.__aiviq_pesquisa_senado || []).find((x) => x.id === id);
+    if (s) s.msg3EnviadaEm = undefined;
+    return;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return;
+  await ctx.db
+    .from(TABLE)
+    .update({ msg3_enviada_em: null })
+    .eq('organization_id', ctx.organizationId)
+    .eq('id', id);
+}
+
+/** Sessões cuja espera venceu há mais de `atrasoMin` e a Msg 2/3 não saiu (envio perdido). */
+export async function listarMsg3Atrasadas(atrasoMin = 2, limite = 5): Promise<RespostaEleitor[]> {
+  const corte = new Date(Date.now() - (ESPERA_SAUDACAO_S + atrasoMin * 60) * 1000).toISOString();
+  if (isPlaceholderEnv()) {
+    return (global.__aiviq_pesquisa_senado || [])
+      .filter((s) => s.etapa === 'aguardando_voto1' && s.saudacaoRespondidaEm && !s.msg3EnviadaEm && s.saudacaoRespondidaEm < corte)
+      .slice(0, limite);
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return [];
+  const { data } = await ctx.db
+    .from(TABLE)
+    .select('*')
+    .eq('organization_id', ctx.organizationId)
+    .eq('etapa', 'aguardando_voto1')
+    .is('msg3_enviada_em', null)
+    .not('saudacao_respondida_em', 'is', null)
+    .lt('saudacao_respondida_em', corte)
+    .limit(limite);
+  return (data ?? []).map(rowToSession);
 }
