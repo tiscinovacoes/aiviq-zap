@@ -5,7 +5,7 @@ import {
   unregisterInstance,
   DEFAULT_INSTANCE,
 } from '@/lib/instanceRegistry';
-import { invalidateEvolutionCache, configurarWebhookInstancia } from '@/lib/evolutionService';
+import { invalidateEvolutionCache, configurarWebhookInstancia, getProxyInstancia, configurarProxyInstancia } from '@/lib/evolutionService';
 import { setDispatchEnabled, setMaturidadeChip } from '@/lib/dispatchQueue';
 
 import { cookies } from 'next/headers';
@@ -173,6 +173,45 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
             ? 'Numero marcado como aquecido: usa o teto de regime.'
             : 'Numero em warm-up: o teto comeca baixo e cresce a cada dia.',
       });
+    }
+
+    if (action === 'get_proxy') {
+      const proxy = await getProxyInstancia(instanceName);
+      return NextResponse.json({ success: true, instanceName, proxy });
+    }
+
+    // Associa um proxy (IP dedicado, ISP/residencial) a este número. Sem
+    // proxy configurado, a instância sai pelo IP compartilhado do servidor
+    // Evolution -- o mesmo de todos os outros chips -- e herda a reputação
+    // dele mesmo sendo um número "quente".
+    if (action === 'set_proxy') {
+      const { host, port, protocol, username, password } = body;
+      if (!host || !port) {
+        return NextResponse.json(
+          { success: false, error: 'Host e porta do proxy são obrigatórios.' },
+          { status: 400 }
+        );
+      }
+      const r = await configurarProxyInstancia(instanceName, { host, port, protocol, username, password });
+      return NextResponse.json({
+        success: r.ok,
+        instanceName,
+        message: r.ok
+          ? `Proxy configurado: ${instanceName} agora sai por ${host}:${port}.`
+          : r.error,
+      }, { status: r.ok ? 200 : 502 });
+    }
+
+    // Remove o proxy: a instância volta a sair pelo IP compartilhado do servidor.
+    if (action === 'remove_proxy') {
+      const r = await configurarProxyInstancia(instanceName, null);
+      return NextResponse.json({
+        success: r.ok,
+        instanceName,
+        message: r.ok
+          ? 'Proxy removido: o número volta a sair pelo IP do servidor.'
+          : r.error,
+      }, { status: r.ok ? 200 : 502 });
     }
 
     if (action === 'set_dispatch') {

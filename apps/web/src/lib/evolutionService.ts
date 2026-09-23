@@ -784,3 +784,87 @@ export async function configurarWebhookInstancia(
   }
   return { ok: false, error: 'A Evolution recusou a configuração do webhook.' };
 }
+
+// ============================================================================
+// PROXY POR INSTÂNCIA
+//
+// A Evolution API roda em UM servidor: sem proxy configurado, TODOS os
+// números (chips) saem pelo mesmo IP para o WhatsApp, e um IP com histórico de
+// disparo em massa contamina até um número "quente" recém-conectado (foi o
+// caso do Antonio, banido no 1º disparo). Contratar IPs ISP/residenciais só
+// tem efeito se cada instância for associada ao SEU proxy aqui.
+// ============================================================================
+
+export interface ProxyInstancia {
+  enabled: boolean;
+  host?: string;
+  port?: string;
+  protocol?: string;
+  username?: string;
+  /** A Evolution nunca devolve a senha de volta na consulta; fica só marcado. */
+  hasPassword?: boolean;
+}
+
+/** Le a configuracao de proxy da instancia (null = nao configurado ou erro). */
+export async function getProxyInstancia(instanceName: string): Promise<ProxyInstancia | null> {
+  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) return null;
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/proxy/find/${encodeURIComponent(instanceName)}`, {
+      headers: { apikey: EVOLUTION_API_KEY },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    if (!data) return null;
+    const p = data.proxy || data;
+    if (!p || (!p.host && !p.enabled)) return null;
+    return {
+      enabled: Boolean(p.enabled),
+      host: p.host || undefined,
+      port: p.port ? String(p.port) : undefined,
+      protocol: p.protocol || undefined,
+      username: p.username || undefined,
+      hasPassword: Boolean(p.password),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Configura o proxy (IP dedicado) da instância. Sem `host`, desativa o proxy
+ * (a instância volta a sair pelo IP do servidor Evolution).
+ */
+export async function configurarProxyInstancia(
+  instanceName: string,
+  config: { host: string; port: string; protocol?: string; username?: string; password?: string } | null
+): Promise<{ ok: boolean; error?: string }> {
+  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+    return { ok: false, error: 'Servidor Evolution não configurado.' };
+  }
+  const endpoint = `${EVOLUTION_API_URL}/proxy/set/${encodeURIComponent(instanceName)}`;
+  const corpo = config
+    ? {
+        enabled: true,
+        host: config.host,
+        port: config.port,
+        protocol: config.protocol || 'http',
+        username: config.username || undefined,
+        password: config.password || undefined,
+      }
+    : { enabled: false, host: '', port: '', protocol: 'http' };
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
+      body: JSON.stringify(corpo),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (res.ok) return { ok: true };
+    const err = await res.text().catch(() => '');
+    return { ok: false, error: err || `A Evolution recusou a configuração do proxy (HTTP ${res.status}).` };
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Erro de conexão ao configurar o proxy.' };
+  }
+}

@@ -8,7 +8,7 @@ import {
 } from '@/lib/instanceRegistry';
 import { fetchLiveEvolutionInstances, EvolutionLiveInstance } from '@/lib/evolutionService';
 import { getDispatchPool, getMaturidadeChips } from '@/lib/dispatchQueue';
-import { configurarWebhookInstancia, getWebhookInstancia } from '@/lib/evolutionService';
+import { configurarWebhookInstancia, getWebhookInstancia, getProxyInstancia } from '@/lib/evolutionService';
 import { capDoChip, ANTIBAN } from '@/lib/antiBan';
 
 import { cookies } from 'next/headers';
@@ -66,6 +66,11 @@ export interface InstanceView {
   cooldownMotivo?: string;
   /** false = a Evolution nao tem para onde avisar respostas nem acks. */
   webhookOk: boolean;
+  /** true = a instancia tem IP dedicado (proxy) configurado na Evolution.
+   *  false = sai pelo IP COMPARTILHADO do servidor -- o mesmo de todos os
+   *  outros chips, entao um numero quente herda a reputacao dos demais. */
+  proxyOk: boolean;
+  proxyHost?: string;
 }
 
 // GET: lista todas as instâncias conhecidas (registro local + servidor Evolution),
@@ -96,6 +101,7 @@ export async function GET() {
       known.map(async (k) => {
         const l = liveByName.get(k.instanceName);
         const m = maturidades[k.instanceName];
+        const proxy = await getProxyInstancia(k.instanceName);
         return {
           instanceName: k.instanceName,
           label: k.label,
@@ -110,6 +116,8 @@ export async function GET() {
           cooldownAte: m?.cooldownAte,
           cooldownMotivo: m?.cooldownMotivo,
           webhookOk: Boolean(await getWebhookInstancia(k.instanceName)),
+          proxyOk: Boolean(proxy?.enabled && proxy?.host),
+          proxyHost: proxy?.host,
         };
       })
     );
