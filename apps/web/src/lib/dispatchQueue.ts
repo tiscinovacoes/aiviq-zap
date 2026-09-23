@@ -492,6 +492,8 @@ export async function markItemError(
       attempts: attempts + 1,
       error: err.slice(0, 300),
       status: failed ? 'erro' : 'pendente',
+      // Na 3ª falha, marca como definitivo: nunca mais entra na fila.
+      status_definitivo: failed || undefined,
       // Registra em QUAL chip a falha aconteceu -- antes so o sucesso gravava
       // isso, entao a auditoria de falhas nao sabia dizer qual numero falhou.
       ...(instanceName ? { instance_name: instanceName } : {}),
@@ -564,12 +566,14 @@ export async function requeueFailedItems(): Promise<number> {
   }
   const ctx = await getServiceContext();
   if (!ctx) return 0;
+  // Requeue ignora os contatos marcados como definitivos (falharam para sempre).
+  // Só recoloca na fila os erros temporarios (ainda tem tentativas).
   const { data } = await ctx.db
     .from('dispatch_queue')
-    // Preserva o texto do erro anterior: zerar apagava o historico da auditoria.
     .update({ status: 'pendente', attempts: 0, claimed_at: null })
     .eq('organization_id', ctx.organizationId)
     .eq('status', 'erro')
+    .eq('status_definitivo', false)
     .select('id');
 
   return data?.length || 0;
