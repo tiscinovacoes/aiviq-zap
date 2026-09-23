@@ -8,8 +8,8 @@ export { spin, isOptOut } from '@/lib/spintax';
 // ============================================================================
 // Padrão anti-bloqueio de chip (perfil CONSERVADOR) para disparo em massa.
 //   - Teto diário por chip com WARMUP crescente (chip novo manda pouco e sobe).
-//   - Janela de horário comercial (fuso MS).
-//   - Intervalo aleatório entre disparos (o relógio real é o cliente).
+//   - Janela de horário 8h-21h (fuso MS).
+//   - Intervalo FIXO por chip (janela / teto) + revezamento entre chips.
 //   - Variação de texto (spintax) — leads diferentes recebem redações diferentes.
 //   - Detecção de opt-out ("PARAR"/"SAIR"...).
 // Contadores persistem em `dispatch_counters` (Supabase) → sobrevivem ao
@@ -17,15 +17,22 @@ export { spin, isOptOut } from '@/lib/spintax';
 // ============================================================================
 
 // -------- Parâmetros do perfil conservador (ajuste central) --------
-// Perfil pós-ban (23/09/2026): teto de 150 mensagens por CHIP por dia, com
-// intervalo largo e sorteado para ESPALHAR as 150 pela janela inteira em vez de
-// despejar em rajada.
+// Perfil pós-ban (23/09/2026), definido pelo operador:
+//   - teto de 150 mensagens por CHIP por dia;
+//   - janela de trabalho das 8h às 21h (fuso MS);
+//   - TEMPO FIXO por chip: o intervalo de cada chip é a janela dividida pelo
+//     teto dele, então as mensagens saem espalhadas pelo dia inteiro, sem
+//     rajada e sem silêncio no fim da tarde.
 //
-// Conta da janela 8h-20h (720 min):
-//   150 envios x gap médio de 4 min (150-330s sorteado) = ~600 min
-//   + 9 pausas de lote de 10 min = ~90 min  -> ~690 min no total
-//   => o chip trabalha o dia inteiro num ritmo baixo e irregular, sem o padrão
-//      "rajada seguida de silêncio" que a Meta detecta.
+// Conta para um chip de 150/dia:
+//   janela útil = 13h (780 min) - 30 min de margem = 750 min
+//   750 min / 150 = 5 min cravados entre um envio e outro do MESMO chip.
+// Chip em warm-up (teto menor) ganha intervalo proporcionalmente maior:
+// 30/dia -> 25 min; 50/dia -> 15 min; ...
+//
+// Os chips também são ESCALONADOS entre si (ver intervaloEntreChipsSegundos):
+// com 2 chips de 5 min, sai uma mensagem do pool a cada 2m30, alternando
+// chip A / chip B, em vez dos dois dispararem no mesmo segundo.
 //
 // O teto continua sendo limite rígido, reservado de forma ATÔMICA a cada envio
 // (reserveDispatchSlot), e o intervalo é disputado de forma atômica por chip
@@ -38,10 +45,10 @@ export const ANTIBAN = {
   WARMUP_STEP: 20, // ganho por dia até alcançar DAILY_CAP (~6 dias)
   DAILY_CAP: 150, // teto de regime, por chip/dia
   HORA_INICIO: 8, // 08:00 MS
-  HORA_FIM: 20, // 20:00 MS (exclusivo)
-  // Intervalo sorteado entre 2m30s e 5m30s (média 4 min) por chip.
-  GAP_MIN_S: 150,
-  GAP_MAX_S: 330,
+  HORA_FIM: 21, // 21:00 MS (exclusivo)
+  // Folga no fim da janela para absorver atrasos do cron/ticks perdidos sem
+  // deixar o chip abaixo do teto do dia.
+  MARGEM_JANELA_MIN: 30,
   PRESENCA_MS: 3000, // "digitando..." antes de cada disparo em massa (humaniza)
 
   // SAÚDE DO CHIP
@@ -49,21 +56,39 @@ export const ANTIBAN = {
   // antes de a conexão cair, então reagir só a connectionStatus chega tarde.
   MAX_FALHAS_SEGUIDAS: 3,
   COOLDOWN_MIN: 90, // resfriamento após as falhas seguidas
-  // Pausa por lote: quebra a cadência de um chip que dispara sem parar.
-  // 150/15 = 10 lotes -> 9 pausas de 10 min = 90 min. Somado aos ~600 min de
-  // intervalos, dá ~690 min: cabe nos 720 da janela com folga.
-  LOTE_TAMANHO: 15,
-  PAUSA_LOTE_MIN: 10,
+  // Pausa por lote DESLIGADA: com o tempo fixo o chip já trabalha em ritmo
+  // baixo o dia todo, e uma pausa extra quebraria a conta da janela (o chip
+  // não fecharia as 150). Valor alto = nunca atinge o lote.
+  LOTE_TAMANHO: 100000,
+  PAUSA_LOTE_MIN: 0,
   // Entrega recusada (ack ERROR) é gravíssimo: indica rejeição da Meta/Baileys.
   // Interrompe no 2º erro consecutivo para blindar e salvar o chip.
   MAX_ACKS_ERRO: 2,
   COOLDOWN_ACK_MIN: 180,
 };
 
-/** Intervalo até o próximo envio DAQUELE chip: sorteado entre GAP_MIN_S e GAP_MAX_S. */
-export function sortearGapSegundos(): number {
-  const { GAP_MIN_S, GAP_MAX_S } = ANTIBAN;
-  return Math.floor(Math.random() * (GAP_MAX_S - GAP_MIN_S + 1)) + GAP_MIN_S;
+/** Minutos úteis da janela diária (já descontada a margem). */
+function janelaUtilMin(): number {
+  return (ANTIBAN.HORA_FIM - ANTIBAN.HORA_INICIO) * 60 - ANTIBAN.MARGEM_JANELA_MIN;
+}
+
+/**
+ * Intervalo FIXO entre dois envios do MESMO chip: janela útil / teto do dia.
+ * 150/dia -> 300s (5 min). Chip em warm-up (teto menor) -> intervalo maior.
+ */
+export function intervaloFixoDoChipSegundos(capDoDia: number): number {
+  const cap = Math.max(1, capDoDia || ANTIBAN.DAILY_CAP);
+  return Math.floor((janelaUtilMin() * 60) / cap);
+}
+
+/**
+ * Espaçamento mínimo entre DOIS envios quaisquer do pool, para os chips se
+ * revezarem em vez de dispararem juntos: menor intervalo fixo / nº de chips.
+ * 2 chips de 150/dia -> 150s; 3 chips -> 100s.
+ */
+export function intervaloEntreChipsSegundos(intervalosFixos: number[]): number {
+  if (intervalosFixos.length === 0) return 0;
+  return Math.floor(Math.min(...intervalosFixos) / intervalosFixos.length);
 }
 
 const TZ = 'America/Campo_Grande';

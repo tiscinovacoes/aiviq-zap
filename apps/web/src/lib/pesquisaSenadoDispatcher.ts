@@ -4,7 +4,8 @@ import {
   reserveDispatchSlot,
   releaseDispatchSlot,
   dentroDaJanela,
-  sortearGapSegundos,
+  intervaloFixoDoChipSegundos,
+  intervaloEntreChipsSegundos,
   capDoChip,
   checkDispatchGate,
   ANTIBAN,
@@ -29,27 +30,34 @@ import {
   markItemSent,
   markItemError,
   getQueueStatus,
+  getChipsEmCooldown,
   type QueueItem,
 } from '@/lib/dispatchQueue';
 
 // ===========================================================================
 // MOTOR DE DISPARO MULTI-INSTANCIA
 //
-// Uma campanha, N chips. Cada chip e uma fila independente, com o SEU proprio
-// relogio e o SEU proprio teto diario de ANTIBAN.DAILY_CAP (150). A cada tick:
+// Uma campanha, N chips. Cada chip tem o SEU teto diario (ANTIBAN.DAILY_CAP =
+// 150) e o SEU intervalo FIXO (janela util 8h-21h / teto -> 5 min). A cada tick:
 //
 //   1. devolve a fila contatos presos em 'processando' (worker que morreu);
 //   2. pergunta a Evolution quais instancias estao conectadas;
-//   3. seleciona as que ja venceram o proprio intervalo (sorteado, ~4 min);
-//   4. reserva ATOMICAMENTE 1 slot no teto diario de cada uma;
-//   5. faz o claim de 1 contato por chip habilitado (SKIP LOCKED) e dispara
-//      todos em paralelo;
-//   6. reagenda cada chip individualmente com um novo intervalo sorteado.
+//   3. seleciona as que ja venceram o proprio intervalo fixo;
+//   4. disputa o REVEZAMENTO do pool: no maximo 1 envio por vez, espacado de
+//      (intervalo / no de chips), para os chips se alternarem;
+//   5. disputa atomicamente o relogio do chip da vez e reserva 1 slot no teto;
+//   6. faz o claim de 1 contato da sub-lista dele e dispara.
 //
-// Vazao = (no de chips conectados) x 150/dia, com o intervalo sorteado de
-// ANTIBAN.GAP_MIN_S..GAP_MAX_S POR CHIP, cada um puxando da sua sub-lista carimbada na
-// importacao. Nenhum chip acelera porque outro parou.
+// Vazao = (no de chips conectados) x 150/dia, espalhada pela janela inteira.
+// Nenhum chip acelera porque outro parou.
 // ===========================================================================
+
+/**
+ * Linha de controle do POOL em dispatch_instance_control: guarda o relogio do
+ * revezamento entre chips. Nao e uma instancia da Evolution -- nunca aparece
+ * como conectada, entao nunca entra no pool de disparo.
+ */
+const POOL_SLOT = '__revezamento_pool__';
 
 export interface TickCoreResult {
   success: boolean;
@@ -160,7 +168,7 @@ export async function runTickCore(options?: {
     return { success: true, skipped: 'pausado', status: await getQueueStatus() };
   }
 
-  // 2. Janela de horario (fuso MS: 8h-20h) — permite bypass em testes explicitamente autorizados
+  // 2. Janela de horario (fuso MS: 8h-21h) — permite bypass em testes explicitamente autorizados
   if (!options?.bypassHorario && !dentroDaJanela()) {
     return { success: true, skipped: 'fora_horario', status: await getQueueStatus() };
   }
@@ -185,32 +193,32 @@ export async function runTickCore(options?: {
   // forceNow NAO zera mais o intervalo dos chips. Zerar o relogio a cada
   // chamada (?force=true, test_simultaneo) fazia o chip disparar varias vezes
   // em segundos, furando o gap anti-ban -- rajada e o perfil que derruba chip.
-  // O intervalo sorteado de cada chip e respeitado sempre; force so libera a
+  // O intervalo fixo de cada chip e respeitado sempre; force so libera a
   // janela de horario.
 
-  // 5. Disputa ATOMICA do ritmo de cada chip. Quem vence avanca o proprio
-  //    next_allowed_at e ganha o direito de enviar neste ciclo; os ticks
-  //    concorrentes que perderem saem sem enviar. Isso e o que impede o MESMO
-  //    chip de mandar duas mensagens no mesmo segundo quando o cron, o worker
-  //    e as abas abertas disparam o tick ao mesmo tempo.
-  // Ordem de atendimento: MENOR carga relativa (sentToday/cap) primeiro. Com o
-  // warm-up ligado os tetos ficam diferentes entre os chips, entao round-robin
-  // cego sobrecarregaria o chip novo enquanto o maduro fica ocioso.
-  const carga = await Promise.all(
-    conectadas.map(async (inst) => {
-      const gate = await checkDispatchGate(inst, options?.bypassHorario);
-      return { inst, rel: gate.sentToday / (gate.dailyCap || 1) };
-    })
+  // 5. Carga e intervalo FIXO de cada chip. O intervalo sai do teto do dia do
+  //    proprio chip (janela util / teto): 150/dia -> 5 min cravados. Ordem de
+  //    atendimento: MENOR carga relativa (sentToday/cap) primeiro, para o chip
+  //    que ficou para tras (warm-up, reconexao) nao ser atropelado.
+  const agora = Date.now();
+  const [carga, proximos, cooldowns] = await Promise.all([
+    Promise.all(
+      conectadas.map(async (inst) => {
+        const gate = await checkDispatchGate(inst, options?.bypassHorario);
+        const cap = gate.dailyCap || ANTIBAN.DAILY_CAP;
+        return { inst, rel: gate.sentToday / (cap || 1), gap: intervaloFixoDoChipSegundos(cap) };
+      })
+    ),
+    getInstanceNextAllowedAt(conectadas),
+    getChipsEmCooldown(),
+  ]);
+  const ordenadas = carga.sort((a, b) => a.rel - b.rel);
+
+  // Chips cujo relogio fixo ja venceu (e que nao estao resfriando).
+  const vencidos = ordenadas.filter(
+    (c) => (proximos[c.inst] || 0) <= agora && !cooldowns[c.inst]
   );
-  const ordenadas = carga.sort((a, b) => a.rel - b.rel).map((c) => c.inst);
-
-  const prontas: string[] = [];
-  for (const inst of ordenadas) {
-    const venceu = await claimInstanceSlot(inst, sortearGapSegundos());
-    if (venceu) prontas.push(inst);
-  }
-
-  if (prontas.length === 0) {
+  if (vencidos.length === 0) {
     return {
       success: true,
       skipped: 'aguardando_intervalo',
@@ -220,9 +228,47 @@ export async function runTickCore(options?: {
     };
   }
 
-  // 6. Reserva 1 slot no teto diario de cada chip que venceu o ritmo. A reserva
-  //    e atomica: e ela que garante o limite diario mesmo com ticks
-  //    simultaneos.
+  // 6. REVEZAMENTO entre chips: no maximo UM envio do pool por vez, espacado
+  //    de (menor intervalo fixo / no de chips). Com 2 chips de 5 min sai uma
+  //    mensagem a cada 2m30, alternando A/B -- os chips nunca disparam no
+  //    mesmo segundo. A disputa e atomica (mesma RPC do ritmo por chip, numa
+  //    linha de controle do pool), entao o cron, o worker e as abas abertas
+  //    nao furam o espacamento.
+  const espacoPool = intervaloEntreChipsSegundos(ordenadas.map((c) => c.gap));
+  const poolLiberado = await claimInstanceSlot(POOL_SLOT, espacoPool);
+  if (!poolLiberado) {
+    return {
+      success: true,
+      skipped: 'revezamento_entre_chips',
+      instanciasConectadas: conectadas.length,
+      instanciasProntas: vencidos.length,
+      status: await getQueueStatus(),
+    };
+  }
+
+  // 7. Disputa ATOMICA do relogio do chip escolhido: quem vence avanca o
+  //    proprio next_allowed_at em exatamente o intervalo fixo dele. Se outro
+  //    tick levou esse chip no meio do caminho, tenta o proximo vencido.
+  let escolhido: string | null = null;
+  for (const c of vencidos) {
+    if (await claimInstanceSlot(c.inst, c.gap)) {
+      escolhido = c.inst;
+      break;
+    }
+  }
+  if (!escolhido) {
+    return {
+      success: true,
+      skipped: 'aguardando_intervalo',
+      instanciasConectadas: conectadas.length,
+      instanciasProntas: 0,
+      status: await getQueueStatus(),
+    };
+  }
+  const prontas = [escolhido];
+
+  // Reserva 1 slot no teto diario do chip escolhido. A reserva e atomica: e
+  // ela que garante o limite diario mesmo com ticks simultaneos.
   const habilitadas: string[] = [];
   for (const inst of prontas) {
     const slot = await reserveDispatchSlot(inst, options?.bypassHorario);
@@ -244,9 +290,9 @@ export async function runTickCore(options?: {
     };
   }
 
-  // 7. Cada chip puxa da PROPRIA sub-lista (carimbada na importacao). Se a
-  //    sub-lista dele acabou, ou se outro chip caiu e deixou orfaos, o claim
-  //    redistribui -- mas nunca toca no que esta reservado para um chip vivo.
+  // O chip puxa da PROPRIA sub-lista (carimbada na importacao). Se a sub-lista
+  // dele acabou, ou se outro chip caiu e deixou orfaos, o claim redistribui --
+  // mas nunca toca no que esta reservado para um chip vivo.
   const pares: Array<{ inst: string; item: QueueItem }> = [];
   for (const inst of habilitadas) {
     const [item] = await claimPendingItemsForInstance(inst, 1, conectadas);
@@ -258,7 +304,7 @@ export async function runTickCore(options?: {
     return { success: true, skipped: 'fila_vazia', status: await getQueueStatus() };
   }
 
-  // 8. Dispara em paralelo: 1 contato por chip, exatamente.
+  // 8. Dispara: 1 contato, pelo chip da vez.
   const enviados: string[] = [];
   const falhas: string[] = [];
 
@@ -271,13 +317,18 @@ export async function runTickCore(options?: {
     else falhas.push(pares[idx].item.phone);
   });
 
-  // 9. NAO reagenda aqui: o intervalo de cada chip ja foi fixado no passo 5,
+  // 9. NAO reagenda aqui: o intervalo do chip ja foi fixado no passo 7,
   //    ANTES do envio, pelo claimInstanceSlot atomico. Regravar depois abriria
-  //    de novo a janela de corrida que o passo 5 fecha.
+  //    de novo a janela de corrida que o passo 7 fecha.
 
   // Relogio agregado (o que a UI mostra): o chip que libera primeiro.
-  const novosProximos = await getInstanceNextAllowedAt(conectadas);
-  const proximoDoPool = Math.min(...conectadas.map((i) => novosProximos[i] || 0));
+  // Respeita tambem o revezamento: o pool so libera o proximo envio quando o
+  // chip da vez venceu E o espacamento entre chips passou.
+  const novosProximos = await getInstanceNextAllowedAt([...conectadas, POOL_SLOT]);
+  const proximoDoPool = Math.max(
+    Math.min(...conectadas.map((i) => novosProximos[i] || 0)),
+    novosProximos[POOL_SLOT] || 0
+  );
   await setNextAllowedAt(proximoDoPool);
 
   return {

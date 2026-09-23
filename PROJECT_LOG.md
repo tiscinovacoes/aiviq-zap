@@ -1209,3 +1209,18 @@ Origem: o chip `vinicius` caiu em 22/09 após 26 envios em 49 min (~1 a cada 1m5
   - 2 opt-out ("SAIR"), 1 "contato errado", 3 "quem é?" — sinal de denúncia, provável causa do ban.
   - 7 responderam a saudação e pararam em `aguardando_voto1`; 16 sem resposta.
 - ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 23/09/2026 — Tempo Fixo por Chip, Janela 8h–21h e Revezamento (v3.3.0)
+
+### Claude
+Decisão do operador: 150 por chip, trabalhar das 8h às 21h, tempo fixo por chip.
+
+- ✅ **Janela 8h–20h → 8h–21h** (`HORA_FIM: 21`).
+- ✅ **Intervalo FIXO por chip = janela útil / teto do dia** (`intervaloFixoDoChipSegundos`). Janela útil = 780 min − 30 min de margem = 750 min. Chip de 150/dia → **5 min cravados**; chip em warm-up com 30/dia → 25 min. Substitui o sorteio de 150–330s.
+- ✅ **Revezamento entre chips**: no máximo 1 envio do pool por vez, espaçado de (menor intervalo / nº de chips). 2 chips → 1 mensagem a cada 2m30, alternando A/B; nunca dois chips no mesmo segundo. Disputa atômica pela mesma RPC `claim_instance_slot`, numa linha de controle `__revezamento_pool__` (sem migration).
+- ✅ Pausa de lote desligada: quebraria a conta da janela (o chip não fecharia as 150).
+- ⚠️ `ana` (único chip no pool) está como `novo` sem `warmup_started_on` → teto de 30/dia (25 min de intervalo) até o operador declarar a maturidade em Configurações.
+- ✅ Validação: `tsc --noEmit` 0 erros.

@@ -46,7 +46,7 @@ export async function POST(
       success: true,
       campaignId: params.id,
       status: newStatus,
-      message: action === 'pause' ? 'Campanha pausada.' : 'Disparo em segundo plano ativado (lista dividida entre os chips, 1 lead a cada ~4 min em cada, teto de 150/dia por chip).',
+      message: action === 'pause' ? 'Campanha pausada.' : 'Disparo em segundo plano ativado (lista dividida entre os chips, 1 lead a cada 5 min em cada, das 8h às 21h, teto de 150/dia por chip).',
     });
   } catch (error: any) {
     return NextResponse.json(
