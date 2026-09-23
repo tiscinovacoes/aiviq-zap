@@ -33,13 +33,23 @@ import {
 } from 'lucide-react';
 import {
   RespostaEleitor,
-  CANDIDATOS_SENADO_MS,
+  candidatosParaExibir,
   EtapaPesquisa,
 } from '@/lib/pesquisaSenado';
 import type { PesquisaStats } from '@/lib/pesquisaSenadoStore';
 import type { EstadoDisparador, ItemFilaDisparo } from '@/lib/disparadorTypes';
 
 type VisaoModo = 'funil' | 'voto1' | 'voto2' | 'geral';
+
+/** Votos por id de candidato — para mostrar também quem saiu da lista mas tem voto. */
+function contarVotos(sessions: RespostaEleitor[], campo: 'voto1Id' | 'voto2Id'): Record<number, number> {
+  const out: Record<number, number> = {};
+  for (const s of sessions) {
+    const id = s[campo];
+    if (id) out[id] = (out[id] || 0) + 1;
+  }
+  return out;
+}
 
 const etapaLabels: Record<EtapaPesquisa, { label: string; cor: string; bg: string }> = {
   disparado: { label: 'Msg 1: Disparado', cor: 'text-amber-700 border-amber-300', bg: 'bg-amber-50' },
@@ -801,7 +811,7 @@ export default function PesquisaSenadoKanban() {
         {/* 2. VISÃO 1º VOTO POR OPÇÃO */}
         {visao === 'voto1' && (
           <div className="flex gap-4 h-full min-w-max pb-2">
-            {CANDIDATOS_SENADO_MS.map((cand) => {
+            {candidatosParaExibir(contarVotos(sessions, 'voto1Id')).map((cand) => {
               const eleitores = sessions.filter((s) => s.voto1Id === cand.id);
               const totalConcluidos = stats?.totalConcluidos || 1;
               const percentual = totalConcluidos > 0 ? ((eleitores.length / totalConcluidos) * 100).toFixed(1) : '0';
@@ -866,7 +876,7 @@ export default function PesquisaSenadoKanban() {
         {/* 3. VISÃO 2º VOTO POR OPÇÃO */}
         {visao === 'voto2' && (
           <div className="flex gap-4 h-full min-w-max pb-2">
-            {CANDIDATOS_SENADO_MS.map((cand) => {
+            {candidatosParaExibir(contarVotos(sessions, 'voto2Id')).map((cand) => {
               const eleitores = sessions.filter((s) => s.voto2Id === cand.id);
               const totalConcluidos = stats?.totalConcluidos || 1;
               const percentual = totalConcluidos > 0 ? ((eleitores.length / totalConcluidos) * 100).toFixed(1) : '0';

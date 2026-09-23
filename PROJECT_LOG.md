@@ -1224,3 +1224,18 @@ Decisão do operador: 150 por chip, trabalhar das 8h às 21h, tempo fixo por chi
 - ✅ Pausa de lote desligada: quebraria a conta da janela (o chip não fecharia as 150).
 - ⚠️ `ana` (único chip no pool) está como `novo` sem `warmup_started_on` → teto de 30/dia (25 min de intervalo) até o operador declarar a maturidade em Configurações.
 - ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 23/09/2026 — Pesquisa com 5 Candidatos em Ordem Alfabética (v3.4.0)
+
+### Claude
+Decisão do operador: a lista do Senado cai de 10 candidatos para 5, em ordem alfabética.
+
+- ✅ **Lista nova (v2)**: 1 Capitão Contar (PL) · 2 Reinaldo Azambuja (PL) · 3 Roberto Oshiro (NOVO) · 4 Soraya (PSB) · 5 Vander Loubet (PT) · 6 Branco/nulo · 7 Não sabe/não respondeu.
+- ✅ **IDs estáveis**: o `id` gravado em `voto1_id`/`voto2_id` não mudou (Contar=2, Azambuja=5, Oshiro=6, Soraya=7, Vander=10, branco=11, não sabe=12). Mudou só a `opcao`, o número exibido. Os votos já registrados continuam apontando para o candidato certo.
+- ✅ **Quem recebeu a lista antiga continua sendo lido pela lista antiga** (`019_pesquisa_lista_versao.sql`, aplicada): `pesquisa_senado.lista_versao` = 1 (default, tudo que existia) ou 2 (gravado ao enviar Msg 3/Msg 4 nova). Sem isso, quem recebeu a lista de 12 e digitasse "10" (Vander) cairia em "opção inválida", e "5" (Azambuja na antiga) viraria Vander na nova.
+- ✅ Candidatos que saíram (Daniel Junior, Valter da Comagran…) só aparecem no painel e nos rankings se tiverem voto gravado, marcados "(fora da lista)".
+- ✅ Resposta por texto aceita nome sem acento e grafias alternativas ("soraya", "reinaldo", "branco", "não sei").
+- ✅ Validação: `tsc --noEmit` 0 erros; mensagens e parser conferidos com `tsx`.

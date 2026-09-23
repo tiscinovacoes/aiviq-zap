@@ -1,4 +1,4 @@
-import { RespostaEleitor, EtapaPesquisa, CANDIDATOS_SENADO_MS } from './pesquisaSenado';
+import { RespostaEleitor, EtapaPesquisa, candidatosParaExibir } from './pesquisaSenado';
 import { getServiceContext, isPlaceholderEnv } from './supabase/authContext';
 
 // Persistência das sessões da Pesquisa Senado.
@@ -27,6 +27,7 @@ function rowToSession(r: any): RespostaEleitor {
     voto2Id: r.voto2_id ?? undefined,
     voto2Nome: r.voto2_nome ?? undefined,
     instanceName: r.instance_name ?? r.instanceName ?? undefined,
+    listaVersao: r.lista_versao ?? undefined,
     createdAt: r.created_at,
     lastMessageAt: r.updated_at,
   };
@@ -110,6 +111,9 @@ export async function savePesquisaSession(
     voto2_id: session.voto2Id ?? null,
     voto2_nome: session.voto2Nome ?? null,
   };
+  // Só grava a versão da lista quando ela foi definida (ao enviar Msg 3/4);
+  // omitida, o banco mantém a que já estava.
+  if (session.listaVersao) payloadBase.lista_versao = session.listaVersao;
 
   let data: any;
   let error: any;
@@ -221,20 +225,24 @@ export async function getPesquisaStats(base?: RespostaEleitor[]): Promise<Pesqui
     if (s.voto2Id) mapVoto2[s.voto2Id] = (mapVoto2[s.voto2Id] || 0) + 1;
   });
 
-  const rankingVoto1 = CANDIDATOS_SENADO_MS.map((c) => {
+  const rankingVoto1 = candidatosParaExibir(mapVoto1).map((c) => {
     const votos = mapVoto1[c.id] || 0;
     const percentual = totalConcluidos > 0 ? `${((votos / totalConcluidos) * 100).toFixed(1)}%` : '0.0%';
     return { id: c.id, nome: c.nome, rotulo: c.rotulo, votos, percentual };
   }).sort((a, b) => b.votos - a.votos);
 
-  const rankingVoto2 = CANDIDATOS_SENADO_MS.map((c) => {
+  const rankingVoto2 = candidatosParaExibir(mapVoto2).map((c) => {
     const votos = mapVoto2[c.id] || 0;
     const percentual = totalConcluidos > 0 ? `${((votos / totalConcluidos) * 100).toFixed(1)}%` : '0.0%';
     return { id: c.id, nome: c.nome, rotulo: c.rotulo, votos, percentual };
   }).sort((a, b) => b.votos - a.votos);
 
+  const somaVotos: Record<number, number> = {};
+  for (const [id, n] of [...Object.entries(mapVoto1), ...Object.entries(mapVoto2)]) {
+    somaVotos[Number(id)] = (somaVotos[Number(id)] || 0) + n;
+  }
   const totalVotosCombinados = totalConcluidos * 2;
-  const rankingGeral = CANDIDATOS_SENADO_MS.map((c) => {
+  const rankingGeral = candidatosParaExibir(somaVotos).map((c) => {
     const votos1 = mapVoto1[c.id] || 0;
     const votos2 = mapVoto2[c.id] || 0;
     const totalVotos = votos1 + votos2;

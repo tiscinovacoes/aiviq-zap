@@ -17,6 +17,8 @@ import {
   gerarMensagemAgradecimento,
   validarVoto,
   obterCandidatoPorId,
+  ultimaOpcao,
+  LISTA_VERSAO_ATUAL,
 } from '@/lib/pesquisaSenado';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 
@@ -343,6 +345,8 @@ export async function POST(req: NextRequest) {
           // Etapa 1: respondeu à saudação → Msg 2 + Msg 3
           if (session.etapa === 'disparado') {
             session.etapa = 'aguardando_voto1';
+            // Msg 3 sai com a lista ATUAL: grava a versão para ler o voto certo.
+            session.listaVersao = LISTA_VERSAO_ATUAL;
             await savePesquisaSession(session);
             sincronizarContatoEleitor({
               name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'aguardando_voto1',
@@ -355,15 +359,20 @@ export async function POST(req: NextRequest) {
 
           // Etapa 2: aguardando 1º voto
           else if (session.etapa === 'aguardando_voto1') {
-            const votoValido = validarVoto(cleanText);
+            // Lê pela numeração da lista que ESTE eleitor recebeu (quem recebeu a
+            // lista antiga de 12 ainda digita os números antigos).
+            const versao = session.listaVersao ?? 1;
+            const votoValido = validarVoto(cleanText, versao);
             if (!votoValido) {
-              await botReply(msg.from, session.name, 'Opa, não consegui identificar direitinho por aqui 😅 Pode me mandar só o número da opção (de 1 a 12)?', stickyInst);
+              await botReply(msg.from, session.name, `Opa, não consegui identificar direitinho por aqui 😅 Pode me mandar só o número da opção (de 1 a ${ultimaOpcao(versao)})?`, stickyInst);
             } else {
               const candidato1 = obterCandidatoPorId(votoValido);
               if (candidato1) {
                 session.voto1Id = candidato1.id;
                 session.voto1Nome = candidato1.nome;
                 session.etapa = 'aguardando_voto2';
+                // Msg 4 sai com a lista ATUAL, qualquer que tenha sido a do 1º voto.
+                session.listaVersao = LISTA_VERSAO_ATUAL;
                 await savePesquisaSession(session);
                 sincronizarContatoEleitor({
                   name: session.name, phone: msg.from, bairro: session.bairro,
@@ -378,10 +387,10 @@ export async function POST(req: NextRequest) {
 
           // Etapa 3: aguardando 2º voto
           else if (session.etapa === 'aguardando_voto2') {
-            const votoValido = validarVoto(cleanText);
+            const votoValido = validarVoto(cleanText, session.listaVersao ?? 1);
             if (!votoValido) {
               await botReply(msg.from, session.name, 'Opa, não consegui identificar por aqui 😅 Pode me mandar só o número da sua segunda escolha?', stickyInst);
-            } else if (session.voto1Id && session.voto1Id === votoValido && votoValido <= 10) {
+            } else if (session.voto1Id && session.voto1Id === votoValido && !obterCandidatoPorId(votoValido)?.isEspecial) {
               await botReply(msg.from, session.name, 'Como a gente tem direito a dois votos para candidatos diferentes, essa segunda escolha precisa ser em outro nome 🙂\nDá uma olhadinha na lista e me fala quem seria sua segunda opção:', stickyInst);
             } else {
               const candidato2 = obterCandidatoPorId(votoValido);
