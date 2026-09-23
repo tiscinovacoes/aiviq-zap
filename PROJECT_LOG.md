@@ -1190,3 +1190,37 @@ Pergunta do operador: "toda vez que conectar um novo número vai rodar certo?". 
 - 📌 Cobertura resultante: criado pelo painel → automático; criado direto na Evolution → nasce surdo, mas o badge vermelho **SEM WEBHOOK ⟳** aparece na lista e conserta em um clique; reconexão por QR novo → a configuração persiste na instância.
 - ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
 
+
+
+---
+
+## DATA: 23/09/2026 — Perfil Pós-Ban: 150/dia por Chip com Intervalo Largo (v3.2.0)
+
+### Claude
+Origem: o chip `vinicius` caiu em 22/09 após 26 envios em 49 min (~1 a cada 1m50s).
+
+- ✅ **Teto de regime 480 → 150 por chip/dia** (`ANTIBAN.DAILY_CAP`). Warm-up mantido (30/dia +20/dia): chip `novo` chega a 150 em ~6 dias.
+- ✅ **Intervalo 45–75s → 150–330s sorteado** (média 4 min). Lote de 15 com pausa de 10 min. 150 envios × 4 min + 9 pausas ≈ 690 min: o chip trabalha a janela 8h–20h inteira em ritmo baixo, sem rajada.
+- ✅ **`forceNow` não zera mais o intervalo dos chips**: `?force=true` no tick e `test_simultaneo` faziam o chip disparar a cada poucos segundos, furando o gap. Agora `force` só libera a janela de horário.
+- ✅ Cooldown por falhas 60 → 90 min; cooldown por ack de erro 120 → 180 min; presença "digitando" 1,8s → 3s.
+- ✅ Textos da UI atualizados (150/dia, ~4 min por chip).
+- 📊 **Respostas no chip banido (`vinicius`, 22/09)**: 26 enviados, 10 responderam (38%).
+  - 1 concluído: Vander Loubet (voto 1) / Branco-nulo (voto 2).
+  - 2 opt-out ("SAIR"), 1 "contato errado", 3 "quem é?" — sinal de denúncia, provável causa do ban.
+  - 7 responderam a saudação e pararam em `aguardando_voto1`; 16 sem resposta.
+- ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 23/09/2026 — Tempo Fixo por Chip, Janela 8h–21h e Revezamento (v3.3.0)
+
+### Claude
+Decisão do operador: 150 por chip, trabalhar das 8h às 21h, tempo fixo por chip.
+
+- ✅ **Janela 8h–20h → 8h–21h** (`HORA_FIM: 21`).
+- ✅ **Intervalo FIXO por chip = janela útil / teto do dia** (`intervaloFixoDoChipSegundos`). Janela útil = 780 min − 30 min de margem = 750 min. Chip de 150/dia → **5 min cravados**; chip em warm-up com 30/dia → 25 min. Substitui o sorteio de 150–330s.
+- ✅ **Revezamento entre chips**: no máximo 1 envio do pool por vez, espaçado de (menor intervalo / nº de chips). 2 chips → 1 mensagem a cada 2m30, alternando A/B; nunca dois chips no mesmo segundo. Disputa atômica pela mesma RPC `claim_instance_slot`, numa linha de controle `__revezamento_pool__` (sem migration).
+- ✅ Pausa de lote desligada: quebraria a conta da janela (o chip não fecharia as 150).
+- ⚠️ `ana` (único chip no pool) está como `novo` sem `warmup_started_on` → teto de 30/dia (25 min de intervalo) até o operador declarar a maturidade em Configurações.
+- ✅ Validação: `tsc --noEmit` 0 erros.
