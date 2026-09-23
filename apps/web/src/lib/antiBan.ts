@@ -17,48 +17,50 @@ export { spin, isOptOut } from '@/lib/spintax';
 // ============================================================================
 
 // -------- Parâmetros do perfil conservador (ajuste central) --------
-// Teto e cadencia definidos pelo operador: 480 mensagens por CHIP por dia, a
-// 1 envio por minuto em cada chip (60s fixo).
+// Perfil pós-ban (23/09/2026): teto de 150 mensagens por CHIP por dia, com
+// intervalo largo e sorteado para ESPALHAR as 150 pela janela inteira em vez de
+// despejar em rajada.
 //
-// Consequencia registrada: a janela 8h-20h tem 720 minutos, entao a 1/min o
-// chip cumpre as 480 em cerca de 8h e fica mudo as ultimas 4h. Rajada seguida
-// de silencio e um padrao que a Meta detecta, e o intervalo exato de 60s e
-// mecanicamente regular -- a alternativa avaliada foi 75-105s sorteado, que
-// espalharia as 480 pelas 12h inteiras. O operador optou pela cadencia fixa.
+// Conta da janela 8h-20h (720 min):
+//   150 envios x gap médio de 4 min (150-330s sorteado) = ~600 min
+//   + 9 pausas de lote de 10 min = ~90 min  -> ~690 min no total
+//   => o chip trabalha o dia inteiro num ritmo baixo e irregular, sem o padrão
+//      "rajada seguida de silêncio" que a Meta detecta.
 //
-// O teto continua sendo limite rigido, reservado de forma ATOMICA a cada envio
-// (reserveDispatchSlot), e o intervalo e disputado de forma atomica por chip
-// (claimInstanceSlot) para que dois ticks concorrentes nunca facam o mesmo chip
+// O teto continua sendo limite rígido, reservado de forma ATÔMICA a cada envio
+// (reserveDispatchSlot), e o intervalo é disputado de forma atômica por chip
+// (claimInstanceSlot) para que dois ticks concorrentes nunca façam o mesmo chip
 // enviar duas vezes no mesmo segundo.
 export const ANTIBAN = {
-  // WARM-UP: chip declarado "novo" comeca baixo e sobe. Numero novo despejando
-  // centenas de mensagens no primeiro dia e o perfil de ban mais classico.
+  // WARM-UP: chip declarado "novo" começa baixo e sobe. Número novo despejando
+  // centenas de mensagens no primeiro dia é o perfil de ban mais clássico.
   WARMUP_BASE: 30, // teto do dia 0
-  WARMUP_STEP: 20, // ganho por dia ate alcancar DAILY_CAP (~23 dias)
-  DAILY_CAP: 480, // teto de regime, por chip/dia
+  WARMUP_STEP: 20, // ganho por dia até alcançar DAILY_CAP (~6 dias)
+  DAILY_CAP: 150, // teto de regime, por chip/dia
   HORA_INICIO: 8, // 08:00 MS
   HORA_FIM: 20, // 20:00 MS (exclusivo)
-  // Cadência humanizada: intervalo com variação aleatória (45s a 75s, média 60s)
-  // para quebrar a previsibilidade mecânica detectada pelos algoritmos da Meta.
-  GAP_MIN_S: 45,
-  GAP_MAX_S: 75,
-  PRESENCA_MS: 1800, // "digitando..." antes de cada disparo em massa (humaniza)
+  // Intervalo sorteado entre 2m30s e 5m30s (média 4 min) por chip.
+  GAP_MIN_S: 150,
+  GAP_MAX_S: 330,
+  PRESENCA_MS: 3000, // "digitando..." antes de cada disparo em massa (humaniza)
 
-  // SAUDE DO CHIP
+  // SAÚDE DO CHIP
   // Falhas seguidas costumam ser o sinal PRECOCE de shadowban -- aparecem
-  // antes de a conexao cair, entao reagir so a connectionStatus chega tarde.
+  // antes de a conexão cair, então reagir só a connectionStatus chega tarde.
   MAX_FALHAS_SEGUIDAS: 3,
-  COOLDOWN_MIN: 60, // resfriamento apos as falhas seguidas
-  // Pausa por lote: quebra a cadencia mecanica de um chip que dispara sem parar.
-  LOTE_TAMANHO: 20,
-  PAUSA_LOTE_MIN: 15,
-  // Entrega recusada (ack ERROR) e gravíssimo: indica rejeição da Meta/Baileys.
-  // Interrompe imediatamente no 2º erro consecutivo para blindar e salvar o chip.
+  COOLDOWN_MIN: 90, // resfriamento após as falhas seguidas
+  // Pausa por lote: quebra a cadência de um chip que dispara sem parar.
+  // 150/15 = 10 lotes -> 9 pausas de 10 min = 90 min. Somado aos ~600 min de
+  // intervalos, dá ~690 min: cabe nos 720 da janela com folga.
+  LOTE_TAMANHO: 15,
+  PAUSA_LOTE_MIN: 10,
+  // Entrega recusada (ack ERROR) é gravíssimo: indica rejeição da Meta/Baileys.
+  // Interrompe no 2º erro consecutivo para blindar e salvar o chip.
   MAX_ACKS_ERRO: 2,
-  COOLDOWN_ACK_MIN: 120,
+  COOLDOWN_ACK_MIN: 180,
 };
 
-/** Intervalo até o próximo envio DAQUELE chip: 60s fixo (1 por minuto). */
+/** Intervalo até o próximo envio DAQUELE chip: sorteado entre GAP_MIN_S e GAP_MAX_S. */
 export function sortearGapSegundos(): number {
   const { GAP_MIN_S, GAP_MAX_S } = ANTIBAN;
   return Math.floor(Math.random() * (GAP_MAX_S - GAP_MIN_S + 1)) + GAP_MIN_S;
@@ -160,7 +162,7 @@ export async function checkDispatchGate(instanceName?: string, bypassHorario = f
 // O par checkDispatchGate() + recordDispatch() era ler-depois-gravar em duas
 // etapas. Com o cron da Vercel, o worker de servidor E cada aba aberta do app
 // chamando o tick, dois disparos concorrentes liam o mesmo sent_count e ambos
-// enviavam: o teto de 480 vazava justamente nas horas de maior volume. Agora o
+// enviavam: o teto diário vazava justamente nas horas de maior volume. Agora o
 // slot é reservado ANTES do envio, num único UPDATE atômico no Postgres.
 // ---------------------------------------------------------------------------
 

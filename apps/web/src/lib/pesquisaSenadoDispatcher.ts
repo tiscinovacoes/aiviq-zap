@@ -36,18 +36,18 @@ import {
 // MOTOR DE DISPARO MULTI-INSTANCIA
 //
 // Uma campanha, N chips. Cada chip e uma fila independente, com o SEU proprio
-// relogio e o SEU proprio teto diario de ANTIBAN.DAILY_CAP (480). A cada tick:
+// relogio e o SEU proprio teto diario de ANTIBAN.DAILY_CAP (150). A cada tick:
 //
 //   1. devolve a fila contatos presos em 'processando' (worker que morreu);
 //   2. pergunta a Evolution quais instancias estao conectadas;
-//   3. seleciona as que ja venceram o proprio intervalo (60s = 1 por minuto);
+//   3. seleciona as que ja venceram o proprio intervalo (sorteado, ~4 min);
 //   4. reserva ATOMICAMENTE 1 slot no teto diario de cada uma;
 //   5. faz o claim de 1 contato por chip habilitado (SKIP LOCKED) e dispara
 //      todos em paralelo;
 //   6. reagenda cada chip individualmente com um novo intervalo sorteado.
 //
-// Vazao = (no de chips conectados) x 480/dia, com o piso de seguranca de um
-// envio por minuto POR CHIP, cada um puxando da sua sub-lista carimbada na
+// Vazao = (no de chips conectados) x 150/dia, com o intervalo sorteado de
+// ANTIBAN.GAP_MIN_S..GAP_MAX_S POR CHIP, cada um puxando da sua sub-lista carimbada na
 // importacao. Nenhum chip acelera porque outro parou.
 // ===========================================================================
 
@@ -182,12 +182,11 @@ export async function runTickCore(options?: {
     };
   }
 
-  // Se forceNow, zera o intervalo agendado de cada chip para que todos disparem no mesmo segundo
-  if (options?.forceNow) {
-    for (const inst of conectadas) {
-      await setInstanceNextAllowedAt(inst, 0);
-    }
-  }
+  // forceNow NAO zera mais o intervalo dos chips. Zerar o relogio a cada
+  // chamada (?force=true, test_simultaneo) fazia o chip disparar varias vezes
+  // em segundos, furando o gap anti-ban -- rajada e o perfil que derruba chip.
+  // O intervalo sorteado de cada chip e respeitado sempre; force so libera a
+  // janela de horario.
 
   // 5. Disputa ATOMICA do ritmo de cada chip. Quem vence avanca o proprio
   //    next_allowed_at e ganha o direito de enviar neste ciclo; os ticks
@@ -222,7 +221,7 @@ export async function runTickCore(options?: {
   }
 
   // 6. Reserva 1 slot no teto diario de cada chip que venceu o ritmo. A reserva
-  //    e atomica: e ela que garante o limite de 480/dia mesmo com ticks
+  //    e atomica: e ela que garante o limite diario mesmo com ticks
   //    simultaneos.
   const habilitadas: string[] = [];
   for (const inst of prontas) {
@@ -230,7 +229,7 @@ export async function runTickCore(options?: {
     if (slot.ok) {
       habilitadas.push(inst);
     } else if (slot.reason === 'teto_diario') {
-      // Chip fechou as 480 do dia: dorme 1h antes de reavaliar.
+      // Chip fechou o teto do dia: dorme 1h antes de reavaliar.
       await setInstanceNextAllowedAt(inst, Date.now() + 60 * 60 * 1000);
     }
   }
