@@ -1257,3 +1257,20 @@ Pedido do operador: o eleitor responde a saudação em pedaços ("oi" … "tudo 
   - **Rede de segurança no tick**: Msg 2/3 com a espera vencida há mais de 2 min e não enviada é reenviada (`reenviarMsg3Atrasadas`), inclusive com a fila pausada.
 - ✅ **Msg 2 em 1ª pessoa**: `{Estou fazendo|Estou realizando} uma pesquisa…` (saíram "Estamos fazendo" e "Faço parte de").
 - ✅ Validação: `tsc --noEmit` 0 erros; marcação/reserva conferidas em modo local com `tsx`.
+
+
+---
+
+## DATA: 23/09/2026 — IP Dedicado (Proxy) por Instância (v3.7.0)
+
+### Claude
+Causa investigada do bloqueio do Antonio (número "quente" banido no 1º disparo): o código não tinha NENHUMA configuração de proxy por instância — todos os chips passam pela mesma `EVOLUTION_API_URL`, um único servidor Evolution/Baileys. Sem proxy dedicado, todo chip sai pelo IP compartilhado do servidor, e um número novo herda a reputação ruim desse IP (histórico de disparo em massa dos outros chips) mesmo sendo "quente". Confirmado: Lindalva recebeu e respondeu normalmente (a mensagem chegou), descartando conteúdo/número como causa.
+
+Operador confirmou: contratou IPs ISP e residenciais estáticos. Pedido: trazer essa configuração para o painel.
+
+- ✅ **`evolutionService.ts`**: `getProxyInstancia()` e `configurarProxyInstancia()`, mesmo padrão do webhook (`/proxy/find/{instance}` e `/proxy/set/{instance}` da Evolution API).
+- ✅ **`/api/instances/[name]`**: ações `get_proxy`, `set_proxy` (host, porta, protocolo, usuário, senha) e `remove_proxy`.
+- ✅ **`/api/instances` (GET)**: cada instância devolve `proxyOk` e `proxyHost`.
+- ✅ **Painel (`MultiInstancePanel.tsx`)**: badge "IP PRÓPRIO" (verde) ou "IP COMPARTILHADO" (cinza) em cada chip, igual ao badge de webhook. Clicar abre modal para configurar host/porta/protocolo/usuário/senha, ou remover o proxy.
+- ✅ Validação: `tsc --noEmit` 0 erros.
+- ⚠️ Não testado contra o servidor Evolution real (endpoint `/proxy/set`/`/proxy/find` — confirmar formato exato do payload na versão da Evolution em uso; código tenta seguir o padrão documentado da v2).
