@@ -1274,3 +1274,16 @@ Operador confirmou: contratou IPs ISP e residenciais estáticos. Pedido: trazer 
 - ✅ **Painel (`MultiInstancePanel.tsx`)**: badge "IP PRÓPRIO" (verde) ou "IP COMPARTILHADO" (cinza) em cada chip, igual ao badge de webhook. Clicar abre modal para configurar host/porta/protocolo/usuário/senha, ou remover o proxy.
 - ✅ Validação: `tsc --noEmit` 0 erros.
 - ⚠️ Não testado contra o servidor Evolution real (endpoint `/proxy/set`/`/proxy/find` — confirmar formato exato do payload na versão da Evolution em uso; código tenta seguir o padrão documentado da v2).
+
+
+---
+
+## DATA: 23/09/2026 — Timeout do Proxy Aumentado (v3.7.1)
+
+### Claude
+Operador testou o proxy da Decodo (isp.decodo.com) e recebeu "The operation was aborted due to timeout" ao salvar. Causa: `configurarProxyInstancia()` tinha 6s de timeout, curto para a Evolution validar a conexão real com um proxy externo.
+
+- ✅ Timeout de `set_proxy` na Evolution: 6s → 20s.
+- ✅ `maxDuration = 30` na rota `/api/instances/[name]`, para a função da Vercel não encerrar antes do timeout interno.
+- ✅ Mensagem de erro específica para timeout, em vez do texto cru do navegador.
+- ⚠️ Ponto de atenção passado ao operador: o campo Host deve ser o hostname do provedor (`isp.decodo.com`), não o IP de saída resultante daquele proxy.
