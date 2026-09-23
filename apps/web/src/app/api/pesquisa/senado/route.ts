@@ -15,6 +15,7 @@ import {
   gerarMensagemAgradecimento,
   validarVoto,
   obterCandidatoPorId,
+  LISTA_VERSAO_ATUAL,
 } from '@/lib/pesquisaSenado';
 import { sendRealMessageDetailed, resolveSendInstance } from '@/lib/evolutionService';
 import { addBotDispatchedMessage } from '@/lib/conversationStore';
@@ -172,6 +173,7 @@ export async function POST(req: NextRequest) {
 
       if (session.etapa === 'disparado') {
         session.etapa = 'aguardando_voto1';
+        session.listaVersao = LISTA_VERSAO_ATUAL;
         await savePesquisaSession(session);
         sincronizarContatoEleitor({
           name: session.name,
@@ -193,6 +195,7 @@ export async function POST(req: NextRequest) {
           session.voto1Id = c1.id;
           session.voto1Nome = c1.nome;
           session.etapa = 'aguardando_voto2';
+          session.listaVersao = LISTA_VERSAO_ATUAL;
           await savePesquisaSession(session);
           sincronizarContatoEleitor({
             name: session.name,
