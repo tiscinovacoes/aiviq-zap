@@ -5,6 +5,7 @@ import {
   getPesquisaSessionByPhone,
   createOrUpdateSessionByPhone,
   savePesquisaSession,
+  aplicarRecorteFunil,
 } from '@/lib/pesquisaSenadoStore';
 import {
   gerarMensagem1,
@@ -25,8 +26,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const sessions = await getPesquisaSessions();
-    const stats = await getPesquisaStats();
+    // Recorte do funil: disparos sem resposta anteriores a 19/09 ficam de fora.
+    const sessions = aplicarRecorteFunil(await getPesquisaSessions());
+    const stats = await getPesquisaStats(sessions);
     return NextResponse.json({
       success: true,
       sessions,

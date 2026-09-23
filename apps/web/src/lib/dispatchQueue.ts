@@ -209,6 +209,37 @@ export async function clearPending(): Promise<void> {
   await ctx.db.from('dispatch_queue').delete().eq('organization_id', ctx.organizationId).in('status', ['pendente', 'processando']);
 }
 
+// -------------------- LOTE ATUAL (para a UI) --------------------
+// O banner da fila e o KPI de falhas mostram o que ESTA sendo executado, nao o
+// historico inteiro da tabela. "Lote atual" = tudo o que foi enfileirado a
+// partir do contato pendente mais antigo. Sem pendentes (lote terminou), vale
+// o ultimo lote: o que foi enfileirado no mesmo dia do contato mais recente.
+async function inicioLoteAtual(ctx: NonNullable<Awaited<ReturnType<typeof getServiceContext>>>): Promise<string | null> {
+  const { data: pend } = await ctx.db
+    .from('dispatch_queue')
+    .select('created_at')
+    .eq('organization_id', ctx.organizationId)
+    .in('status', ['pendente', 'processando'])
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (pend?.created_at) return pend.created_at as string;
+
+  const { data: ult } = await ctx.db
+    .from('dispatch_queue')
+    .select('created_at')
+    .eq('organization_id', ctx.organizationId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!ult?.created_at) return null;
+  // Inicio do dia (fuso MS, UTC-4) do contato mais recente.
+  const dia = new Date(new Date(ult.created_at as string).getTime() - 4 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  return `${dia}T00:00:00-04:00`;
+}
+
 // -------------------- STATUS (para a UI) --------------------
 export async function getQueueStatus(): Promise<QueueStatus> {
   if (isPlaceholderEnv()) {
@@ -228,13 +259,16 @@ export async function getQueueStatus(): Promise<QueueStatus> {
   if (!ctx) return { total: 0, enviados: 0, erros: 0, pendentes: 0, emRetentativa: 0, pausado: false, ativo: false, segundosRestantesProximo: 0 };
 
   const counts: Record<string, number> = { pendente: 0, processando: 0, enviado: 0, erro: 0 };
-  // Conta por status (3 queries baratas por índice, evita puxar linhas).
+  const inicio = await inicioLoteAtual(ctx);
+  // Conta por status (queries baratas por índice, evita puxar linhas), só do lote atual.
   for (const s of ['pendente', 'processando', 'enviado', 'erro'] as const) {
-    const { count } = await ctx.db
+    let q = ctx.db
       .from('dispatch_queue')
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', ctx.organizationId)
       .eq('status', s);
+    if (inicio) q = q.gte('created_at', inicio);
+    const { count } = await q;
     counts[s] = count || 0;
   }
   // Pendentes que ja falharam ao menos uma vez (falha parcial, invisivel antes:
@@ -495,13 +529,14 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
   }
   const ctx = await getServiceContext();
   if (!ctx) return [];
-  const { data } = await ctx.db
+  const inicio = await inicioLoteAtual(ctx);
+  let q = ctx.db
     .from('dispatch_queue')
     .select('id, phone, name, bairro, error, attempts, instance_name, created_at')
     .eq('organization_id', ctx.organizationId)
-    .eq('status', 'erro')
-    .order('created_at', { ascending: false })
-    .limit(limit);
+    .eq('status', 'erro');
+  if (inicio) q = q.gte('created_at', inicio);
+  const { data } = await q.order('created_at', { ascending: false }).limit(limit);
 
   return (data || []).map((r: any) => ({
     id: r.id,
@@ -845,15 +880,18 @@ export interface ProgressoChip {
   erros: number;
 }
 
-/** Progresso por chip: quanto da sub-lista de cada um ja saiu. */
+/** Progresso por chip no LOTE ATUAL: quanto da sub-lista de cada um ja saiu. */
 export async function getProgressoPorChip(): Promise<ProgressoChip[]> {
   if (isPlaceholderEnv()) return [];
   const ctx = await getServiceContext();
   if (!ctx) return [];
-  const { data, error } = await ctx.db
+  const inicio = await inicioLoteAtual(ctx);
+  let q = ctx.db
     .from('dispatch_queue')
     .select('assigned_instance, instance_name, status')
     .eq('organization_id', ctx.organizationId);
+  if (inicio) q = q.gte('created_at', inicio);
+  const { data, error } = await q;
   if (error || !data) return [];
 
   const mapa = new Map<string, ProgressoChip>();

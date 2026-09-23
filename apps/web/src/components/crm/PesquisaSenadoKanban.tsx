@@ -555,7 +555,7 @@ export default function PesquisaSenadoKanban() {
             )}
 
             <span className="text-emerald-700">
-              Progresso: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados
+              Lote atual: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados
               {estadoDisparador.erros > 0 && ` (${estadoDisparador.erros} falhas)`}
             </span>
 
@@ -611,7 +611,7 @@ export default function PesquisaSenadoKanban() {
             <Users className="w-4 h-4 text-slate-400" />
           </div>
           <p className="text-xl font-bold text-slate-900">{stats?.totalEleitores || sessions.length}</p>
-          <p className="text-[11px] text-slate-400">Eleitores abordados</p>
+          <p className="text-[11px] text-slate-400">Eleitores abordados desde 19/09</p>
         </div>
 
         <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
@@ -687,7 +687,7 @@ export default function PesquisaSenadoKanban() {
               {
                 id: 'disparado',
                 label: '1. Disparado',
-                desc: 'Aguardando resposta à saudação (Msg 1)',
+                desc: 'Aguardando resposta à saudação (Msg 1) · desde 19/09',
                 items: sessions.filter((s) => s.etapa === 'disparado'),
                 cor: 'border-t-amber-500',
               },
