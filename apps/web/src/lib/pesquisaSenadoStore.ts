@@ -176,8 +176,27 @@ export interface PesquisaStats {
   rankingGeral: Array<{ id: number; nome: string; rotulo: string; votos1: number; votos2: number; totalVotos: number; percentual: string }>;
 }
 
-export async function getPesquisaStats(): Promise<PesquisaStats> {
-  const sessions = await getPesquisaSessions();
+// ---------------------------------------------------------------------------
+// RECORTE DO FUNIL (decisão do operador, 23/09/2026)
+// A coluna "1. Disparado" e o total de disparos contam só a partir de 19/09.
+// Os contatos abordados antes disso que NUNCA responderam ficam fora do funil e
+// das proporções (são da fase em que os chips caíram / disparavam no vazio).
+// Quem respondeu, votou ou concluiu continua valendo, qualquer que seja a data.
+// Nada é apagado do banco: é só o recorte do que o painel mostra.
+// ---------------------------------------------------------------------------
+export const CORTE_DISPAROS_ISO = '2026-09-19T00:00:00-04:00'; // 19/09 00h MS
+
+export function aplicarRecorteFunil(sessions: RespostaEleitor[]): RespostaEleitor[] {
+  const corte = new Date(CORTE_DISPAROS_ISO).getTime();
+  return sessions.filter((s) => {
+    if (s.etapa !== 'disparado') return true;
+    const t = s.createdAt ? new Date(s.createdAt).getTime() : NaN;
+    return isNaN(t) || t >= corte;
+  });
+}
+
+export async function getPesquisaStats(base?: RespostaEleitor[]): Promise<PesquisaStats> {
+  const sessions = base ?? aplicarRecorteFunil(await getPesquisaSessions());
   const totalEleitores = sessions.length;
   const concluidos = sessions.filter((s) => s.etapa === 'concluido');
   const totalConcluidos = concluidos.length;
