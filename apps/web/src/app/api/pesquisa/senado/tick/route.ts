@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbContext } from '@/lib/supabase/authContext';
 import { runTickCore } from '@/lib/pesquisaSenadoDispatcher';
+import { reenviarMsg3Atrasadas } from '@/lib/pesquisaFluxo';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -53,8 +54,16 @@ async function handleRequest(req: NextRequest) {
     req.nextUrl.searchParams.get('force') === 'true' ||
     req.nextUrl.searchParams.get('bypass') === 'true';
 
+  // Rede de segurança: Msg 2/3 que o webhook agendou e não conseguiu enviar
+  // (função encerrada, chip fora do ar). Independe de pausa e da janela: é
+  // resposta a quem já falou com a gente, não disparo novo.
+  const msg3Reenviadas = await reenviarMsg3Atrasadas().catch((e) => {
+    console.error('[tick] reenviarMsg3Atrasadas:', e);
+    return 0;
+  });
+
   const result = await runTickCore({ bypassHorario: force, forceNow: force });
-  return NextResponse.json(result);
+  return NextResponse.json({ ...result, msg3Reenviadas });
 }
 
 export async function GET(req: NextRequest) {
