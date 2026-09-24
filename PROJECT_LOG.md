@@ -1287,3 +1287,15 @@ Operador testou o proxy da Decodo (isp.decodo.com) e recebeu "The operation was 
 - ✅ `maxDuration = 30` na rota `/api/instances/[name]`, para a função da Vercel não encerrar antes do timeout interno.
 - ✅ Mensagem de erro específica para timeout, em vez do texto cru do navegador.
 - ⚠️ Ponto de atenção passado ao operador: o campo Host deve ser o hostname do provedor (`isp.decodo.com`), não o IP de saída resultante daquele proxy.
+
+
+---
+
+## DATA: 24/09/2026 — QR Code se Renova Sozinho (v3.7.2)
+
+### Claude
+Operador relatou: ao conectar um número novo (sec saude2), "não lê o QR" — a imagem aparecia mas o WhatsApp recusava. Causa confirmada no código: o modal QR fazia polling só do status de conexão a cada 3.5s; o próprio QR nunca era regenerado. Como o QR do WhatsApp expira em segundos, ele ficava "morto" na tela até o operador notar e clicar manualmente em "Gerar novo QR".
+
+- ✅ Novo QR gerado automaticamente a cada 25s enquanto o modal estiver aberto e o número não tiver conectado (chama `get_qr` de novo e atualiza a imagem, sem fechar o modal nem mexer no estado de erro/busy da lista).
+- ✅ Aviso no modal: "o código se renova sozinho a cada 25s".
+- ✅ Validação: `tsc --noEmit` 0 erros.
