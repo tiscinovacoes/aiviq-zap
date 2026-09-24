@@ -471,14 +471,27 @@ export async function markItemSent(
     .eq('id', id);
 }
 
-/** Incrementa tentativas; marca 'erro' após 3 falhas. Retorna se falhou de vez. */
+// Erros PERMANENTES: o numero nao existe no WhatsApp (a Evolution devolve
+// "exists":false ao consultar o JID antes de enviar). Tentar de novo nunca
+// muda o resultado -- a 2a e a 3a tentativa dao o mesmo erro sempre. Sem essa
+// distincao, cada numero invalido gastava 3 tentativas (e 3 falhas) a toa,
+// inclusive contando contra o cooldown de falhas seguidas do CHIP, que nao
+// tem culpa nenhuma do numero nao existir.
+const PADROES_ERRO_PERMANENTE = [/"exists"\s*:\s*false/i, /numero.{0,20}n[aã]o existe/i, /invalid.{0,10}number/i];
+
+export function ehErroPermanente(err: string): boolean {
+  return PADROES_ERRO_PERMANENTE.some((re) => re.test(err));
+}
+
+/** Incrementa tentativas; marca 'erro' após 3 falhas (ou na 1ª, se for erro permanente). Retorna se falhou de vez. */
 export async function markItemError(
   id: string,
   attempts: number,
   err: string,
   instanceName?: string
 ): Promise<{ failed: boolean }> {
-  const failed = attempts + 1 >= 3;
+  const permanente = ehErroPermanente(err);
+  const failed = permanente || attempts + 1 >= 3;
   if (isPlaceholderEnv()) {
     const it = (global.__aiviq_queue || []).find((i) => i.id === id);
     if (it) { it.attempts = attempts + 1; if (failed) it.status = 'erro'; }
@@ -492,7 +505,8 @@ export async function markItemError(
       attempts: attempts + 1,
       error: err.slice(0, 300),
       status: failed ? 'erro' : 'pendente',
-      // Na 3ª falha, marca como definitivo: nunca mais entra na fila.
+      // Falha definitiva: 3ª tentativa esgotada, OU 1ª tentativa com erro
+      // permanente (numero nao existe -- nao ha 2ª/3ª tentativa que resolva).
       status_definitivo: failed || undefined,
       // Registra em QUAL chip a falha aconteceu -- antes so o sucesso gravava
       // isso, entao a auditoria de falhas nao sabia dizer qual numero falhou.

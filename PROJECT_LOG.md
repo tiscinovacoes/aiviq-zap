@@ -1299,3 +1299,17 @@ Operador relatou: ao conectar um número novo (sec saude2), "não lê o QR" — 
 - ✅ Novo QR gerado automaticamente a cada 25s enquanto o modal estiver aberto e o número não tiver conectado (chama `get_qr` de novo e atualiza a imagem, sem fechar o modal nem mexer no estado de erro/busy da lista).
 - ✅ Aviso no modal: "o código se renova sozinho a cada 25s".
 - ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 24/09/2026 — Número Inexistente Falha na 1ª Tentativa (v3.7.3)
+
+### Claude
+Operador notou: contatos com erro "número não existe no WhatsApp" (Evolution devolve `"exists":false`) continuavam consumindo 3 tentativas antes de desistir, mesmo sabendo de cara que o número é inválido — a 2ª e 3ª tentativa sempre dão o mesmo erro. Também descobri que essa falha estava contando contra o cooldown de 90min do CHIP ("RESFRIANDO"), sem ser culpa do chip.
+
+- ✅ `ehErroPermanente()` em `dispatchQueue.ts`: detecta `"exists":false` (e variações) no texto do erro.
+- ✅ `markItemError()`: erro permanente marca `status_definitivo=true` já na 1ª tentativa, sem esperar 3.
+- ✅ `dispararContato()`: erro permanente NÃO conta para `registrarSaude(instancia, false)` — não entra no cálculo de falhas seguidas do chip, não derruba ele em cooldown.
+- ✅ Resposta ao operador: cooldown "RESFRIANDO" dura 90 minutos (3 falhas seguidas do chip).
+- ⚠️ Contatos já esgotados em 3 tentativas antes desta correção continuam `status_definitivo=true` normalmente — nada a corrigir neles.
