@@ -29,6 +29,7 @@ import {
   registrarResultadoChip,
   markItemSent,
   markItemError,
+  ehErroPermanente,
   getQueueStatus,
   getChipsEmCooldown,
   type QueueItem,
@@ -109,9 +110,12 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
     const r = await sendRealMessageDetailed(item.phone, msg1, instancia, ANTIBAN.PRESENCA_MS);
 
     if (!r.ok) {
-      await markItemError(item.id, item.attempts || 0, r.error || 'Falha no envio pelo WhatsApp', instancia);
+      const erroMsg = r.error || 'Falha no envio pelo WhatsApp';
+      await markItemError(item.id, item.attempts || 0, erroMsg, instancia);
       await releaseDispatchSlot(instancia); // nada saiu do chip: devolve a cota
-      await registrarSaude(instancia, false);
+      // Numero que nao existe no WhatsApp nao e culpa do CHIP -- nao conta
+      // para o cooldown de falhas seguidas dele (90 min de resfriamento).
+      if (!ehErroPermanente(erroMsg)) await registrarSaude(instancia, false);
       return false;
     }
 
