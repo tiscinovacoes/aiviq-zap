@@ -28,6 +28,7 @@ export default function MultiInstancePanel() {
   const repararWebhook = useInstanceStore((s) => s.repararWebhook);
   const setProxy = useInstanceStore((s) => s.setProxy);
   const removeProxy = useInstanceStore((s) => s.removeProxy);
+  const liberarCooldown = useInstanceStore((s) => s.liberarCooldown);
 
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
@@ -354,14 +355,23 @@ export default function MultiInstancePanel() {
                 {i.proxyOk ? 'IP PRÓPRIO' : 'IP COMPARTILHADO'}
               </button>
               {i.cooldownAte && new Date(i.cooldownAte) > new Date() && (
-                <span
+                <button
+                  onClick={async () => {
+                    setBusy(i.instanceName);
+                    await liberarCooldown(i.instanceName);
+                    setBusy(null);
+                  }}
+                  disabled={busy === i.instanceName}
                   title={'Fora do disparo até ' +
                     new Date(i.cooldownAte).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) +
-                    (i.cooldownMotivo === 'falhas_seguidas' ? ' (falhas seguidas)' : ' (pausa de lote)')}
-                  className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0"
+                    (i.cooldownMotivo === 'falhas_seguidas' ? ' (falhas seguidas)' : ' (pausa de lote)') +
+                    ' — clique para liberar agora'}
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0 hover:bg-amber-200 disabled:opacity-60"
                 >
-                  {i.cooldownMotivo === 'falhas_seguidas' ? 'RESFRIANDO' : 'PAUSA DE LOTE'}
-                </span>
+                  {busy === i.instanceName
+                    ? 'LIBERANDO…'
+                    : (i.cooldownMotivo === 'falhas_seguidas' ? 'RESFRIANDO' : 'PAUSA DE LOTE') + ' ⟳'}
+                </button>
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
