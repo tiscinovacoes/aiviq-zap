@@ -11,6 +11,9 @@ import { setDispatchEnabled, setMaturidadeChip } from '@/lib/dispatchQueue';
 import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
+// set_proxy pode levar ate 20s (a Evolution testa a conexao real com o proxy);
+// o padrao da Vercel para a funcao encerraria antes disso.
+export const maxDuration = 30;
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';

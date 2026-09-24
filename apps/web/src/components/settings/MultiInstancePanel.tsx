@@ -69,6 +69,34 @@ export default function MultiInstancePanel() {
     return () => clearInterval(id);
   }, [qrModal, fetchInstances]);
 
+  // O QR code do WhatsApp expira rapido (segundos). Sem isto, ele ficava "morto"
+  // na tela ate o operador notar e clicar manualmente em "Gerar novo QR" -- e
+  // enquanto isso o celular so recusava a leitura, parecendo bug. Renova sozinho
+  // a cada 25s enquanto o modal estiver aberto e o numero ainda nao conectou.
+  useEffect(() => {
+    if (!qrModal) return;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/instances/${encodeURIComponent(qrModal.instanceName)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get_qr' }),
+        });
+        const data = await res.json();
+        if (data.success && data.qrCode) {
+          setQrModal((cur) =>
+            cur && cur.instanceName === qrModal.instanceName
+              ? { ...cur, qrCode: data.qrCode, pairingCode: data.pairingCode }
+              : cur
+          );
+        }
+      } catch {
+        // silencioso: tenta de novo no proximo ciclo
+      }
+    }, 25000);
+    return () => clearInterval(id);
+  }, [qrModal?.instanceName]);
+
   async function handleCreate() {
     setError(null);
     const name = newName.trim();
@@ -484,7 +512,9 @@ export default function MultiInstancePanel() {
               <RefreshCw className="w-3.5 h-3.5" /> Gerar novo QR
             </button>
             <p className="mt-2 text-[10px] text-slate-400">
-              A janela fecha sozinha quando o número conectar.
+              A janela fecha sozinha quando o número conectar. O código se renova
+              sozinho a cada 25s — se o WhatsApp recusar a leitura, espere a
+              imagem trocar antes de apontar a câmera de novo.
             </p>
           </div>
         </div>
