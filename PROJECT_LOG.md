@@ -1313,3 +1313,16 @@ Operador notou: contatos com erro "número não existe no WhatsApp" (Evolution d
 - ✅ `dispararContato()`: erro permanente NÃO conta para `registrarSaude(instancia, false)` — não entra no cálculo de falhas seguidas do chip, não derruba ele em cooldown.
 - ✅ Resposta ao operador: cooldown "RESFRIANDO" dura 90 minutos (3 falhas seguidas do chip).
 - ⚠️ Contatos já esgotados em 3 tentativas antes desta correção continuam `status_definitivo=true` normalmente — nada a corrigir neles.
+
+
+---
+
+## DATA: 24/09/2026 — Liberar Cooldown Manualmente (v3.7.4)
+
+### Claude
+Operador pediu para poder desativar o resfriamento. Confirmado o escopo: um botão para liberar um chip específico que está em RESFRIANDO/PAUSA DE LOTE agora, sem esperar os 90/180 min — mantendo o mecanismo de proteção ativo para acionar de novo se houver novas falhas seguidas (não é um desligamento geral, que removeria essa camada anti-ban).
+
+- ✅ `liberarCooldownChip()` (`dispatchQueue.ts`): zera `cooldown_ate`, `cooldown_motivo`, `falhas_seguidas`, `acks_erro_seguidos` de um chip.
+- ✅ Ação `liberar_cooldown` em `/api/instances/[name]`.
+- ✅ Painel: o badge "RESFRIANDO"/"PAUSA DE LOTE" agora é clicável — libera na hora.
+- ✅ Validação: `tsc --noEmit` 0 erros.

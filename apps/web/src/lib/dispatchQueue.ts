@@ -1112,6 +1112,31 @@ export async function setMaturidadeChip(
   );
 }
 
+/**
+ * Libera manualmente um chip que esta em cooldown (RESFRIANDO / PAUSA DE
+ * LOTE): zera o horario de resfriamento e os contadores de falha, sem mexer
+ * no relogio normal de disparo (intervalo fixo continua valendo). O operador
+ * usa isto quando confirma que a causa da pausa ja foi resolvida (proxy
+ * corrigido, numero verificado etc.) e nao quer esperar os 90/180 min.
+ */
+export async function liberarCooldownChip(instance: string): Promise<void> {
+  if (isPlaceholderEnv()) return;
+  const ctx = await getServiceContext();
+  if (!ctx) return;
+  await ctx.db.from('dispatch_instance_control').upsert(
+    {
+      organization_id: ctx.organizationId,
+      instance_name: instance,
+      cooldown_ate: null,
+      cooldown_motivo: null,
+      falhas_seguidas: 0,
+      acks_erro_seguidos: 0,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'organization_id,instance_name' }
+  );
+}
+
 // ==================== ACK DE ENTREGA ====================
 // A verdade sobre entrega nao esta no HTTP 200 do sendText -- esse so quer
 // dizer "aceitei para enfileirar". Ela chega depois, de forma assincrona, no
