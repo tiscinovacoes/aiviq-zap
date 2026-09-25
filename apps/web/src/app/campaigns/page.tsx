@@ -144,7 +144,9 @@ export default function CampaignsPage() {
     try {
       const res = await fetch('/api/pesquisa/senado/fechar-dia', { method: 'POST' });
       const data = await res.json();
-      if (data?.success) {
+      if (data?.success && data.skipped) {
+        alert('Nenhuma campanha estava atuando hoje (nada enviado, ninguém respondeu, sem fila pendente) — nada foi fechado nem resetado.');
+      } else if (data?.success) {
         alert(
           `Campanha de hoje fechada: ${data.stats.sentCount} enviados, ${data.stats.repliedCount} responderam, ${data.stats.failedCount} falharam. ` +
           `${data.contatosCancelados} contato(s) pendente(s) cancelado(s) em ${data.lotesCancelados} fila(s). ${data.instanciasResetadas} chip(s) resetado(s).`

@@ -12,6 +12,9 @@ import { listarLotesAtivos, cancelarLote } from '@/lib/dispatchQueue';
 
 export interface FechamentoDiaResult {
   ok: boolean;
+  /** true = não havia campanha atuando hoje (nada enviado, ninguém respondeu,
+   *  nenhuma fila pendente) -- não criou registro nenhum, não mexeu em nada. */
+  skipped: boolean;
   campaignId: string | null;
   data: string;
   stats: {
@@ -39,29 +42,22 @@ export async function fecharCampanhaDoDia(nome?: string): Promise<FechamentoDiaR
   const hoje = hojeCampoGrande();
   const inicioDia = `${hoje}T00:00:00-04:00`;
 
-  if (isPlaceholderEnv()) {
-    return {
-      ok: false,
-      campaignId: null,
-      data: hoje,
-      stats: { totalContacts: 0, sentCount: 0, repliedCount: 0, failedCount: 0 },
-      lotesCancelados: 0,
-      contatosCancelados: 0,
-      instanciasResetadas: 0,
-    };
-  }
+  const vazio = (skipped: boolean): FechamentoDiaResult => ({
+    // skipped=true (nada pra fechar hoje) e um resultado valido, nao erro.
+    // skipped=false so acontece aqui por falta de contexto de banco (dev/placeholder).
+    ok: skipped,
+    skipped,
+    campaignId: null,
+    data: hoje,
+    stats: { totalContacts: 0, sentCount: 0, repliedCount: 0, failedCount: 0 },
+    lotesCancelados: 0,
+    contatosCancelados: 0,
+    instanciasResetadas: 0,
+  });
+
+  if (isPlaceholderEnv()) return vazio(false);
   const ctx = await getServiceContext();
-  if (!ctx) {
-    return {
-      ok: false,
-      campaignId: null,
-      data: hoje,
-      stats: { totalContacts: 0, sentCount: 0, repliedCount: 0, failedCount: 0 },
-      lotesCancelados: 0,
-      contatosCancelados: 0,
-      instanciasResetadas: 0,
-    };
-  }
+  if (!ctx) return vazio(false);
 
   // -------- 1. Métricas reais do dia --------
   const { count: sentCount } = await ctx.db
@@ -97,8 +93,16 @@ export async function fecharCampanhaDoDia(nome?: string): Promise<FechamentoDiaR
     .eq('organization_id', ctx.organizationId)
     .gte('saudacao_respondida_em', inicioDia);
 
-  // -------- 2. Cancela o que sobrou pendente (não carrega para amanhã) --------
   const lotesAtivos = await listarLotesAtivos();
+
+  // Só fecha campanha se ela estava de fato atuando: algo foi enviado, algo
+  // falhou, alguem respondeu, ou ainda tem fila pendente pra cancelar. Dia
+  // parado (ex: fim de semana, nenhum disparo) não gera registro nenhum --
+  // nem campanha vazia na aba, nem reset de chip à toa.
+  const atuou = (sentCount || 0) > 0 || failedCount > 0 || (repliedCount || 0) > 0 || lotesAtivos.length > 0;
+  if (!atuou) return vazio(true);
+
+  // -------- 2. Cancela o que sobrou pendente (não carrega para amanhã) --------
   let contatosCancelados = 0;
   for (const lote of lotesAtivos) {
     contatosCancelados += await cancelarLote(lote.id);
@@ -149,6 +153,7 @@ export async function fecharCampanhaDoDia(nome?: string): Promise<FechamentoDiaR
 
   return {
     ok: !error,
+    skipped: false,
     campaignId: campanha?.id || null,
     data: hoje,
     stats: {
