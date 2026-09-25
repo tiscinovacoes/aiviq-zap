@@ -480,7 +480,7 @@ export default function PesquisaSenadoKanban() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-slate-50">
+    <div className="flex flex-col h-full overflow-y-auto md:overflow-hidden bg-slate-50">
       {/* Top Action & Sub-Tabs Bar */}
       <div className="px-3 sm:px-8 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 sm:gap-4 shrink-0">
         <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/80 overflow-x-auto max-w-full">
@@ -588,8 +588,8 @@ export default function PesquisaSenadoKanban() {
 
       {/* BANNER DE FILA DE DISPARO ANTI-BAN ATIVA */}
       {estadoDisparador && estadoDisparador.total > 0 && (
-        <div className="px-3 sm:px-8 py-2.5 bg-emerald-50 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3">
+        <div className="px-3 sm:px-8 py-2.5 bg-emerald-50 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-2 sm:gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
               <span>Fila Multi-Instâncias (Cluster Anti-Ban · 1 lead a cada 5 min em cada chip (tempo fixo, chips se revezam) · 8h–21h · teto 150/dia por chip):</span>
@@ -734,7 +734,7 @@ export default function PesquisaSenadoKanban() {
       </div>
 
       {/* Main Kanban Content Area */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden p-3 sm:p-6">
+      <div className="flex-1 min-h-[70vh] md:min-h-0 overflow-x-auto md:overflow-y-hidden p-3 sm:p-6">
         {/* 1. VISÃO FUNIL DE COLETA */}
         {visao === 'funil' && (
           <div className="flex gap-4 h-full min-w-max pb-2">
