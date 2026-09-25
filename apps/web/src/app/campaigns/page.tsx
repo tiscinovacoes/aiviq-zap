@@ -132,6 +132,34 @@ export default function CampaignsPage() {
     fetchCampaigns();
   }, [fetchCampaigns]);
 
+  const [fechandoDia, setFechandoDia] = useState(false);
+
+  // Fecha o dia de disparo: cria o registro de hoje com as metricas reais,
+  // cancela o que sobrou pendente nas filas (nao carrega pra amanha) e
+  // reseta os marcadores de saude dos chips. O mesmo que o cron das 21h
+  // (Campo Grande) faz sozinho -- este botao e so pra rodar na hora.
+  const handleFecharDia = async () => {
+    if (!confirm('Fechar a campanha de hoje agora? Isso cancela os leads pendentes que sobrarem na fila e reseta os marcadores dos chips.')) return;
+    setFechandoDia(true);
+    try {
+      const res = await fetch('/api/pesquisa/senado/fechar-dia', { method: 'POST' });
+      const data = await res.json();
+      if (data?.success) {
+        alert(
+          `Campanha de hoje fechada: ${data.stats.sentCount} enviados, ${data.stats.repliedCount} responderam, ${data.stats.failedCount} falharam. ` +
+          `${data.contatosCancelados} contato(s) pendente(s) cancelado(s) em ${data.lotesCancelados} fila(s). ${data.instanciasResetadas} chip(s) resetado(s).`
+        );
+        await fetchCampaigns();
+      } else {
+        alert(data?.error || 'Não foi possível fechar a campanha de hoje.');
+      }
+    } catch (e) {
+      alert('Erro de conexão ao fechar a campanha de hoje.');
+    } finally {
+      setFechandoDia(false);
+    }
+  };
+
   const filteredCampaigns = campaigns.filter((c) => {
     if (filterStatus !== 'all' && c.status !== filterStatus) return false;
     return true;
@@ -192,6 +220,16 @@ export default function CampaignsPage() {
                 className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-emerald-500 transition-colors"
               />
             </div>
+
+            <button
+              onClick={handleFecharDia}
+              disabled={fechandoDia}
+              title="Cria o registro de hoje com as métricas reais, cancela filas pendentes que sobraram e reseta os marcadores dos chips para amanhã"
+              className="shrink-0 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold shadow-2xs flex items-center gap-2 transition-all disabled:opacity-60"
+            >
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              {fechandoDia ? 'Fechando…' : 'Fechar campanha de hoje'}
+            </button>
 
             <button
               onClick={() => {

@@ -3,6 +3,10 @@
     {
       "path": "/api/pesquisa/senado/tick",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/pesquisa/senado/fechar-dia",
+      "schedule": "0 1 * * *"
     }
   ]
 }
