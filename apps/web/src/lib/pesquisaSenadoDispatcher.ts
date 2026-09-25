@@ -87,16 +87,6 @@ async function registrarSaude(instancia: string, sucesso: boolean): Promise<void
 /** Dispara 1 contato por um chip especifico. Devolve o slot se o envio falhar. */
 async function dispararContato(item: QueueItem, instancia: string): Promise<boolean> {
   try {
-    await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
-      bairro: item.bairro,
-      etapa: 'disparado',
-      instanceName: instancia,
-      voto1Id: undefined,
-      voto1Nome: undefined,
-      voto2Id: undefined,
-      voto2Nome: undefined,
-    });
-
     const msg1 = gerarMensagem1(item.name, item.phone);
     const r = await sendRealMessageDetailed(item.phone, msg1, instancia, ANTIBAN.PRESENCA_MS);
 
@@ -109,6 +99,21 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
 
     const instEnviou = r.instance || instancia;
     await markItemSent(item.id, instEnviou, r.messageId);
+
+    // So registra a sessao com etapa 'disparado' -- fonte que a tela de
+    // disparo individual usa para bloquear reenvio -- depois de confirmar
+    // que a mensagem realmente saiu. Registrar isso ANTES do envio (como
+    // era antes) marcava "ja abordado" mesmo quando o disparo falhava,
+    // deixando o numero preso sem poder ser reabordado manualmente depois.
+    await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
+      bairro: item.bairro,
+      etapa: 'disparado',
+      instanceName: instEnviou,
+      voto1Id: undefined,
+      voto1Nome: undefined,
+      voto2Id: undefined,
+      voto2Nome: undefined,
+    });
 
     persistMessageByJid({
       phoneOrJid: item.phone,

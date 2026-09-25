@@ -333,7 +333,7 @@ export default function PesquisaSenadoKanban() {
       const data = await res.json();
       if (data?.success) {
         setMensagemSucesso(
-          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 1 lead por minuto em cada chip, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}${data.jaEnviados ? ` ${data.jaEnviados} foram pulados por já terem recebido a abordagem antes.` : ''}` +
+          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 1 lead por minuto em cada chip, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}${data.jaEnviados ? ` ${data.jaEnviados} foram pulados por já terem recebido a abordagem antes.` : ''}${data.jaErrados ? ` ${data.jaErrados} bloqueados automaticamente por já terem dado erro antes (número sem WhatsApp/rejeitado).` : ''}` +
           (data.divisaoPorChip && Object.keys(data.divisaoPorChip).length > 0
             ? ' Divisão da lista: ' +
               Object.entries(data.divisaoPorChip)

@@ -50,6 +50,8 @@ export interface EnqueueResult {
   ignorados: number;
   /** Ja receberam a abordagem numa rodada anterior e foram pulados. */
   jaEnviados: number;
+  /** Ja deram erro definitivo (3 tentativas) antes e foram bloqueados -- banco de erros. */
+  jaErrados: number;
   /** Quantos contatos couberam a cada chip (divisao previa da lista). */
   divisaoPorChip: Record<string, number>;
   /** Pulados por terem pedido opt-out. */
@@ -61,6 +63,13 @@ export interface EnqueueResult {
  * 'enviado'): reimportar a mesma planilha e o jeito mais facil de mandar a
  * mesma mensagem duas vezes para a mesma pessoa -- ruim para o eleitor e um
  * sinal classico de spam para a Meta. Passe `permitirReenvio` para forcar.
+ *
+ * Tambem PULA SEMPRE -- mesmo com `permitirReenvio` -- quem ja esgotou as 3
+ * tentativas e esta no banco de erros (status 'erro'): numero sem WhatsApp
+ * ou que rejeitou a mensagem continua sem WhatsApp na proxima importacao, e
+ * insistir e o que realmente arrisca o numero levar um ban. A unica porta
+ * de volta para esses e o botao "Tentar Novamente" da auditoria de falhas,
+ * que reativa 1 a 1 depois do operador checar o motivo.
  */
 export async function enqueueContacts(
   contatos: Array<{ name?: string; phone: string; bairro?: string }>,
@@ -83,19 +92,22 @@ export async function enqueueContacts(
       q.filter((i) => i.status === 'pendente' || i.status === 'processando').map((i) => i.phone)
     );
     const enviados = new Set(q.filter((i) => i.status === 'enviado').map((i) => i.phone));
+    const errados = new Set(q.filter((i) => i.status === 'erro').map((i) => i.phone));
     let n = 0;
     let ja = 0;
+    let jaErrou = 0;
     for (const c of unicos) {
       if (naFila.has(c.phone)) continue;
+      if (errados.has(c.phone)) { jaErrou++; continue; }
       if (!permitirReenvio && enviados.has(c.phone)) { ja++; continue; }
       q.push({ id: `q-${Date.now()}-${n}`, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente', attempts: 0 });
       n++;
     }
-    return { enfileirados: n, ignorados: unicos.length - n - ja, jaEnviados: ja, divisaoPorChip: {}, optOut: 0 };
+    return { enfileirados: n, ignorados: unicos.length - n - ja - jaErrou, jaEnviados: ja, jaErrados: jaErrou, divisaoPorChip: {}, optOut: 0 };
   }
 
   const ctx = await getServiceContext();
-  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, divisaoPorChip: {}, optOut: 0 };
+  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, jaErrados: 0, divisaoPorChip: {}, optOut: 0 };
 
   // Ja na fila (pendente/processando) -> pula sempre.
   const { data: pend } = await ctx.db
@@ -108,6 +120,17 @@ export async function enqueueContacts(
   // Quem pediu para sair NUNCA volta para a fila, nem com permitirReenvio.
   const optOut = await getOptOutSet();
   let puladosOptOut = 0;
+
+  // Banco de erros: quem ja esgotou 3 tentativas -> pula SEMPRE, mesmo com
+  // permitirReenvio (esse flag e para reabordar quem JA RECEBEU a mensagem
+  // numa nova onda, nao para insistir em numero que comprovadamente falhou).
+  const { data: err } = await ctx.db
+    .from('dispatch_queue')
+    .select('phone')
+    .eq('organization_id', ctx.organizationId)
+    .eq('status', 'erro');
+  const jaErrados = new Set((err || []).map((r: any) => r.phone));
+  let puladosPorErro = 0;
 
   // Ja abordado -> pula, a menos que o operador peca reenvio explicitamente.
   let jaEnviados = new Set<string>();
@@ -125,6 +148,7 @@ export async function enqueueContacts(
     .filter((c) => {
       if (naFila.has(c.phone)) return false;
       if (optOut.has(c.phone)) { puladosOptOut++; return false; }
+      if (jaErrados.has(c.phone)) { puladosPorErro++; return false; }
       if (jaEnviados.has(c.phone)) { puladosPorEnvio++; return false; }
       return true;
     })
@@ -176,8 +200,9 @@ export async function enqueueContacts(
 
   return {
     enfileirados: inseridos,
-    ignorados: unicos.length - rows.length - puladosPorEnvio - puladosOptOut + colisoes,
+    ignorados: unicos.length - rows.length - puladosPorEnvio - puladosPorErro - puladosOptOut + colisoes,
     jaEnviados: puladosPorEnvio,
+    jaErrados: puladosPorErro,
     divisaoPorChip,
     optOut: puladosOptOut,
   };
@@ -466,6 +491,44 @@ export async function markItemError(
     .eq('organization_id', ctx.organizationId)
     .eq('id', id);
   return { failed };
+}
+
+/**
+ * Verifica se o telefone ja esta no banco de erros (3 tentativas esgotadas
+ * no motor de disparo em lote). Usado pelo disparo INDIVIDUAL para bloquear
+ * com a MESMA regra do reimport em massa -- mesmo que nunca tenha existido
+ * uma sessao de pesquisa para esse numero (ela so nasce em envio com sucesso).
+ */
+export async function getDispatchErrorForPhone(
+  phoneRaw: string
+): Promise<{ error?: string; attempts: number } | null> {
+  const phone = canonicalDigits(phoneRaw);
+  if (isPlaceholderEnv()) {
+    const it = (global.__aiviq_queue || []).find((i) => i.phone === phone && i.status === 'erro');
+    return it ? { attempts: it.attempts } : null;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return null;
+  let { data } = await ctx.db
+    .from('dispatch_queue')
+    .select('error, attempts')
+    .eq('organization_id', ctx.organizationId)
+    .eq('phone', phone)
+    .eq('status', 'erro')
+    .maybeSingle();
+  if (!data && phone.length >= 8) {
+    const sufixo = phone.slice(-8);
+    const res = await ctx.db
+      .from('dispatch_queue')
+      .select('error, attempts')
+      .eq('organization_id', ctx.organizationId)
+      .eq('status', 'erro')
+      .ilike('phone', `%${sufixo}`)
+      .limit(1)
+      .maybeSingle();
+    data = res.data;
+  }
+  return data ? { error: (data as any).error || undefined, attempts: (data as any).attempts || 0 } : null;
 }
 
 export interface FailedQueueItem {
