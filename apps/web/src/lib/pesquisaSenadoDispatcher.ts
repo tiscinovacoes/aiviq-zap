@@ -168,9 +168,15 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
     await registrarSaude(instancia, true);
     return true;
   } catch (err: any) {
-    const { failed } = await markItemError(item.id, item.attempts || 0, err?.message || 'Erro inesperado no envio', instancia);
+    const erroMsg = err?.message || 'Erro inesperado no envio';
+    const { failed } = await markItemError(item.id, item.attempts || 0, erroMsg, instancia);
     await releaseDispatchSlot(instancia);
-    if (failed) await registrarSaude(instancia, false);
+    // Mesma regra do bloco de falha "normal" acima: erro permanente (numero
+    // que nao existe no WhatsApp etc) nao e culpa do chip. Sem esta checagem
+    // aqui tambem, uma sequencia de leads com numero invalido -- coincidencia
+    // pura da lista importada -- resfriava o chip por um "padrao de falha"
+    // que nunca existiu de verdade.
+    if (failed && !ehErroPermanente(erroMsg)) await registrarSaude(instancia, false);
     return false;
   }
 }
