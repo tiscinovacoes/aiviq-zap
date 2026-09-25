@@ -29,6 +29,7 @@ import {
   registrarResultadoChip,
   markItemSent,
   markItemError,
+  ehErroPermanente,
   getQueueStatus,
   getChipsEmCooldown,
   type QueueItem,
@@ -92,31 +93,51 @@ async function registrarSaude(instancia: string, sucesso: boolean): Promise<void
   }
 }
 
-/** Dispara 1 contato por um chip especifico. Devolve o slot se o envio falhar. */
+/**
+ * Dispara 1 contato por um chip especifico. Devolve o slot se o envio falhar.
+ *
+ * A sessao da pesquisa (pesquisa_senado, etapa='disparado') so e criada DEPOIS
+ * do envio confirmado. Antes, a sessao nascia ANTES da tentativa de envio: um
+ * numero que nao existe (ou qualquer outra falha) ficava com etapa='disparado'
+ * no funil mesmo sem a Msg 1 ter chegado -- inflava a coluna 1 do funil e as
+ * estatisticas com contatos que nunca receberam nada.
+ */
 async function dispararContato(item: QueueItem, instancia: string): Promise<boolean> {
   try {
-    await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
-      bairro: item.bairro,
-      etapa: 'disparado',
-      instanceName: instancia,
-      voto1Id: undefined,
-      voto1Nome: undefined,
-      voto2Id: undefined,
-      voto2Nome: undefined,
-    });
-
     const msg1 = gerarMensagem1(item.name, item.phone);
     const r = await sendRealMessageDetailed(item.phone, msg1, instancia, ANTIBAN.PRESENCA_MS);
 
     if (!r.ok) {
-      await markItemError(item.id, item.attempts || 0, r.error || 'Falha no envio pelo WhatsApp', instancia);
+      const erroMsg = r.error || 'Falha no envio pelo WhatsApp';
+      const { failed } = await markItemError(item.id, item.attempts || 0, erroMsg, instancia);
       await releaseDispatchSlot(instancia); // nada saiu do chip: devolve a cota
-      await registrarSaude(instancia, false);
+      // So conta para a saude do chip quando o LEAD desiste de vez (esgotou
+      // as proprias tentativas ou levou erro permanente) -- nunca a cada
+      // tentativa isolada. Contar toda tentativa fazia um UNICO numero
+      // problematico, sozinho, gastar suas 3 retentativas (sempre no MESMO
+      // chip, que e quem o "carimbou" na importacao) e resfriar o chip por
+      // conta de 1 lead so, nao de um padrao real de recusa. Numero que nao
+      // existe no WhatsApp tambem nao conta: nao e culpa do chip.
+      if (failed && !ehErroPermanente(erroMsg)) await registrarSaude(instancia, false);
       return false;
     }
 
     const instEnviou = r.instance || instancia;
     await markItemSent(item.id, instEnviou, r.messageId);
+
+    // So agora, com o envio CONFIRMADO, a sessao entra no funil como
+    // 'disparado' -- e essa mesma sessao que o disparo individual usa para
+    // bloquear reenvio (ver route.ts), entao registra-la antes do envio
+    // deixava tanto o funil quanto aquele bloqueio errados numa falha.
+    await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
+      bairro: item.bairro,
+      etapa: 'disparado',
+      instanceName: instEnviou,
+      voto1Id: undefined,
+      voto1Nome: undefined,
+      voto2Id: undefined,
+      voto2Nome: undefined,
+    });
 
     persistMessageByJid({
       phoneOrJid: item.phone,
@@ -147,9 +168,9 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
     await registrarSaude(instancia, true);
     return true;
   } catch (err: any) {
-    await markItemError(item.id, item.attempts || 0, err?.message || 'Erro inesperado no envio', instancia);
+    const { failed } = await markItemError(item.id, item.attempts || 0, err?.message || 'Erro inesperado no envio', instancia);
     await releaseDispatchSlot(instancia);
-    await registrarSaude(instancia, false);
+    if (failed) await registrarSaude(instancia, false);
     return false;
   }
 }

@@ -1,4 +1,6 @@
 import { RespostaEleitor, EtapaPesquisa, candidatosParaExibir } from './pesquisaSenado';
+import { getTelefonesComFalhaSemEnvio } from './dispatchQueue';
+import { canonicalDigits } from './conversationRepo';
 import { getServiceContext, isPlaceholderEnv } from './supabase/authContext';
 
 // Persistência das sessões da Pesquisa Senado.
@@ -192,17 +194,27 @@ export interface PesquisaStats {
 // ---------------------------------------------------------------------------
 export const CORTE_DISPAROS_ISO = '2026-09-19T00:00:00-04:00'; // 19/09 00h MS
 
-export function aplicarRecorteFunil(sessions: RespostaEleitor[]): RespostaEleitor[] {
+// ---------------------------------------------------------------------------
+// SO CONTA QUEM RECEBEU DE VERDADE (decisão do operador, 25/09/2026)
+// A etapa 'disparado' e criada quando o envio e CONFIRMADO (dispatcher corrigido
+// para so criar a sessao depois do envio dar certo). Mas sessoes de antes dessa
+// correcao, ou qualquer contato cuja UNICA tentativa registrada foi falha (erro
+// permanente, numero invalido etc.), ficam de fora do funil e das estatisticas:
+// a mensagem nunca chegou nele.
+// ---------------------------------------------------------------------------
+export async function aplicarRecorteFunil(sessions: RespostaEleitor[]): Promise<RespostaEleitor[]> {
   const corte = new Date(CORTE_DISPAROS_ISO).getTime();
+  const semEnvio = await getTelefonesComFalhaSemEnvio();
   return sessions.filter((s) => {
     if (s.etapa !== 'disparado') return true;
+    if (semEnvio.has(canonicalDigits(s.phone))) return false;
     const t = s.createdAt ? new Date(s.createdAt).getTime() : NaN;
     return isNaN(t) || t >= corte;
   });
 }
 
 export async function getPesquisaStats(base?: RespostaEleitor[]): Promise<PesquisaStats> {
-  const sessions = base ?? aplicarRecorteFunil(await getPesquisaSessions());
+  const sessions = base ?? (await aplicarRecorteFunil(await getPesquisaSessions()));
   const totalEleitores = sessions.length;
   const concluidos = sessions.filter((s) => s.etapa === 'concluido');
   const totalConcluidos = concluidos.length;

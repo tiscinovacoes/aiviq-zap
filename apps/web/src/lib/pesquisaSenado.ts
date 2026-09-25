@@ -18,19 +18,33 @@ export interface CandidatoSenado {
 }
 
 // ------------------------------------------------------------------------------
-// LISTA ATUAL (v2, 23/09/2026): 5 candidatos em ordem alfabética + branco/nulo +
-// não sabe. Os `id` são os MESMOS da lista antiga de 12, para os votos já
-// gravados continuarem apontando para o candidato certo; o que mudou é a
-// `opcao`, o número que aparece na mensagem.
+// LISTA ATUAL (v3, 25/09/2026): mesmos 5 candidatos, com Vander Loubet
+// reordenado para a 1ª opção (decisão do operador). Os `id` continuam os
+// MESMOS de sempre, para os votos já gravados continuarem apontando para o
+// candidato certo; o que muda é só a `opcao`, o número exibido na mensagem.
 // ------------------------------------------------------------------------------
-export const LISTA_VERSAO_ATUAL = 2;
+export const LISTA_VERSAO_ATUAL = 3;
 
 export const CANDIDATOS_SENADO_MS: CandidatoSenado[] = [
-  { id: 2, opcao: 1, nome: 'Capitão Contar', partido: 'PL', rotulo: 'Capitão Contar (PL)', emoji: '1️⃣' },
-  { id: 5, opcao: 2, nome: 'Reinaldo Azambuja', partido: 'PL', rotulo: 'Reinaldo Azambuja (PL)', emoji: '2️⃣', aliases: ['azambuja', 'reinaldo'] },
-  { id: 6, opcao: 3, nome: 'Roberto Oshiro', partido: 'NOVO', rotulo: 'Roberto Oshiro (NOVO)', emoji: '3️⃣', aliases: ['oshiro'] },
-  { id: 7, opcao: 4, nome: 'Soraya', partido: 'PSB', rotulo: 'Soraya (PSB)', emoji: '4️⃣', aliases: ['soraya thronicke', 'thronicke'] },
-  { id: 10, opcao: 5, nome: 'Vander Loubet', partido: 'PT', rotulo: 'Vander Loubet (PT)', emoji: '5️⃣', aliases: ['vander', 'loubet'] },
+  { id: 10, opcao: 1, nome: 'Vander Loubet', partido: 'PT', rotulo: 'Vander Loubet (PT)', emoji: '1️⃣', aliases: ['vander', 'loubet'] },
+  { id: 2, opcao: 2, nome: 'Capitão Contar', partido: 'PL', rotulo: 'Capitão Contar (PL)', emoji: '2️⃣' },
+  { id: 5, opcao: 3, nome: 'Reinaldo Azambuja', partido: 'PL', rotulo: 'Reinaldo Azambuja (PL)', emoji: '3️⃣', aliases: ['azambuja', 'reinaldo'] },
+  { id: 6, opcao: 4, nome: 'Roberto Oshiro', partido: 'NOVO', rotulo: 'Roberto Oshiro (NOVO)', emoji: '4️⃣', aliases: ['oshiro'] },
+  { id: 7, opcao: 5, nome: 'Soraya', partido: 'PSB', rotulo: 'Soraya (PSB)', emoji: '5️⃣', aliases: ['soraya thronicke', 'thronicke'] },
+  { id: 11, opcao: 6, nome: 'Branco/nulo', rotulo: 'Branco/nulo', emoji: '6️⃣', isEspecial: true, aliases: ['branco', 'nulo'] },
+  { id: 12, opcao: 7, nome: 'Não sabe/não respondeu', rotulo: 'Não sabe/não respondeu', emoji: '7️⃣', isEspecial: true, aliases: ['nao sabe', 'não sei', 'nao sei'] },
+];
+
+// ------------------------------------------------------------------------------
+// LISTA v2 (23 a 25/09/2026): os mesmos 5 candidatos em ordem alfabética.
+// Mantida só para ler a resposta de quem recebeu essa ordem e ainda não votou.
+// ------------------------------------------------------------------------------
+export const CANDIDATOS_LISTA_V2: CandidatoSenado[] = [
+  { id: 2, opcao: 1, nome: 'Capitão Contar', rotulo: 'Capitão Contar (PL)', emoji: '1️⃣' },
+  { id: 5, opcao: 2, nome: 'Reinaldo Azambuja', rotulo: 'Reinaldo Azambuja (PL)', emoji: '2️⃣', aliases: ['azambuja', 'reinaldo'] },
+  { id: 6, opcao: 3, nome: 'Roberto Oshiro', rotulo: 'Roberto Oshiro (NOVO)', emoji: '3️⃣', aliases: ['oshiro'] },
+  { id: 7, opcao: 4, nome: 'Soraya', rotulo: 'Soraya (PSB)', emoji: '4️⃣', aliases: ['soraya thronicke', 'thronicke'] },
+  { id: 10, opcao: 5, nome: 'Vander Loubet', rotulo: 'Vander Loubet (PT)', emoji: '5️⃣', aliases: ['vander', 'loubet'] },
   { id: 11, opcao: 6, nome: 'Branco/nulo', rotulo: 'Branco/nulo', emoji: '6️⃣', isEspecial: true, aliases: ['branco', 'nulo'] },
   { id: 12, opcao: 7, nome: 'Não sabe/não respondeu', rotulo: 'Não sabe/não respondeu', emoji: '7️⃣', isEspecial: true, aliases: ['nao sabe', 'não sei', 'nao sei'] },
 ];
@@ -225,13 +239,23 @@ export function gerarMensagem5(seed?: string): string {
 const normalizar = (t: string) =>
   t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
+// Toda numeração que já existiu, por versão: 1 = lista antiga de 12 (o número
+// digitado era o próprio id); 2 = lista de 5 em ordem alfabética; 3 = atual
+// (Vander em 1º). Cada mudança de ORDEM na lista precisa de uma versão nova
+// aqui -- reaproveitar a mesma versão faria quem já recebeu a mensagem antiga
+// e ainda não votou ter a resposta lida com a numeração errada.
+const LISTAS_POR_VERSAO: Record<number, CandidatoSenado[]> = {
+  1: CANDIDATOS_LISTA_V1,
+  2: CANDIDATOS_LISTA_V2,
+  3: CANDIDATOS_SENADO_MS,
+};
+
 /**
  * Lê a resposta do eleitor e devolve o `id` do candidato (ou null).
- * `listaVersao` diz qual numeração ele recebeu: 1 = lista antiga (número = id,
- * 1..12); 2 = lista atual (1..7, ordem alfabética).
+ * `listaVersao` diz qual numeração ele recebeu (ver LISTAS_POR_VERSAO).
  */
 export function parseOpcaoVoto(respostaTexto: string, listaVersao: number = LISTA_VERSAO_ATUAL): number | null {
-  const lista = listaVersao === 1 ? CANDIDATOS_LISTA_V1 : CANDIDATOS_SENADO_MS;
+  const lista = LISTAS_POR_VERSAO[listaVersao] || CANDIDATOS_SENADO_MS;
   const clean = respostaTexto.trim().replace(/[^\d]/g, '');
   if (!clean) {
     // Tenta correspondência textual por nome (e grafias alternativas).
@@ -243,12 +267,12 @@ export function parseOpcaoVoto(respostaTexto: string, listaVersao: number = LIST
   }
   const num = parseInt(clean, 10);
   if (listaVersao === 1) return num >= 1 && num <= 12 ? num : null;
-  return CANDIDATOS_SENADO_MS.find((c) => c.opcao === num)?.id ?? null;
+  return lista.find((c) => c.opcao === num)?.id ?? null;
 }
 
 /** Maior número válido na lista (para a mensagem de "não entendi"). */
 export function ultimaOpcao(listaVersao: number = LISTA_VERSAO_ATUAL): number {
-  return listaVersao === 1 ? 12 : CANDIDATOS_SENADO_MS.length;
+  return listaVersao === 1 ? 12 : (LISTAS_POR_VERSAO[listaVersao] || CANDIDATOS_SENADO_MS).length;
 }
 
 export const gerarMensagemSegundoVoto = gerarMensagem4;

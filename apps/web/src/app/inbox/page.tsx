@@ -18,6 +18,7 @@ import MessageStream from '@/components/inbox/MessageStream';
 import MessageComposer from '@/components/inbox/MessageComposer';
 import ContactInspector from '@/components/inbox/ContactInspector';
 import NavigationRail from '@/components/layout/NavigationRail';
+import MobileBottomNav from '@/components/layout/MobileBottomNav';
 
 function InboxMain() {
   const { user, logout, fetchUser } = useAuth();
@@ -135,12 +136,18 @@ function InboxMain() {
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
       {/* 1. Persistent Left Navigation Rail (72px) */}
       <NavigationRail />
+      <MobileBottomNav />
 
-      {/* 2. Conversation List Column (360px) */}
-      <ConversationList />
+      {/* 2. Conversation List Column (360px, tela cheia em mobile). Some em
+          mobile quando ha conversa ativa -- lista e chat nao cabem lado a
+          lado numa tela de celular, entao mostra um de cada vez. */}
+      <div className={activeConversation ? 'hidden md:flex md:h-full' : 'flex h-full w-full md:w-auto'}>
+        <ConversationList />
+      </div>
 
-      {/* 3. Center Active Chat Canvas (flex-1) */}
-      <main className="flex-1 h-full bg-slate-50/50 flex flex-col relative min-w-0">
+      {/* 3. Center Active Chat Canvas (flex-1). Some em mobile quando NAO ha
+          conversa ativa (a lista ja ocupa a tela toda ali). */}
+      <main className={`flex-1 h-full bg-slate-50/50 flex-col relative min-w-0 pb-16 md:pb-0 ${activeConversation ? 'flex' : 'hidden md:flex'}`}>
         {activeConversation ? (
           <>
             <ChatHeader />

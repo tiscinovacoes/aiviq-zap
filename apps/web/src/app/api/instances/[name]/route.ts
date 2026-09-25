@@ -6,11 +6,14 @@ import {
   DEFAULT_INSTANCE,
 } from '@/lib/instanceRegistry';
 import { invalidateEvolutionCache, configurarWebhookInstancia, getProxyInstancia, configurarProxyInstancia } from '@/lib/evolutionService';
-import { setDispatchEnabled, setMaturidadeChip } from '@/lib/dispatchQueue';
+import { setDispatchEnabled, setMaturidadeChip, liberarCooldownChip } from '@/lib/dispatchQueue';
 
 import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
+// set_proxy pode levar ate 20s (a Evolution testa a conexao real com o proxy);
+// o padrao da Vercel para a funcao encerraria antes disso.
+export const maxDuration = 30;
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
@@ -212,6 +215,18 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
           ? 'Proxy removido: o número volta a sair pelo IP do servidor.'
           : r.error,
       }, { status: r.ok ? 200 : 502 });
+    }
+
+    // Libera manualmente um chip em RESFRIANDO/PAUSA DE LOTE, sem esperar os
+    // 90/180 min. Usar quando a causa da pausa ja foi resolvida (numero
+    // conferido, proxy corrigido).
+    if (action === 'liberar_cooldown') {
+      await liberarCooldownChip(instanceName);
+      return NextResponse.json({
+        success: true,
+        instanceName,
+        message: 'Cooldown liberado: o número volta ao disparo normal agora.',
+      });
     }
 
     if (action === 'set_dispatch') {

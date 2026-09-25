@@ -22,13 +22,15 @@ import { addBotDispatchedMessage } from '@/lib/conversationStore';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 import { persistMessageByJid } from '@/lib/conversationRepo';
 import { reserveDispatchSlot, releaseDispatchSlot, ANTIBAN } from '@/lib/antiBan';
+import { getDispatchErrorForPhone } from '@/lib/dispatchQueue';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Recorte do funil: disparos sem resposta anteriores a 19/09 ficam de fora.
-    const sessions = aplicarRecorteFunil(await getPesquisaSessions());
+    // Recorte do funil: disparos sem resposta anteriores a 19/09, e qualquer
+    // contato que so tem falha registrada (nunca recebeu a Msg 1), ficam de fora.
+    const sessions = await aplicarRecorteFunil(await getPesquisaSessions());
     const stats = await getPesquisaStats(sessions);
     return NextResponse.json({
       success: true,
@@ -62,13 +64,33 @@ export async function POST(req: NextRequest) {
     if (!action || action === 'disparar') {
       const instance = body.instance || undefined;
 
-      // ============ ANTI-BAN: não re-disparar a quem já está no fluxo ============
+      // ============ ANTI-BAN: banco de erros bloqueia automaticamente ============
+      // Numero que ja falhou 1x no disparo em massa (dispatch_queue status
+      // 'erro' -- toda falha e definitiva de primeira) e bloqueado aqui
+      // tambem -- mesmo que nunca tenha existido sessao de pesquisa para ele
+      // (ela so nasce em envio com sucesso). Sem isso, um numero
+      // comprovadamente sem WhatsApp voltava a ser tentado pelo formulario
+      // manual mesmo depois de bloqueado pelo disparo em lote.
+      const erroAnterior = await getDispatchErrorForPhone(cleanPhone);
+      if (erroAnterior && !body.forcar) {
+        return NextResponse.json({
+          success: true,
+          gated: true,
+          reason: 'banco_de_erros',
+          message: `Número já deu erro em um disparo anterior (${erroAnterior.error || 'falha de entrega'}) — bloqueado automaticamente para não arriscar ban. Confira a auditoria de falhas: "Tentar Novamente" só reativa erros antigos, não os já marcados como definitivos.`,
+          dispatchedWhatsApp: false,
+        });
+      }
+
+      // ============ ANTI-BAN: não re-disparar a quem já foi abordado ============
+      // Qualquer sessao existente (inclusive etapa 'disparado', que e o proprio
+      // registro de "Msg 1 ja enviada") bloqueia um novo disparo. Antes so
+      // etapa !== 'disparado' bloqueava -- ou seja, quem tinha acabado de
+      // receber a Msg 1 e ainda nao respondeu (o caso mais comum de "esse
+      // numero reapareceu na lista") passava direto e levava um segundo
+      // disparo, o sinal mais classico de spam para a Meta.
       const existente = await getPesquisaSessionByPhone(cleanPhone);
-      if (
-        existente &&
-        existente.etapa !== 'disparado' &&
-        !body.forcar
-      ) {
+      if (existente && !body.forcar) {
         return NextResponse.json({
           success: true,
           gated: true,
@@ -102,20 +124,14 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const session = await createOrUpdateSessionByPhone(cleanPhone, name || `Eleitor ${cleanPhone.slice(-4)}`, {
-        bairro,
-        etapa: 'disparado',
-        voto1Id: undefined,
-        voto1Nome: undefined,
-        voto2Id: undefined,
-        voto2Nome: undefined,
-      });
-
       // Spintax semeado pelo telefone → cada lead recebe uma abertura diferente.
       const msg1 = gerarMensagem1(name, cleanPhone);
+      const nomeExibicao = name || existente?.name || `Eleitor ${cleanPhone.slice(-4)}`;
 
       let dispatched = false;
       let instanciaUsada: string | undefined = instAlvo;
+      let session = existente;
+
       if (sendWhatsApp) {
         // Presença "digitando..." humaniza o disparo em massa (anti-ban).
         const r = await sendRealMessageDetailed(cleanPhone, msg1, instAlvo, ANTIBAN.PRESENCA_MS);
@@ -123,41 +139,65 @@ export async function POST(req: NextRequest) {
         instanciaUsada = r.instance;
         if (r.ok) {
           // slot ja reservado antes do envio (reserveDispatchSlot)
+          // So registra 'disparado' -- o que a checagem anti-ban acima usa
+          // para bloquear um proximo disparo -- depois de confirmar que a
+          // mensagem realmente saiu. Assim uma falha de envio nao fica
+          // marcada como "ja abordado" e trava um reenvio legitimo.
+          session = await createOrUpdateSessionByPhone(cleanPhone, nomeExibicao, {
+            bairro,
+            etapa: 'disparado',
+            voto1Id: undefined,
+            voto1Nome: undefined,
+            voto2Id: undefined,
+            voto2Nome: undefined,
+          });
+
           // Persiste a Msg 1 no Supabase (keyed por JID) — grava a conversa de verdade.
           persistMessageByJid({
             phoneOrJid: cleanPhone,
             senderType: 'agent',
             content: msg1,
-            name: name || session.name,
+            name: nomeExibicao,
             externalId: r.messageId,
             instanceName: r.instance,
           }).catch((e) => console.error('[API Pesquisa] persist Msg1:', e));
+
+          // Espelha no Inbox em memória (acompanhamento instantâneo do atendente).
+          try {
+            addBotDispatchedMessage({
+              toPhone: cleanPhone,
+              name: nomeExibicao,
+              text: msg1,
+              botName: 'Robô Pesquisa Senado',
+              instanceName: instanciaUsada,
+            });
+          } catch (err) {
+            console.error('[Pesquisa Manual Inbox Sync Error]:', err);
+          }
+
+          // Sincroniza imediatamente o contato com o banco de dados
+          sincronizarContatoEleitor({
+            name: nomeExibicao,
+            phone: cleanPhone,
+            bairro,
+            etapa: 'disparado',
+          }).catch((e) => console.error('[API Pesquisa] Erro sync contato:', e));
         } else {
           // Envio falhou: nada saiu do chip, devolve o slot reservado.
           await releaseDispatchSlot(instAlvo);
         }
-      }
-
-      // Espelha no Inbox em memória (acompanhamento instantâneo do atendente).
-      try {
-        addBotDispatchedMessage({
-          toPhone: cleanPhone,
-          name: name || session.name,
-          text: msg1,
-          botName: 'Robô Pesquisa Senado',
-          instanceName: instanciaUsada,
+      } else {
+        // Registro manual sem envio real (uso interno/API): mantem o
+        // comportamento anterior de so anotar a sessao.
+        session = await createOrUpdateSessionByPhone(cleanPhone, nomeExibicao, {
+          bairro,
+          etapa: 'disparado',
+          voto1Id: undefined,
+          voto1Nome: undefined,
+          voto2Id: undefined,
+          voto2Nome: undefined,
         });
-      } catch (err) {
-        console.error('[Pesquisa Manual Inbox Sync Error]:', err);
       }
-
-      // Sincroniza imediatamente o contato com o banco de dados
-      sincronizarContatoEleitor({
-        name: session.name,
-        phone: cleanPhone,
-        bairro,
-        etapa: 'disparado',
-      }).catch((e) => console.error('[API Pesquisa] Erro sync contato:', e));
 
       return NextResponse.json({
         success: true,

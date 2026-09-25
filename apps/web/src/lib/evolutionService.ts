@@ -863,12 +863,21 @@ export async function configurarProxyInstancia(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
       body: JSON.stringify(corpo),
-      signal: AbortSignal.timeout(6000),
+      // 20s (nao 6s como o webhook): salvar o proxy pode envolver a Evolution
+      // testando a conexao de verdade com o servidor do provedor (Decodo etc.),
+      // que passa por uma rede externa mais lenta que a chamada local a Evolution.
+      signal: AbortSignal.timeout(20000),
     });
     if (res.ok) return { ok: true };
     const err = await res.text().catch(() => '');
     return { ok: false, error: err || `A Evolution recusou a configuração do proxy (HTTP ${res.status}).` };
   } catch (e: any) {
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+      return {
+        ok: false,
+        error: 'A Evolution não respondeu a tempo (mais de 20s). Confira se o host/porta do proxy estão corretos e se o provedor está no ar, depois tente de novo.',
+      };
+    }
     return { ok: false, error: e.message || 'Erro de conexão ao configurar o proxy.' };
   }
 }

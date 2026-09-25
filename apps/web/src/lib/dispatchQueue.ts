@@ -50,6 +50,8 @@ export interface EnqueueResult {
   ignorados: number;
   /** Ja receberam a abordagem numa rodada anterior e foram pulados. */
   jaEnviados: number;
+  /** Ja deram erro definitivo (falha na 1a tentativa) antes e foram bloqueados -- banco de erros. */
+  jaErrados: number;
   /** Quantos contatos couberam a cada chip (divisao previa da lista). */
   divisaoPorChip: Record<string, number>;
   /** Pulados por terem pedido opt-out. */
@@ -61,6 +63,15 @@ export interface EnqueueResult {
  * 'enviado'): reimportar a mesma planilha e o jeito mais facil de mandar a
  * mesma mensagem duas vezes para a mesma pessoa -- ruim para o eleitor e um
  * sinal classico de spam para a Meta. Passe `permitirReenvio` para forcar.
+ *
+ * Tambem PULA SEMPRE -- mesmo com `permitirReenvio` -- quem ja falhou 1x e
+ * esta no banco de erros (status 'erro'): numero sem WhatsApp
+ * ou que rejeitou a mensagem continua sem WhatsApp na proxima importacao, e
+ * insistir e o que realmente arrisca o numero levar um ban. Quem tem
+ * status_definitivo=true (banco de erros pos-migration 021) fica bloqueado
+ * para sempre, nem o botao "Tentar Novamente" da auditoria reativa; so os
+ * poucos 'erro' antigos (de antes da 021, sem a marcacao) ainda voltam por
+ * ali, 1 a 1, depois do operador checar o motivo.
  */
 export async function enqueueContacts(
   contatos: Array<{ name?: string; phone: string; bairro?: string }>,
@@ -83,19 +94,22 @@ export async function enqueueContacts(
       q.filter((i) => i.status === 'pendente' || i.status === 'processando').map((i) => i.phone)
     );
     const enviados = new Set(q.filter((i) => i.status === 'enviado').map((i) => i.phone));
+    const errados = new Set(q.filter((i) => i.status === 'erro').map((i) => i.phone));
     let n = 0;
     let ja = 0;
+    let jaErrou = 0;
     for (const c of unicos) {
       if (naFila.has(c.phone)) continue;
+      if (errados.has(c.phone)) { jaErrou++; continue; }
       if (!permitirReenvio && enviados.has(c.phone)) { ja++; continue; }
       q.push({ id: `q-${Date.now()}-${n}`, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente', attempts: 0 });
       n++;
     }
-    return { enfileirados: n, ignorados: unicos.length - n - ja, jaEnviados: ja, divisaoPorChip: {}, optOut: 0 };
+    return { enfileirados: n, ignorados: unicos.length - n - ja - jaErrou, jaEnviados: ja, jaErrados: jaErrou, divisaoPorChip: {}, optOut: 0 };
   }
 
   const ctx = await getServiceContext();
-  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, divisaoPorChip: {}, optOut: 0 };
+  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, jaErrados: 0, divisaoPorChip: {}, optOut: 0 };
 
   // Ja na fila (pendente/processando) -> pula sempre.
   const { data: pend } = await ctx.db
@@ -108,6 +122,17 @@ export async function enqueueContacts(
   // Quem pediu para sair NUNCA volta para a fila, nem com permitirReenvio.
   const optOut = await getOptOutSet();
   let puladosOptOut = 0;
+
+  // Banco de erros: quem ja falhou 1x -> pula SEMPRE, mesmo com
+  // permitirReenvio (esse flag e para reabordar quem JA RECEBEU a mensagem
+  // numa nova onda, nao para insistir em numero que comprovadamente falhou).
+  const { data: err } = await ctx.db
+    .from('dispatch_queue')
+    .select('phone')
+    .eq('organization_id', ctx.organizationId)
+    .eq('status', 'erro');
+  const jaErrados = new Set((err || []).map((r: any) => r.phone));
+  let puladosPorErro = 0;
 
   // Ja abordado -> pula, a menos que o operador peca reenvio explicitamente.
   let jaEnviados = new Set<string>();
@@ -125,6 +150,7 @@ export async function enqueueContacts(
     .filter((c) => {
       if (naFila.has(c.phone)) return false;
       if (optOut.has(c.phone)) { puladosOptOut++; return false; }
+      if (jaErrados.has(c.phone)) { puladosPorErro++; return false; }
       if (jaEnviados.has(c.phone)) { puladosPorEnvio++; return false; }
       return true;
     })
@@ -176,8 +202,9 @@ export async function enqueueContacts(
 
   return {
     enfileirados: inseridos,
-    ignorados: unicos.length - rows.length - puladosPorEnvio - puladosOptOut + colisoes,
+    ignorados: unicos.length - rows.length - puladosPorEnvio - puladosPorErro - puladosOptOut + colisoes,
     jaEnviados: puladosPorEnvio,
+    jaErrados: puladosPorErro,
     divisaoPorChip,
     optOut: puladosOptOut,
   };
@@ -471,14 +498,34 @@ export async function markItemSent(
     .eq('id', id);
 }
 
-/** Incrementa tentativas; marca 'erro' após 3 falhas. Retorna se falhou de vez. */
+// Erros PERMANENTES: o numero nao existe no WhatsApp (a Evolution devolve
+// "exists":false ao consultar o JID antes de enviar). So importa para nao
+// penalizar a SAUDE DO CHIP (ver dispararContato em pesquisaSenadoDispatcher):
+// um numero que nao existe nao e culpa do chip. Para a fila em si nao muda
+// nada mais -- toda falha, permanente ou nao, ja e definitiva de primeira
+// (ver markItemError).
+const PADROES_ERRO_PERMANENTE = [/"exists"\s*:\s*false/i, /numero.{0,20}n[aã]o existe/i, /invalid.{0,10}number/i];
+
+export function ehErroPermanente(err: string): boolean {
+  return PADROES_ERRO_PERMANENTE.some((re) => re.test(err));
+}
+
+/**
+ * Incrementa tentativas e marca 'erro' de primeira -- decisao do operador
+ * (25/09/2026): NENHUM numero e retentado depois de falhar o envio, nem uma
+ * vez. Antes dava ate 3 tentativas (ou 1 so, se o erro fosse permanente);
+ * mas insistir no MESMO numero que acabou de recusar, mesmo que fosse uma
+ * 2a ou 3a tentativa horas depois, e o proprio padrao que arrisca ban --
+ * numero com problema passageiro volta a ser tentado organicamente numa
+ * proxima importacao/onda, nao automaticamente pelo motor.
+ */
 export async function markItemError(
   id: string,
   attempts: number,
   err: string,
   instanceName?: string
 ): Promise<{ failed: boolean }> {
-  const failed = attempts + 1 >= 3;
+  const failed = true;
   if (isPlaceholderEnv()) {
     const it = (global.__aiviq_queue || []).find((i) => i.id === id);
     if (it) { it.attempts = attempts + 1; if (failed) it.status = 'erro'; }
@@ -492,7 +539,7 @@ export async function markItemError(
       attempts: attempts + 1,
       error: err.slice(0, 300),
       status: failed ? 'erro' : 'pendente',
-      // Na 3ª falha, marca como definitivo: nunca mais entra na fila.
+      // Toda falha e definitiva na 1a tentativa -- ver docblock acima.
       status_definitivo: failed || undefined,
       // Registra em QUAL chip a falha aconteceu -- antes so o sucesso gravava
       // isso, entao a auditoria de falhas nao sabia dizer qual numero falhou.
@@ -504,6 +551,69 @@ export async function markItemError(
   return { failed };
 }
 
+/**
+ * Verifica se o telefone ja esta no banco de erros (falhou 1x -- ver
+ * markItemError). Usado pelo disparo INDIVIDUAL para bloquear com a MESMA
+ * regra do reimport em massa -- mesmo que nunca tenha existido uma sessao
+ * de pesquisa para esse numero (ela so nasce em envio com sucesso).
+ */
+export async function getDispatchErrorForPhone(
+  phoneRaw: string
+): Promise<{ error?: string; attempts: number } | null> {
+  const phone = canonicalDigits(phoneRaw);
+  if (isPlaceholderEnv()) {
+    const it = (global.__aiviq_queue || []).find((i) => i.phone === phone && i.status === 'erro');
+    return it ? { attempts: it.attempts } : null;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return null;
+  let { data } = await ctx.db
+    .from('dispatch_queue')
+    .select('error, attempts')
+    .eq('organization_id', ctx.organizationId)
+    .eq('phone', phone)
+    .eq('status', 'erro')
+    .maybeSingle();
+  if (!data && phone.length >= 8) {
+    const sufixo = phone.slice(-8);
+    const res = await ctx.db
+      .from('dispatch_queue')
+      .select('error, attempts')
+      .eq('organization_id', ctx.organizationId)
+      .eq('status', 'erro')
+      .ilike('phone', `%${sufixo}`)
+      .limit(1)
+      .maybeSingle();
+    data = res.data;
+  }
+  return data ? { error: (data as any).error || undefined, attempts: (data as any).attempts || 0 } : null;
+}
+
+/**
+ * Telefones (digitos canonicos) que tentaram e NAO tem nenhum envio
+ * confirmado -- so falhas (erro/status_definitivo). Usado para tirar do
+ * funil da pesquisa contatos que nunca receberam a Msg 1 de verdade, mesmo
+ * que uma sessao tenha chegado a existir para eles.
+ */
+export async function getTelefonesComFalhaSemEnvio(): Promise<Set<string>> {
+  if (isPlaceholderEnv()) return new Set();
+  const ctx = await getServiceContext();
+  if (!ctx) return new Set();
+  const [comErro, comEnvio] = await Promise.all([
+    ctx.db.from('dispatch_queue').select('phone').eq('organization_id', ctx.organizationId).eq('status', 'erro'),
+    ctx.db.from('dispatch_queue').select('phone').eq('organization_id', ctx.organizationId).eq('status', 'enviado'),
+  ]);
+  // Um telefone com pelo menos 1 envio confirmado NUNCA e excluido, mesmo que
+  // outra tentativa dele tenha falhado (retry apos reconexao, por exemplo).
+  const enviados = new Set((comEnvio.data || []).map((r: any) => canonicalDigits(r.phone)));
+  const semEnvio = new Set<string>();
+  for (const r of comErro.data || []) {
+    const tel = canonicalDigits(r.phone);
+    if (!enviados.has(tel)) semEnvio.add(tel);
+  }
+  return semEnvio;
+}
+
 export interface FailedQueueItem {
   id: string;
   phone: string;
@@ -513,12 +623,20 @@ export interface FailedQueueItem {
   attempts: number;
   instanceName?: string;
   createdAt?: string;
+  /** 'erro' = ja desistiu (toda falha e definitiva na 1a tentativa -- ver
+   *  markItemError); 'pendente' com attempts>0 so aparece em registros de
+   *  ANTES dessa regra (quando ainda existia retentativa automatica). */
+  status: 'erro' | 'pendente';
+  /** true = banco de erros (status_definitivo): bloqueado para sempre, nem
+   *  "Tentar Novamente" reativa. false com status 'erro' = falha registrada
+   *  antes da migration 021 (sem a marcacao), ainda reativavel manualmente. */
+  definitivo: boolean;
 }
 
 export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
   if (isPlaceholderEnv()) {
     return (global.__aiviq_queue || [])
-      .filter((i) => i.status === 'erro')
+      .filter((i) => i.status === 'erro' || (i.status === 'pendente' && i.attempts > 0))
       .slice(0, limit)
       .map((i) => ({
         id: i.id,
@@ -527,6 +645,8 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
         bairro: i.bairro,
         error: 'Falha no envio WhatsApp',
         attempts: i.attempts,
+        status: i.status as 'erro' | 'pendente',
+        definitivo: i.status === 'erro',
       }));
   }
   const ctx = await getServiceContext();
@@ -534,11 +654,17 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
   const inicio = await inicioLoteAtual(ctx);
   let q = ctx.db
     .from('dispatch_queue')
-    .select('id, phone, name, bairro, error, attempts, instance_name, created_at')
+    .select('id, phone, name, bairro, error, attempts, status, status_definitivo, instance_name, created_at')
     .eq('organization_id', ctx.organizationId)
-    .eq('status', 'erro');
+    // Inclui quem ja desistiu ('erro', que agora e toda falha, de primeira)
+    // e tambem 'pendente' com attempts>0 -- esse segundo caso so existe em
+    // registros de antes da regra de falha-definitiva-na-1a-tentativa.
+    .or('status.eq.erro,and(status.eq.pendente,attempts.gt.0)');
   if (inicio) q = q.gte('created_at', inicio);
-  const { data } = await q.order('created_at', { ascending: false }).limit(limit);
+  const { data } = await q
+    .order('attempts', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
 
   return (data || []).map((r: any) => ({
     id: r.id,
@@ -549,6 +675,11 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
     instanceName: r.instance_name || undefined,
     attempts: r.attempts || 1,
     createdAt: r.created_at,
+    status: r.status,
+    // Linhas 'erro' de antes da migration 021 nao tem status_definitivo
+    // marcado (fica null/false) -- essas ainda dao para reativar; as novas
+    // ja nascem com a marcacao junto do status em markItemError.
+    definitivo: r.status === 'erro' && r.status_definitivo !== false,
   }));
 }
 
@@ -1092,6 +1223,31 @@ export async function setMaturidadeChip(
       maturidade,
       warmup_started_on:
         maturidade === 'novo' ? (atual as any)?.warmup_started_on || hoje : (atual as any)?.warmup_started_on || null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'organization_id,instance_name' }
+  );
+}
+
+/**
+ * Libera manualmente um chip que esta em cooldown (RESFRIANDO / PAUSA DE
+ * LOTE): zera o horario de resfriamento e os contadores de falha, sem mexer
+ * no relogio normal de disparo (intervalo fixo continua valendo). O operador
+ * usa isto quando confirma que a causa da pausa ja foi resolvida (proxy
+ * corrigido, numero verificado etc.) e nao quer esperar os 40/180 min.
+ */
+export async function liberarCooldownChip(instance: string): Promise<void> {
+  if (isPlaceholderEnv()) return;
+  const ctx = await getServiceContext();
+  if (!ctx) return;
+  await ctx.db.from('dispatch_instance_control').upsert(
+    {
+      organization_id: ctx.organizationId,
+      instance_name: instance,
+      cooldown_ate: null,
+      cooldown_motivo: null,
+      falhas_seguidas: 0,
+      acks_erro_seguidos: 0,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'organization_id,instance_name' }

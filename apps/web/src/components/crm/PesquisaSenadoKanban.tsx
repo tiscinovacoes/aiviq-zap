@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   AlertCircle,
   AlertTriangle,
+  FileText,
 } from 'lucide-react';
 import {
   RespostaEleitor,
@@ -343,7 +344,7 @@ export default function PesquisaSenadoKanban() {
       const data = await res.json();
       if (data?.success) {
         setMensagemSucesso(
-          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 1 lead a cada 5 min em cada chip, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}${data.jaEnviados ? ` ${data.jaEnviados} foram pulados por já terem recebido a abordagem antes.` : ''}` +
+          `✅ ${data.enfileirados} contatos na fila (disparo em segundo plano: 1 lead a cada 5 min em cada chip, continuando mesmo ao navegar no sistema).${data.ignorados ? ` ${data.ignorados} já estavam na fila.` : ''}${data.jaEnviados ? ` ${data.jaEnviados} foram pulados por já terem recebido a abordagem antes.` : ''}${data.jaErrados ? ` ${data.jaErrados} bloqueados automaticamente por já terem dado erro antes (número sem WhatsApp/rejeitado).` : ''}` +
           (data.divisaoPorChip && Object.keys(data.divisaoPorChip).length > 0
             ? ' Divisão da lista: ' +
               Object.entries(data.divisaoPorChip)
@@ -387,12 +388,13 @@ export default function PesquisaSenadoKanban() {
 
   const handleExportarFalhasCSV = () => {
     if (falhasList.length === 0) return;
-    const headers = ['Telefone', 'Nome', 'Chip que tentou', 'Motivo da Falha', 'Tentativas', 'Data'];
+    const headers = ['Telefone', 'Nome', 'Chip que tentou', 'Motivo da Falha', 'Situação', 'Tentativas', 'Data'];
     const rows = falhasList.map((f) => [
       `"${f.phone}"`,
       `"${(f.name || '').replace(/"/g, '""')}"`,
       `"${(f.instanceName || 'não registrado').replace(/"/g, '""')}"`,
       `"${(f.error || 'Falha de entrega').replace(/"/g, '""')}"`,
+      `"${f.definitivo ? 'Bloqueada (banco de erros)' : f.status === 'erro' ? 'Erro (reativável)' : 'Em retentativa'}"`,
       f.attempts || 1,
       `"${f.createdAt || ''}"`,
     ]);
@@ -426,6 +428,34 @@ export default function PesquisaSenadoKanban() {
     }
   };
 
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [erroPdf, setErroPdf] = useState<string | null>(null);
+
+  const handleBaixarRelatorioPdf = async () => {
+    setGerandoPdf(true);
+    setErroPdf(null);
+    try {
+      const res = await fetch('/api/pesquisa/senado/relatorio-pdf');
+      if (!res.ok) throw new Error('Falha ao gerar o relatório');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pesquisa_senado_ms_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Erro ao baixar relatório PDF:', e);
+      setErroPdf('Não foi possível gerar o relatório em PDF. Tente novamente.');
+      setTimeout(() => setErroPdf(null), 6000);
+      window.alert('Não foi possível gerar o relatório em PDF. Tente novamente.');
+    } finally {
+      setGerandoPdf(false);
+    }
+  };
+
   const handleExportarCSV = () => {
     if (sessions.length === 0) return;
     const headers = ['ID', 'Nome', 'Telefone', 'Bairro', 'Status_Etapa', '1_Voto', '2_Voto', 'Data_Registro'];
@@ -450,14 +480,27 @@ export default function PesquisaSenadoKanban() {
     document.body.removeChild(link);
   };
 
+  // "Falhas no Disparo" = falhas definitivas (status 'erro' -- toda falha ja
+  // e definitiva na 1a tentativa) + falhas em retentativa automatica (so
+  // aparecem em registros de antes dessa regra existir). Antes o card e o
+  // modal so contavam as definitivas, entao uma falha que tinha acabado de
+  // acontecer ficava fora do KPI ate a 3a tentativa -- mesmo com o motivo do
+  // erro ja gravado no banco.
+  const totalFalhasDisparo = (estadoDisparador?.erros || 0) + (estadoDisparador?.emRetentativa || 0);
+  // Bloqueadas para sempre no banco de erros (status_definitivo) -- nem
+  // "Tentar Novamente" reativa essas, so as 'erro' de antes da migration 021
+  // (sem a marcacao), que ainda podem ser reenviadas manualmente.
+  const totalFalhasDefinitivas = falhasList.filter((f) => f.definitivo).length;
+  const totalFalhasReativaveis = falhasList.filter((f) => f.status === 'erro' && !f.definitivo).length;
+
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-slate-50">
+    <div className="flex flex-col h-full overflow-y-auto md:overflow-hidden bg-slate-50">
       {/* Top Action & Sub-Tabs Bar */}
-      <div className="px-8 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+      <div className="px-3 sm:px-8 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/80 overflow-x-auto max-w-full">
           <button
             onClick={() => setVisao('funil')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
               visao === 'funil'
                 ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60'
                 : 'text-slate-600 hover:text-slate-900'
@@ -469,7 +512,7 @@ export default function PesquisaSenadoKanban() {
 
           <button
             onClick={() => setVisao('voto1')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
               visao === 'voto1'
                 ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60'
                 : 'text-slate-600 hover:text-slate-900'
@@ -481,7 +524,7 @@ export default function PesquisaSenadoKanban() {
 
           <button
             onClick={() => setVisao('voto2')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
               visao === 'voto2'
                 ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60'
                 : 'text-slate-600 hover:text-slate-900'
@@ -493,7 +536,7 @@ export default function PesquisaSenadoKanban() {
 
           <button
             onClick={() => setVisao('geral')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
               visao === 'geral'
                 ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60'
                 : 'text-slate-600 hover:text-slate-900'
@@ -516,34 +559,51 @@ export default function PesquisaSenadoKanban() {
 
           <button
             onClick={handleExportarCSV}
-            className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+            title="Exportar CSV"
+            className="px-2 sm:px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
           >
             <Download className="w-3.5 h-3.5 text-slate-500" />
-            <span>Exportar CSV</span>
+            <span className="hidden sm:inline">Exportar CSV</span>
+          </button>
+
+          <button
+            onClick={handleBaixarRelatorioPdf}
+            disabled={gerandoPdf}
+            title="Relatório em PDF"
+            className="px-2 sm:px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs disabled:opacity-60"
+          >
+            {gerandoPdf ? (
+              <RefreshCw className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 text-rose-500" />
+            )}
+            <span className="hidden sm:inline">{gerandoPdf ? 'Gerando…' : 'Relatório PDF'}</span>
           </button>
 
           <button
             onClick={() => setIsExcelModalOpen(true)}
-            className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+            title="Importar Lista Excel"
+            className="px-2 sm:px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Importar Lista Excel</span>
+            <span className="hidden sm:inline">Importar Lista Excel</span>
           </button>
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+            title="Disparo Individual"
+            className="px-2 sm:px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>Disparo Individual</span>
+            <span className="hidden sm:inline">Disparo Individual</span>
           </button>
         </div>
       </div>
 
       {/* BANNER DE FILA DE DISPARO ANTI-BAN ATIVA */}
       {estadoDisparador && estadoDisparador.total > 0 && (
-        <div className="px-8 py-2.5 bg-emerald-50 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3">
+        <div className="px-3 sm:px-8 py-2.5 bg-emerald-50 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-2 sm:gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
               <span>Fila Multi-Instâncias (Cluster Anti-Ban · 1 lead a cada 5 min em cada chip (tempo fixo, chips se revezam) · 8h–21h · teto 150/dia por chip):</span>
@@ -566,7 +626,7 @@ export default function PesquisaSenadoKanban() {
 
             <span className="text-emerald-700">
               Lote atual: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados
-              {estadoDisparador.erros > 0 && ` (${estadoDisparador.erros} falhas)`}
+              {totalFalhasDisparo > 0 && ` (${totalFalhasDisparo} falhas)`}
             </span>
 
             {estadoDisparador.ativo && estadoDisparador.segundosRestantesProximo > 0 && (
@@ -614,14 +674,13 @@ export default function PesquisaSenadoKanban() {
       )}
 
       {/* Hero KPIs Bar da Pesquisa — agora com card exclusivo de Falhas */}
-      <div className="px-8 py-3 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-3 shrink-0">
+      <div className="px-3 sm:px-8 py-3 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 shrink-0">
         <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
           <div className="flex items-center justify-between text-xs text-slate-500 mb-0.5">
             <span className="font-medium">Total de Contatos Disparados</span>
             <Users className="w-4 h-4 text-slate-400" />
           </div>
           <p className="text-xl font-bold text-slate-900">{stats?.totalEleitores || sessions.length}</p>
-          <p className="text-[11px] text-slate-400">Eleitores abordados desde 19/09</p>
         </div>
 
         <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
@@ -655,11 +714,11 @@ export default function PesquisaSenadoKanban() {
           <p className="text-[11px] text-slate-400">Aguardando resposta</p>
         </div>
 
-        {/* KPI EXCLUSIVO DE FALHAS COM BOTÃO DE VERIFICAÇÃO */}
+        {/* KPI EXCLUSIVO DE FALHAS COM BOTÃO DE VERIFICAÇÃO — conta falhas definitivas (falha na 1a tentativa) + as antigas que ainda seguem em retentativa automatica */}
         <div
           onClick={() => setIsFalhasModalOpen(true)}
           className={`p-3 border rounded-xl cursor-pointer transition-all ${
-            (estadoDisparador?.erros || 0) > 0
+            totalFalhasDisparo > 0
               ? 'bg-rose-50/70 border-rose-200 hover:bg-rose-100/60 shadow-xs'
               : 'bg-slate-50 border-slate-200/80 hover:bg-slate-100/80'
           }`}
@@ -667,11 +726,11 @@ export default function PesquisaSenadoKanban() {
         >
           <div className="flex items-center justify-between text-xs text-slate-500 mb-0.5">
             <span className="font-semibold text-rose-800">Falhas no Disparo</span>
-            <AlertTriangle className={`w-4 h-4 ${(estadoDisparador?.erros || 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`} />
+            <AlertTriangle className={`w-4 h-4 ${totalFalhasDisparo > 0 ? 'text-rose-600' : 'text-slate-400'}`} />
           </div>
           <div className="flex items-baseline justify-between">
-            <p className="text-xl font-bold text-rose-700">{estadoDisparador?.erros || 0}</p>
-            {(estadoDisparador?.erros || 0) > 0 && (
+            <p className="text-xl font-bold text-rose-700">{totalFalhasDisparo}</p>
+            {totalFalhasDisparo > 0 && (
               <span className="text-[10px] font-semibold text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded border border-rose-200 flex items-center gap-0.5">
                 Verificar ➔
               </span>
@@ -681,7 +740,7 @@ export default function PesquisaSenadoKanban() {
             Números s/ WhatsApp ou erro
             {(estadoDisparador?.emRetentativa || 0) > 0 && (
               <span className="block text-amber-700">
-                + {estadoDisparador?.emRetentativa} em retentativa
+                {estadoDisparador?.erros || 0} definitivas · {estadoDisparador?.emRetentativa} em retentativa
               </span>
             )}
           </p>
@@ -689,7 +748,7 @@ export default function PesquisaSenadoKanban() {
       </div>
 
       {/* Main Kanban Content Area */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
+      <div className="flex-1 min-h-[70vh] md:min-h-0 overflow-x-auto md:overflow-y-hidden p-3 sm:p-6">
         {/* 1. VISÃO FUNIL DE COLETA */}
         {visao === 'funil' && (
           <div className="flex gap-4 h-full min-w-max pb-2">
@@ -1232,7 +1291,7 @@ export default function PesquisaSenadoKanban() {
                     </span>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Contatos que falharam ao enviar WhatsApp (número inexistente, sem WhatsApp ou timeout)
+                    Contatos que falharam ao enviar WhatsApp (número inexistente, sem WhatsApp ou timeout) — falha é definitiva já na 1ª tentativa, sem reenvio automático
                   </p>
                 </div>
               </div>
@@ -1262,7 +1321,14 @@ export default function PesquisaSenadoKanban() {
                 <button
                   type="button"
                   onClick={handleReenfileirarFalhas}
-                  disabled={falhasList.length === 0 || reenfileirandoFalhas}
+                  disabled={totalFalhasReativaveis === 0 || reenfileirandoFalhas}
+                  title={
+                    totalFalhasReativaveis === 0
+                      ? totalFalhasDefinitivas > 0
+                        ? `${totalFalhasDefinitivas} bloqueadas no banco de erros — permanente, nem este botão reativa`
+                        : 'Ninguém desistiu ainda — as falhas atuais estão em retentativa automática'
+                      : `Re-enfileira as ${totalFalhasReativaveis} falhas antigas ainda reativáveis (banco de erros bloqueia o resto)`
+                  }
                   className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-xs"
                 >
                   {reenfileirandoFalhas ? (
@@ -1281,7 +1347,7 @@ export default function PesquisaSenadoKanban() {
             </div>
 
             {/* Lista de Falhas */}
-            <div className="p-6 overflow-y-auto flex-1">
+            <div className="p-3 sm:p-6 overflow-y-auto flex-1">
               {falhasList.length === 0 ? (
                 <div className="py-12 text-center">
                   <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
@@ -1291,14 +1357,15 @@ export default function PesquisaSenadoKanban() {
                   </p>
                 </div>
               ) : (
-                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-                  <table className="w-full text-xs text-left">
+                <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-xs">
+                  <table className="w-full text-xs text-left min-w-[640px]">
                     <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase font-semibold text-[10px] tracking-wider">
                       <tr>
                         <th className="p-3">Eleitor</th>
                         <th className="p-3">Telefone</th>
                         <th className="p-3">Chip que tentou</th>
                         <th className="p-3">Motivo da Falha</th>
+                        <th className="p-3 text-center">Situação</th>
                         <th className="p-3 text-center">Tentativas</th>
                         <th className="p-3 text-right">Ação</th>
                       </tr>
@@ -1329,6 +1396,30 @@ export default function PesquisaSenadoKanban() {
                               </span>
                             </span>
                           </td>
+                          <td className="p-3 text-center">
+                            {falha.definitivo ? (
+                              <span
+                                className="inline-flex items-center gap-1 bg-rose-100 border border-rose-200 text-rose-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
+                                title="Banco de erros: bloqueado para sempre, não reaparece em novas importações nem no disparo individual — nem este botão reativa"
+                              >
+                                Bloqueada
+                              </span>
+                            ) : falha.status === 'erro' ? (
+                              <span
+                                className="inline-flex items-center gap-1 bg-orange-100 border border-orange-200 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
+                                title="Falha registrada antes do banco de erros existir — ainda dá para reativar em 'Tentar Novamente'"
+                              >
+                                Erro (reativável)
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-1 bg-amber-100 border border-amber-200 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
+                                title="Registro de antes da regra atual — hoje toda falha já é definitiva na 1ª tentativa, sem retentativa automática"
+                              >
+                                Em retentativa
+                              </span>
+                            )}
+                          </td>
                           <td className="p-3 text-center text-slate-500 font-mono">
                             {falha.attempts || 1}
                           </td>
@@ -1352,7 +1443,7 @@ export default function PesquisaSenadoKanban() {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs">
+            <div className="px-3 sm:px-6 py-3 border-t border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-slate-400">
                 Mostrando {falhasList.length} números com falha
               </span>
