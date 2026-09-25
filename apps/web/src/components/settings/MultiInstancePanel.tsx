@@ -13,6 +13,7 @@ import {
   Loader2,
   Send,
   Globe,
+  HelpCircle,
 } from 'lucide-react';
 import { useInstanceStore } from '@/store/useInstanceStore';
 
@@ -31,6 +32,7 @@ export default function MultiInstancePanel() {
   const liberarCooldown = useInstanceStore((s) => s.liberarCooldown);
 
   const [showAdd, setShowAdd] = useState(false);
+  const [showLegenda, setShowLegenda] = useState(false);
   const [newName, setNewName] = useState('');
   const [newLabel, setNewLabel] = useState('');
   const [creating, setCreating] = useState(false);
@@ -212,16 +214,69 @@ export default function MultiInstancePanel() {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => {
-            setShowAdd((v) => !v);
-            setError(null);
-          }}
-          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" /> Adicionar número
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowLegenda((v) => !v)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border ${
+              showLegenda
+                ? 'bg-slate-100 border-slate-300 text-slate-700'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <HelpCircle className="w-3.5 h-3.5" /> Legenda
+          </button>
+          <button
+            onClick={() => {
+              setShowAdd((v) => !v);
+              setError(null);
+            }}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> Adicionar número
+          </button>
+        </div>
       </div>
+
+      {showLegenda && (
+        <div className="mb-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-2.5">
+          <p className="text-xs font-bold text-slate-800">O que cada badge/botão significa</p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+            <div>
+              <span className="font-bold text-emerald-700">🟢 bolinha verde</span> — conectado.{' '}
+              <span className="font-bold text-amber-700">🟡 amarela</span> — conectando (QR pendente).{' '}
+              <span className="font-bold text-slate-400">⚪ cinza</span> — desconectado.
+            </div>
+            <div>
+              <span className="font-bold px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">IP PRÓPRIO</span> — proxy dedicado configurado.{' '}
+              <span className="font-bold px-1 rounded bg-slate-100 text-slate-500 border border-slate-200">IP COMPARTILHADO</span> — sem proxy, sai pelo IP do servidor (mesmo de todos os outros chips sem proxy).
+            </div>
+            <div>
+              <span className="font-bold px-1 rounded bg-rose-100 text-rose-800 border border-rose-300">SEM WEBHOOK</span> — a Evolution não tem pra onde avisar respostas/confirmações; clique pra corrigir. Sem isso a campanha dispara mas não coleta nada.
+            </div>
+            <div>
+              <span className="font-bold px-1 rounded bg-amber-100 text-amber-800 border border-amber-200">RESFRIANDO</span> — falhas seguidas ao ENVIAR (erro/timeout na hora de mandar). Pausa curta (atualmente 40min), o chip continua no pool, só espera.
+            </div>
+            <div>
+              <span className="font-bold px-1 rounded bg-amber-100 text-amber-800 border border-amber-200">ENTREGA RECUSADA</span> — o próprio WhatsApp devolveu erro ao tentar ENTREGAR 2 mensagens seguidas (não é falha nossa, é recusa do servidor deles). Sinal mais sério — pode ser início de restrição no número. Tira o chip do pool por 3h automaticamente; clique pra liberar antes se quiser assumir o risco.
+            </div>
+            <div>
+              <span className="font-bold px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">Já aquecido</span> / <span className="font-bold px-1 rounded bg-amber-50 text-amber-800 border border-amber-200">Em warm-up</span> — declara se o número é antigo (teto cheio, 150/dia) ou novo (teto sobe aos poucos, começa baixo). <span className="font-mono">teto hoje</span> mostra o limite de HOJE calculado a partir disso.
+            </div>
+            <div>
+              <span className="font-bold px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">No disparo</span> (checkbox) — se DESMARCADO, o número fica fora do rodízio de campanhas (mas continua disponível pra atender no Inbox manualmente).
+            </div>
+            <div>
+              <span className="font-bold px-1 rounded bg-slate-100 text-slate-500 border border-slate-200">PADRÃO</span> — número que não pode ser removido.{' '}
+              <span className="font-bold px-1 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">NO INBOX</span> — é o número que o Inbox/Contatos estão exibindo agora (não afeta o disparo).
+            </div>
+            <div>
+              <span className="font-bold">Ícone de energia</span> — desconecta (se conectado) ou abre QR pra conectar (se não).{' '}
+              <span className="font-bold">Ícone de lixeira</span> — remove o número da lista por completo.
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
@@ -375,13 +430,23 @@ export default function MultiInstancePanel() {
                   disabled={busy === i.instanceName}
                   title={'Fora do disparo até ' +
                     new Date(i.cooldownAte).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) +
-                    (i.cooldownMotivo === 'falhas_seguidas' ? ' (falhas seguidas)' : ' (pausa de lote)') +
+                    (i.cooldownMotivo === 'falhas_seguidas'
+                      ? ' (falhas seguidas ao enviar)'
+                      : i.cooldownMotivo === 'entrega_recusada'
+                        ? ' (o WhatsApp recusou a entrega de 2 mensagens seguidas -- sinal serio, chip tirado do pool)'
+                        : i.cooldownMotivo?.startsWith('circuit_breaker_')
+                          ? ' (disjuntor: erros de entrega em sequência, chip tirado do pool)'
+                          : ' (pausa automática)') +
                     ' — clique para liberar agora'}
                   className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0 hover:bg-amber-200 disabled:opacity-60"
                 >
                   {busy === i.instanceName
                     ? 'LIBERANDO…'
-                    : (i.cooldownMotivo === 'falhas_seguidas' ? 'RESFRIANDO' : 'PAUSA DE LOTE') + ' ⟳'}
+                    : (i.cooldownMotivo === 'falhas_seguidas'
+                        ? 'RESFRIANDO'
+                        : i.cooldownMotivo === 'entrega_recusada' || i.cooldownMotivo?.startsWith('circuit_breaker_')
+                          ? 'ENTREGA RECUSADA'
+                          : 'PAUSA DE LOTE') + ' ⟳'}
                 </button>
               )}
               <div className="w-full sm:w-auto sm:min-w-[140px] sm:flex-1">
