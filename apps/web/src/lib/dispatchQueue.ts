@@ -1240,6 +1240,10 @@ export async function liberarCooldownChip(instance: string): Promise<void> {
   if (isPlaceholderEnv()) return;
   const ctx = await getServiceContext();
   if (!ctx) return;
+  // O disjuntor de entrega recusada (registrar_ack_chip) desliga
+  // dispatch_enabled junto com o cooldown -- sem reativar aqui, o botao
+  // "liberar" limpa o aviso mas o chip continua invisivel para o pool
+  // (nenhum erro, nenhum badge, simplesmente nunca mais recebe lead).
   await ctx.db.from('dispatch_instance_control').upsert(
     {
       organization_id: ctx.organizationId,
@@ -1248,6 +1252,7 @@ export async function liberarCooldownChip(instance: string): Promise<void> {
       cooldown_motivo: null,
       falhas_seguidas: 0,
       acks_erro_seguidos: 0,
+      dispatch_enabled: true,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'organization_id,instance_name' }
