@@ -37,6 +37,18 @@ export default function MessageStream({ onApplySuggestion }: MessageStreamProps)
         return (
           <span className="w-2.5 h-2.5 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
         );
+      case 'failed':
+        // Antes 'failed' caia no default e a mensagem recusada nao mostrava
+        // NENHUM indicador -- o atendente achava que tinha sido entregue.
+        return (
+          <span
+            title="Não entregue: o WhatsApp recusou esta mensagem"
+            className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-rose-500"
+          >
+            <span className="w-3 h-3 rounded-full bg-rose-500 text-white text-[9px] leading-3 text-center font-bold">!</span>
+            não entregue
+          </span>
+        );
       default:
         return null;
     }

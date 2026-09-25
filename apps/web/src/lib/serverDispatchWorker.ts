@@ -25,6 +25,13 @@ export function stopServerDispatchWorker() {
 }
 
 export async function triggerServerDispatchCycle(immediate = false) {
+  // Em serverless (Vercel) o setTimeout morre com a lambda e, enquanto ela vive,
+  // so duplica o trabalho do cron `* * * * *` (vercel.json) e do runner da aba.
+  // Cada tick extra custa ~10 queries + chamadas a Evolution. Aqui e no-op;
+  // o worker so existe para `next dev`/servidor proprio sem cron.
+  if (process.env.VERCEL || process.env.DISABLE_SERVER_DISPATCH_WORKER === 'true') {
+    return;
+  }
   if (global.__aiviq_server_dispatch_busy) {
     return;
   }

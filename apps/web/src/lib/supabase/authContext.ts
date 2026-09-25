@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { createClient as createSSRClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
 
 // Resolve o contexto de acesso ao banco de forma unificada — igual ao que o
 // middleware faz para deixar o usuário entrar. Sem isto, as rotas chamavam
@@ -29,6 +30,23 @@ function demoAllowed(): boolean {
     process.env.NODE_ENV === 'development' ||
     process.env.ALLOW_DEMO_LOGIN === 'true'
   );
+}
+
+// O fallback demo usa service-role (contorna RLS). Por isso NAO basta a env
+// ALLOW_DEMO_LOGIN: exige o cookie emitido por /api/auth/login apos validar as
+// credenciais demo (auditoria A0, 21/09/2026 -- antes um visitante anonimo
+// herdava service-role em producao). Em `next dev` segue automatico.
+async function demoSessionPresent(): Promise<boolean> {
+  if (process.env.NODE_ENV === 'development') return true;
+  try {
+    const store = await cookies();
+    return (
+      store.get('poli_dev_token')?.value === 'mock-dev-token-jwt' ||
+      store.get('poli_token')?.value === 'mock-dev-token-jwt'
+    );
+  } catch {
+    return false; // fora de contexto de requisicao: nunca concede demo
+  }
 }
 
 // Devolve o contexto, ou null quando não autorizado (a rota responde 401).
@@ -63,7 +81,7 @@ export async function getDbContext(): Promise<DbContext | null> {
   }
 
   // 2. Sem usuário real → fallback demo (só quando permitido).
-  if (!demoAllowed()) return null;
+  if (!demoAllowed() || !(await demoSessionPresent())) return null;
   const svc = await getServiceContext();
   if (!svc) return null;
   return { ...svc, isDemo: true };

@@ -7,6 +7,43 @@ import { getPesquisaSessions } from '@/lib/pesquisaSenadoStore';
 
 export const dynamic = 'force-dynamic';
 
+const TZ_MS = 'America/Campo_Grande'; // UTC-4 fixo (sem horario de verao desde 2019)
+
+/**
+ * Instante da ultima atividade, para ORDENAR. Antes a lista nao tinha ordem
+ * nenhuma (a ordem do Map: memoria primeiro, banco depois) e uma resposta nova
+ * nunca subia ao topo. As fontes misturam formatos: ISO (Supabase) e "HH:mm"
+ * (Evolution/memoria, sem data) -- "HH:mm" e lido como hoje em MS e, se cair no
+ * futuro, como ontem.
+ */
+function activityTs(c: Conversation): number {
+  const raw = String(c.last_message_at || '').trim();
+  const iso = Date.parse(raw);
+  if (raw.includes('T') && !isNaN(iso)) return iso;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  if (m) {
+    const [Y, M, D] = new Date().toLocaleDateString('en-CA', { timeZone: TZ_MS }).split('-').map(Number);
+    let t = Date.UTC(Y, M - 1, D, Number(m[1]) + 4, Number(m[2]));
+    if (t > Date.now() + 60_000) t -= 86_400_000;
+    return t;
+  }
+  const u = Date.parse(String((c as { updated_at?: string }).updated_at || c.created_at || ''));
+  return isNaN(u) ? 0 : u;
+}
+
+/** ISO vira "HH:mm" (hoje) ou "dd/MM"; o resto (ja formatado) passa direto. */
+function exibirHora(c: Conversation): string {
+  const raw = String(c.last_message_at || '');
+  const ts = raw.includes('T') ? Date.parse(raw) : NaN;
+  if (isNaN(ts)) return raw;
+  const d = new Date(ts);
+  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: TZ_MS });
+  const dia = d.toLocaleDateString('en-CA', { timeZone: TZ_MS });
+  return dia === hoje
+    ? d.toLocaleTimeString('pt-BR', { timeZone: TZ_MS, hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('pt-BR', { timeZone: TZ_MS, day: '2-digit', month: '2-digit' });
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -103,7 +140,11 @@ export async function GET(req: NextRequest) {
     for (const m of memoryChats) upsert(m, false);
     for (const c of dbOrRealConversations) upsert(c, true);
 
-    let conversations: Conversation[] = Array.from(byKey.values());
+    // Mais recente primeiro; a hora exibida e normalizada depois de ordenar.
+    let conversations: Conversation[] = Array.from(byKey.values())
+      .map((c) => ({ c, ts: activityTs(c) }))
+      .sort((a, b) => b.ts - a.ts)
+      .map(({ c }) => ({ ...c, last_message_at: exibirHora(c) }));
 
     // Apply query filters
     if (status) {

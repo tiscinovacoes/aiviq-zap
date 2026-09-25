@@ -13,9 +13,20 @@ import {
   Loader2,
   Send,
   Globe,
+<<<<<<< Updated upstream
   HelpCircle,
+=======
+  Archive,
+>>>>>>> Stashed changes
 } from 'lucide-react';
 import { useInstanceStore } from '@/store/useInstanceStore';
+
+// Estados acionaveis. "online" e "conectando" ja aparecem pela bolinha de status.
+const estadoBadge: Record<string, { cls: string; label: string }> = {
+  caiu: { cls: 'bg-slate-100 text-slate-600 border-slate-200', label: 'CAIU' },
+  recusando: { cls: 'bg-amber-100 text-amber-800 border-amber-200', label: 'RECUSANDO ENTREGA' },
+  duplicada: { cls: 'bg-rose-100 text-rose-700 border-rose-200', label: 'DUPLICADA' },
+};
 
 const statusStyle: Record<string, { dot: string; text: string; label: string }> = {
   connected: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Conectado' },
@@ -27,9 +38,16 @@ export default function MultiInstancePanel() {
   const { instances, selected, fetchInstances, setSelected, setDispatchEnabled, setMaturidade } =
     useInstanceStore();
   const repararWebhook = useInstanceStore((s) => s.repararWebhook);
+<<<<<<< Updated upstream
   const setProxy = useInstanceStore((s) => s.setProxy);
   const removeProxy = useInstanceStore((s) => s.removeProxy);
   const liberarCooldown = useInstanceStore((s) => s.liberarCooldown);
+=======
+  const poolResumo = useInstanceStore((s) => s.poolResumo);
+  const verificarIp = useInstanceStore((s) => s.verificarIp);
+  const aposentar = useInstanceStore((s) => s.aposentar);
+  const fixarIp = useInstanceStore((s) => s.fixarIp);
+>>>>>>> Stashed changes
 
   const [showAdd, setShowAdd] = useState(false);
   const [showLegenda, setShowLegenda] = useState(false);
@@ -38,6 +56,36 @@ export default function MultiInstancePanel() {
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  async function rodarAcao(name: string, fn: () => Promise<{ ok: boolean; message: string }>) {
+    setBusy(name);
+    setError(null);
+    setInfo(null);
+    const r = await fn();
+    (r.ok ? setInfo : setError)(r.message);
+    setBusy(null);
+  }
+
+  async function handleAposentar(name: string) {
+    const motivo = window.prompt(
+      `Aposentar "${name}"?\n\nO chip será APAGADO, os contatos reservados para ele voltam para a fila dos outros chips e o IP dele fica 30 dias em quarentena. Use quando o WhatsApp banir o número.\n\nMotivo:`,
+      'banido'
+    );
+    if (motivo === null) return;
+    await rodarAcao(name, () => aposentar(name, motivo.trim() || 'banido'));
+  }
+
+  async function handleFixarIp(name: string) {
+    if (
+      !window.confirm(
+        `Mover "${name}" para um IP fixo livre do pool?\n\nO chip será reiniciado (volta sem pedir QR). Faça isso fora do horário de disparo (8h–20h).`
+      )
+    ) {
+      return;
+    }
+    await rodarAcao(name, () => fixarIp(name));
+  }
 
   const [qrModal, setQrModal] = useState<{
     instanceName: string;
@@ -118,6 +166,7 @@ export default function MultiInstancePanel() {
       });
       const data = await res.json();
       if (data.success) {
+        if (data.ipAviso) setInfo(data.ipAviso);
         // Instancia criada mas sem webhook e o pior cenario: ela conecta, dispara
         // normalmente e nao coleta NADA -- e o painel so mostra envios, entao o
         // problema passa despercebido por horas. Avisa alto na hora.
@@ -162,6 +211,7 @@ export default function MultiInstancePanel() {
       });
       const data = await res.json();
       if (data.success && data.qrCode) {
+        if (data.ipAviso) setInfo(data.ipAviso);
         setQrModal({ instanceName, label, qrCode: data.qrCode, pairingCode: data.pairingCode });
       } else {
         setError(data.message || 'Não foi possível gerar o QR Code.');
@@ -210,7 +260,11 @@ export default function MultiInstancePanel() {
           <div>
             <h3 className="text-sm font-bold text-slate-900">Números de WhatsApp (Multi-instância)</h3>
             <p className="text-[11px] text-slate-500">
+<<<<<<< Updated upstream
               Conecte vários celulares. A lista é <strong className="text-slate-700">dividida entre todos os números marcados em &quot;No disparo&quot;</strong> na importação — 1 lead a cada 5 min em cada (tempo fixo, das 8h às 21h), teto de 150/dia por número. O selo ATIVO é outra coisa: define só qual número o Inbox e os Contatos exibem.
+=======
+              Conecte vários celulares. A lista é <strong className="text-slate-700">dividida entre todos os números marcados em &quot;No disparo&quot;</strong> na importação — 1 lead por minuto em cada, teto de 250/dia por número. O selo ATIVO é outra coisa: define só qual número o Inbox e os Contatos exibem.
+>>>>>>> Stashed changes
             </p>
           </div>
         </div>
@@ -281,6 +335,34 @@ export default function MultiInstancePanel() {
       {error && (
         <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
           {error}
+        </div>
+      )}
+      {info && (
+        <div className="mb-3 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+          {info}
+        </div>
+      )}
+
+      {/* Pool de IPs: 1 IP fixo por chip. "Livres" e o que ainda pode receber um numero novo. */}
+      {poolResumo && (
+        <div className="mb-3 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
+          <Globe className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <p className="text-[11px] text-slate-600">
+            {poolResumo.total === 0 ? (
+              <span className="text-amber-700">
+                Nenhum IP configurado em EVOLUTION_PROXY_POOL: os números saem pelo IP do servidor.
+              </span>
+            ) : (
+              <>
+                <strong className="text-slate-800">IPs fixos:</strong> {poolResumo.emUso} em uso ·{' '}
+                <strong className={poolResumo.livres === 0 && !poolResumo.ilimitado ? 'text-rose-700' : 'text-slate-800'}>
+                  {poolResumo.ilimitado ? 'sessões ilimitadas' : `${poolResumo.livres} livre${poolResumo.livres === 1 ? '' : 's'}`}
+                </strong>
+                {poolResumo.emQuarentena > 0 && <> · {poolResumo.emQuarentena} em quarentena (30 dias)</>}
+                {poolResumo.obrigatorio ? ' · proxy obrigatório' : ''}
+              </>
+            )}
+          </p>
         </div>
       )}
 
@@ -457,6 +539,14 @@ export default function MultiInstancePanel() {
                       PADRÃO
                     </span>
                   )}
+                  {i.estado && estadoBadge[i.estado] && (
+                    <span
+                      title={i.estadoMotivo}
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${estadoBadge[i.estado].cls}`}
+                    >
+                      {estadoBadge[i.estado].label}
+                    </span>
+                  )}
                   {isSel && (
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
                       NO INBOX
@@ -467,6 +557,26 @@ export default function MultiInstancePanel() {
                   <span className="font-mono">{i.instanceName}</span>
                   {' · '}
                   <span className={st.text}>{i.phoneNumber || st.label}</span>
+                </div>
+                {/* IP do chip: 1 IP fixo por numero. Saida = IP publico medido pelo proprio proxy. */}
+                <div className="text-[10px] text-slate-400 truncate" title={i.estadoMotivo}>
+                  {i.proxyHostPort ? (
+                    <>
+                      IP <span className="font-mono">{i.proxyHostPort}</span>
+                      {i.egressIp && (
+                        <>
+                          {' · saída '}
+                          <span className="font-mono">{i.egressIp}</span>
+                          {i.egressCountry && ` (${i.egressCountry})`}
+                        </>
+                      )}
+                      {i.ipNoPool === false && (
+                        <span className="ml-1.5 font-bold text-amber-700">FORA DO POOL</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-amber-600">sem IP dedicado</span>
+                  )}
                 </div>
               </div>
 
@@ -545,11 +655,39 @@ export default function MultiInstancePanel() {
                     {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <QrCode className="w-3.5 h-3.5" />}
                   </button>
                 )}
+                <button
+                  onClick={() => rodarAcao(i.instanceName, () => verificarIp(i.instanceName))}
+                  disabled={isBusy || !i.proxyHostPort}
+                  title="Verificar IP de saída (Brasil, sem repetir em outro chip)"
+                  className="w-8 h-8 rounded-lg text-slate-600 border border-slate-200 hover:bg-slate-50 flex items-center justify-center disabled:opacity-40"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                </button>
+                {i.ipNoPool === false && (
+                  <button
+                    onClick={() => handleFixarIp(i.instanceName)}
+                    disabled={isBusy}
+                    title="Mover para um IP fixo livre do pool (reinicia o chip)"
+                    className="px-2 h-8 rounded-lg text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    FIXAR IP
+                  </button>
+                )}
+                {!i.isDefault && (
+                  <button
+                    onClick={() => handleAposentar(i.instanceName)}
+                    disabled={isBusy}
+                    title="Aposentar chip (banido/perdido): apaga, devolve a fila e põe o IP em quarentena"
+                    className="w-8 h-8 rounded-lg text-amber-700 border border-amber-200 hover:bg-amber-50 flex items-center justify-center disabled:opacity-50"
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 {!i.isDefault && (
                   <button
                     onClick={() => handleRemove(i.instanceName)}
                     disabled={isBusy}
-                    title="Remover número"
+                    title="Remover número (sem quarentena do IP)"
                     className="w-8 h-8 rounded-lg text-red-500 border border-red-200 hover:bg-red-50 flex items-center justify-center disabled:opacity-50"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

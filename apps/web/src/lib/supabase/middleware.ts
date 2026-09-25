@@ -38,30 +38,42 @@ export async function updateSession(request: NextRequest) {
   }
 
   // CR-002 B1-R: o backdoor NUNCA é habilitado por env var ausente (isPlaceholder removido).
-  // Exige dev local OU opt-in explícito (ALLOW_DEMO_LOGIN). Em produção mal configurada, falha fechada.
-  const allowDemo = process.env.NODE_ENV === 'development' || process.env.ALLOW_DEMO_LOGIN === 'true';
+  //
+  // CORRECAO 21/09/2026 (auditoria A0): antes, com ALLOW_DEMO_LOGIN=true QUALQUER
+  // visitante anonimo virava "usuario demo" aqui (e ganhava os cookies), o que
+  // liberava paginas E APIs sem login -- inclusive dados de eleitores e o envio
+  // de WhatsApp. Agora o demo so vale:
+  //   - em desenvolvimento local (NODE_ENV=development), auto-login como antes; ou
+  //   - se a requisicao JA traz o cookie que a rota /api/auth/login so emite
+  //     depois de validar admin@poli.dev/admin123 (opt-in ALLOW_DEMO_LOGIN).
+  const isDev = process.env.NODE_ENV === 'development';
+  const demoOptIn = process.env.ALLOW_DEMO_LOGIN === 'true';
   const devToken = request.cookies.get('poli_dev_token')?.value;
-  if (!user && allowDemo) {
+  const demoCookieOk = devToken === 'mock-dev-token-jwt';
+  if (!user && (isDev || (demoOptIn && demoCookieOk))) {
     user = {
       id: '00000000-0000-0000-0000-000000000001',
       email: 'admin@poli.dev',
       user_metadata: { full_name: 'Lucas Reis (AIVIQ-ZAP)' },
     } as any;
 
-    supabaseResponse.cookies.set('poli_dev_token', 'mock-dev-token-jwt', {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 30,
-    });
-    supabaseResponse.cookies.set('poli_token', 'mock-dev-token-jwt', {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 30,
-    });
+    // Cookies automaticos so em dev local; em prod quem os emite e o login.
+    if (isDev && !demoCookieOk) {
+      supabaseResponse.cookies.set('poli_dev_token', 'mock-dev-token-jwt', {
+        httpOnly: true,
+        secure: false,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30,
+      });
+      supabaseResponse.cookies.set('poli_token', 'mock-dev-token-jwt', {
+        httpOnly: true,
+        secure: false,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30,
+      });
+    }
   }
 
   return { supabaseResponse, user, supabase };

@@ -43,7 +43,10 @@ function areConversationsEqual(a: Conversation[], b: Conversation[]): boolean {
       a[i].last_message_preview !== b[i].last_message_preview ||
       a[i].last_message_at !== b[i].last_message_at ||
       a[i].unread_count !== b[i].unread_count ||
-      a[i].status !== b[i].status
+      a[i].status !== b[i].status ||
+      a[i].contact?.name !== b[i].contact?.name ||
+      a[i].contact?.avatar_url !== b[i].contact?.avatar_url ||
+      a[i].instance_name !== b[i].instance_name
     ) {
       return false;
     }
@@ -54,14 +57,19 @@ function areConversationsEqual(a: Conversation[], b: Conversation[]): boolean {
 function areMessagesEqual(a: Message[], b: Message[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
-  if (a.length === 0) return true;
-  const lastA = a[a.length - 1];
-  const lastB = b[b.length - 1];
-  return (
-    lastA.id === lastB.id &&
-    lastA.delivery_status === lastB.delivery_status &&
-    lastA.content === lastB.content
-  );
+  // Compara TODAS as mensagens (id + status + conteudo). Olhar so a ultima fazia
+  // o tick de entrega/leitura de mensagens anteriores nunca repintar: o ack
+  // chegava, o banco atualizava, e a tela seguia mostrando o status velho.
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].id !== b[i].id ||
+      a[i].delivery_status !== b[i].delivery_status ||
+      a[i].content !== b[i].content
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export const useInboxStore = create<InboxState>((set, get) => ({

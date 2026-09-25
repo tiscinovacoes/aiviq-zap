@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { addInboundMessage, addBotDispatchedMessage } from '@/lib/conversationStore';
-import { invalidateEvolutionCache, sendRealMessageDetailed } from '@/lib/evolutionService';
-import { persistMessageByJid } from '@/lib/conversationRepo';
+import { invalidateEvolutionCache, sendRealMessageDetailed, garantirWebhookAtual } from '@/lib/evolutionService';
+import { persistMessageByJid, atualizarStatusEntregaMensagem } from '@/lib/conversationRepo';
 import { isOptOut } from '@/lib/spintax';
 import { registrarOptOut, processarAckEntrega, setDispatchEnabled } from '@/lib/dispatchQueue';
 import { ANTIBAN } from '@/lib/antiBan';
@@ -151,6 +151,13 @@ export async function POST(req: NextRequest) {
       // So os nossos envios interessam: ack de mensagem recebida nao diz nada
       // sobre a saude do chip.
       if (msgId && ack && fromMe) {
+        // Reflete o ack no Inbox (ticks reais; ERROR aparece como "falhou").
+        try {
+          const mudou = await atualizarStatusEntregaMensagem(msgId, ack);
+          if (mudou) invalidateEvolutionCache(instanceName);
+        } catch (e) {
+          console.error('[ack] falha ao atualizar status da mensagem:', e);
+        }
         try {
           const r = await processarAckEntrega(instanceName, msgId, ack, {
             maxErros: ANTIBAN.MAX_ACKS_ERRO,
@@ -180,12 +187,21 @@ export async function POST(req: NextRequest) {
     if (eventoConnection && instanceName) {
       const state = String(payload.data?.state || payload.data?.connection || '').toLowerCase();
       console.log(`[WhatsApp Webhook Connection Update] Instância: ${instanceName} | Estado: ${state}`);
+      invalidateEvolutionCache(instanceName);
       if (state === 'open') {
         try {
           await setDispatchEnabled(instanceName, true);
         } catch (e) {
           console.error('[connection.update] Erro ao ativar instância no pool:', e);
         }
+        // Reaplica o webhook com a URL/token atuais (instancia que conectou
+        // apontando para preview antigo ou sem token ficava surda).
+        garantirWebhookAtual(instanceName, req.nextUrl?.origin)
+          .then((r) => {
+            if (r.alterado) console.log(`[connection.update] webhook de ${instanceName} reapontado para ${r.url}`);
+            if (!r.ok) console.error(`[connection.update] webhook de ${instanceName} NAO configurado: ${r.error}`);
+          })
+          .catch(() => undefined);
       } else if (state === 'close' || state === 'refused') {
         try {
           await setDispatchEnabled(instanceName, false);

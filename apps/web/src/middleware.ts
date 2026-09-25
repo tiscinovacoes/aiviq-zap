@@ -10,6 +10,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/auth') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/webhooks') ||
+    // Cron da Vercel nao tem sessao: a propria rota autentica por CRON_SECRET
+    // (Bearer), ?token= ou sessao valida. Sem esta excecao o cron levaria 302.
+    pathname === '/api/pesquisa/senado/tick' ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/static') ||
     pathname === '/favicon.ico';

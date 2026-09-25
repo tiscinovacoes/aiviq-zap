@@ -911,6 +911,50 @@ export async function setDispatchEnabled(instance: string, enabled: boolean): Pr
   );
 }
 
+/**
+ * Aposentadoria de um chip: tira do cluster de disparo e DEVOLVE a fila os
+ * contatos que estavam reservados para ele (assigned_instance), para os chips
+ * vivos assumirem. Nao mexe em 'processando' (um envio em andamento) nem em
+ * 'enviado'. O historico do chip fica marcado com cooldown_motivo='aposentado'.
+ */
+export async function aposentarChipNaFila(instance: string): Promise<{ devolvidos: number }> {
+  if (isPlaceholderEnv()) {
+    let n = 0;
+    (global.__aiviq_queue || []).forEach((i) => {
+      if ((i as any).assignedInstance === instance && i.status === 'pendente') {
+        (i as any).assignedInstance = undefined;
+        n++;
+      }
+    });
+    if (global.__aiviq_dispatch_pool) global.__aiviq_dispatch_pool[instance] = false;
+    return { devolvidos: n };
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return { devolvidos: 0 };
+
+  const { data } = await ctx.db
+    .from('dispatch_queue')
+    .update({ assigned_instance: null, claimed_at: null })
+    .eq('organization_id', ctx.organizationId)
+    .eq('assigned_instance', instance)
+    .eq('status', 'pendente')
+    .select('id');
+
+  await ctx.db.from('dispatch_instance_control').upsert(
+    {
+      organization_id: ctx.organizationId,
+      instance_name: instance,
+      dispatch_enabled: false,
+      next_allowed_at: null,
+      cooldown_ate: null,
+      cooldown_motivo: 'aposentado',
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'organization_id,instance_name' }
+  );
+  return { devolvidos: data?.length || 0 };
+}
+
 /** Filtra uma lista de instancias conectadas, mantendo so as do pool de disparo. */
 export async function filterDispatchPool(instances: string[]): Promise<string[]> {
   if (instances.length === 0) return [];
@@ -966,10 +1010,8 @@ export async function prepararDisparoSimultaneo(): Promise<{
     .select('instance_name')
     .eq('organization_id', ctx.organizationId);
   
-  const conhecidas = Array.from(new Set([
-    ...(dbInsts || []).map((r: any) => r.instance_name),
-    'thome', 'paloma', 'Novovivo', 'Paloma', 'aiviq_inbox_01'
-  ]));
+  // Sem nomes hardcoded: o que existe no banco e o que a Evolution reporta.
+  const conhecidas = Array.from(new Set((dbInsts || []).map((r: any) => r.instance_name as string)));
   const desconectadas = conhecidas.filter((i) => !conectadas.includes(i));
   for (const disc of desconectadas) {
     await ctx.db.from('dispatch_instance_control').upsert(
@@ -1011,23 +1053,12 @@ export async function prepararDisparoSimultaneo(): Promise<{
     .eq('status_definitivo', false)
     .select('id');
 
-  // 4. Re-enfileira os contatos que ficaram como 'enviado' pelas instâncias
-  //    que tiveram recusa/erro de entrega Baileys e não foram abordados
-  const { data: falsos } = await ctx.db
-    .from('dispatch_queue')
-    .update({
-      status: 'pendente',
-      attempts: 0,
-      sent_at: null,
-      instance_name: null,
-      message_id: null,
-      claimed_at: null,
-      error: null,
-    })
-    .eq('organization_id', ctx.organizationId)
-    .in('instance_name', ['Novovivo', 'thome'])
-    .eq('status', 'enviado')
-    .select('id');
+  // 4. (REMOVIDO em 21/09) Havia aqui um re-enfileiramento de TODOS os
+  //    'enviado' dos chips 'Novovivo' e 'thome'. Cada clique em "Retomar"
+  //    reabordava quem ja tinha recebido a mensagem -- spam para o eleitor e
+  //    o sinal mais classico de ban. A devolucao de contato nao entregue ja e
+  //    feita pelo ack (processarAckEntrega), por mensagem, e nao por chip.
+  const falsos: Array<{ id: string }> = [];
 
   // 5. Redistribui todos os pendentes de maneira equilibrada entre os chips conectados
   let totalRedistribuidos = 0;

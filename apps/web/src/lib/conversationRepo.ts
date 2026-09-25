@@ -224,6 +224,71 @@ export async function persistMessage(params: {
   }
 }
 
+// ---------------------------------------------------------------------------
+// STATUS DE ENTREGA (ack) -> messages.delivery_status
+//
+// Antes so o envio gravava 'sent' e NADA atualizava depois: o evento
+// MESSAGES_UPDATE (ack real da Meta) alimentava so a fila de disparo, e o Inbox
+// mostrava 'delivered' fixo para tudo que vinha da Evolution. Resultado: uma
+// mensagem recusada (ack ERROR) aparecia como entregue -- exatamente o sintoma
+// "o disparo e feito mas a mensagem nao chega" sem nenhum sinal na tela.
+// ---------------------------------------------------------------------------
+const RANK_ENTREGA: Record<string, number> = { sending: 0, sent: 1, delivered: 2, read: 3 };
+
+/** Traduz o ack da Evolution para o enum message_delivery_status (ou null se desconhecido). */
+export function ackParaStatus(ack: string): 'sent' | 'delivered' | 'read' | 'failed' | null {
+  switch ((ack || '').toUpperCase()) {
+    case 'ERROR':
+    case 'FAILED':
+      return 'failed';
+    case 'PENDING':
+    case 'SERVER_ACK':
+      return 'sent';
+    case 'DELIVERY_ACK':
+      return 'delivered';
+    case 'READ':
+    case 'PLAYED':
+      return 'read';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Atualiza o status da mensagem enviada. Nunca rebaixa (READ nao volta a
+ * DELIVERED; FAILED so vale para quem ainda nao foi entregue -- a Evolution
+ * costuma reemitir acks fora de ordem apos uma reconexao).
+ */
+export async function atualizarStatusEntregaMensagem(
+  externalId: string,
+  ack: string
+): Promise<boolean> {
+  const novo = ackParaStatus(ack);
+  if (!novo || !externalId || isPlaceholderEnv()) return false;
+  const ctx = await getServiceContext();
+  if (!ctx) return false;
+  try {
+    const { data: atual } = await ctx.db
+      .from('messages')
+      .select('id, delivery_status')
+      .eq('organization_id', ctx.organizationId)
+      .eq('external_message_id', externalId)
+      .limit(1)
+      .maybeSingle();
+    if (!atual?.id) return false;
+    const cur = String(atual.delivery_status || 'sent');
+    if (novo === 'failed') {
+      if (cur === 'delivered' || cur === 'read' || cur === 'failed') return false;
+    } else if (cur !== 'failed' && (RANK_ENTREGA[novo] ?? 0) <= (RANK_ENTREGA[cur] ?? 0)) {
+      return false;
+    }
+    await ctx.db.from('messages').update({ delivery_status: novo }).eq('id', atual.id);
+    return true;
+  } catch {
+    return false; // best-effort: nunca derruba o webhook
+  }
+}
+
 /** Lê as mensagens persistidas de uma conversa pelo JID canônico (ordem cronológica). */
 export async function getPersistedMessagesByJid(
   jid: string

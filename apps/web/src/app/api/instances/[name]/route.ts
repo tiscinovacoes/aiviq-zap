@@ -5,15 +5,18 @@ import {
   unregisterInstance,
   DEFAULT_INSTANCE,
 } from '@/lib/instanceRegistry';
-import { invalidateEvolutionCache, configurarWebhookInstancia, getProxyInstancia, configurarProxyInstancia } from '@/lib/evolutionService';
-import { setDispatchEnabled, setMaturidadeChip, liberarCooldownChip } from '@/lib/dispatchQueue';
+import { invalidateEvolutionCache, configurarWebhookInstancia, getProxyInstancia, configurarProxyInstancia, garantirWebhookAtual } from '@/lib/evolutionService';
+import { setDispatchEnabled, setMaturidadeChip, liberarCooldownChip, aposentarChipNaFila } from '@/lib/dispatchQueue';
+import { prepareInstanceForQr, ensureInstanceProxy, lerProxyDaInstancia } from '@/lib/proxyPool';
+import { chavesEmQuarentena, colocarEmQuarentena, QUARENTENA_DIAS } from '@/lib/proxyRegistry';
+import { validarIpDaInstancia } from '@/lib/proxyGuard';
+import { dentroDaJanela } from '@/lib/antiBan';
 
 import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
-// set_proxy pode levar ate 20s (a Evolution testa a conexao real com o proxy);
-// o padrao da Vercel para a funcao encerraria antes disso.
-export const maxDuration = 30;
+// QR = criar + proxy + medir IP de saida + connect: passa dos 10s padrao.
+export const maxDuration = 60;
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
@@ -75,15 +78,28 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
 
     // Gera/renova QR Code real para conectar este número
     if (action === 'get_qr') {
-      // Garante que a instância exista (idempotente — ignora 403/409 "já existe")
-      try {
-        await fetch(`${EVOLUTION_API_URL}/instance/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
-          body: JSON.stringify({ instanceName, qrcode: true, integration: 'WHATSAPP-BAILEYS' }),
-          signal: AbortSignal.timeout(6000),
-        });
-      } catch {}
+      // Garante a instância (idempotente) e o IP fixo dedicado ANTES de abrir o
+      // socket. Sem proxy do pool a conexão é recusada: número sem IP fixo cai.
+      // IPs de chips aposentados (quarentena) nao podem ir para este numero.
+      const quarantined = await chavesEmQuarentena();
+      const proxy = await prepareInstanceForQr(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName, {
+        quarantined,
+      });
+      if (!proxy.ok) {
+        return NextResponse.json(
+          { success: false, error: proxy.error, message: proxy.message },
+          { status: proxy.status }
+        );
+      }
+
+      // IP de saida do Brasil, sem repeticao entre chips; registra a atribuicao.
+      const ip = await validarIpDaInstancia(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
+      if (ip.bloqueio) {
+        return NextResponse.json(
+          { success: false, error: ip.bloqueio.error, message: ip.bloqueio.message },
+          { status: ip.bloqueio.status }
+        );
+      }
 
       try {
         const qrRes = await fetch(`${EVOLUTION_API_URL}/instance/connect/${instanceName}`, {
@@ -92,29 +108,218 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
         });
         if (qrRes.ok) {
           const qrData = await qrRes.json();
-          const raw = qrData.base64 || qrData.qrcode?.base64;
+          const raw =
+            qrData.base64 ||
+            qrData.qrcode?.base64 ||
+            (typeof qrData.qrcode === 'string' && qrData.qrcode.startsWith('data:') ? qrData.qrcode : null);
           if (raw) {
             const base64Clean = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
+            // Webhook com URL/token atuais ANTES de o numero conectar: senao a
+            // instancia nasce/volta surda (respostas e acks nunca chegam).
+            const wh = await garantirWebhookAtual(instanceName, req.nextUrl?.origin).catch(() => null);
+            invalidateEvolutionCache(instanceName);
             return NextResponse.json({
               success: true,
               status: 'connecting',
               qrCode: base64Clean,
               pairingCode: qrData.pairingCode || qrData.qrcode?.pairingCode,
-              message: 'QR Code gerado. Aponte o WhatsApp do número.',
+              proxyIp: proxy.host ? `${proxy.host}:${proxy.port}` : undefined,
+              proxyWarning: proxy.warning,
+              egressIp: ip.egress?.ip,
+              egressCountry: ip.egress?.countryCode,
+              ipAviso: ip.aviso,
+              webhookConfigurado: wh?.ok ?? false,
+              webhookUrl: wh?.url,
+              message:
+                (proxy.warning ? `⚠️ ${proxy.message} ` : '') +
+                (ip.aviso ? `⚠️ ${ip.aviso} ` : '') +
+                'QR Code gerado. Aponte o WhatsApp do número.',
             });
           }
+          // A Evolution respondeu mas sem QR: normalmente a instancia JA esta
+          // conectada (state open) ou em "connecting" com sessao antiga. Devolve
+          // o motivo em vez de "servidor inacessivel".
+          const estado = qrData?.instance?.state || qrData?.state;
+          return NextResponse.json(
+            {
+              success: false,
+              error: estado === 'open' ? 'already_connected' : 'no_qr',
+              state: estado,
+              message:
+                estado === 'open'
+                  ? 'Este número já está conectado. Desconecte antes de gerar um novo QR.'
+                  : `A Evolution não devolveu QR (estado: ${estado || 'desconhecido'}). Se ficar preso em "connecting", remova a instância e crie de novo.`,
+            },
+            { status: 409 }
+          );
         }
+        const txt = await qrRes.text().catch(() => '');
+        return NextResponse.json(
+          { success: false, error: 'evolution_error', message: `Evolution respondeu HTTP ${qrRes.status} ao gerar o QR: ${txt.slice(0, 300)}` },
+          { status: 502 }
+        );
       } catch (err: any) {
         return NextResponse.json(
           { success: false, error: 'server_offline', message: err.message },
           { status: 502 }
         );
       }
+    }
 
+    // Mede o IP publico de saida do chip (pelo proprio proxy) e confere: Brasil,
+    // sem repeticao entre chips, sem marca de datacenter.
+    if (action === 'check_ip') {
+      const ip = await validarIpDaInstancia(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
       return NextResponse.json(
-        { success: false, error: 'no_qr', message: 'Não foi possível obter o QR Code.' },
-        { status: 502 }
+        {
+          success: ip.ok,
+          proxyIp: ip.proxyHostPort,
+          egressIp: ip.egress?.ip,
+          egressCountry: ip.egress?.countryCode,
+          egressRegion: ip.egress?.region,
+          egressCity: ip.egress?.city,
+          egressIsp: ip.egress?.isp,
+          hosting: ip.egress?.hosting,
+          error: ip.bloqueio?.error,
+          message: ip.bloqueio?.message || ip.aviso || 'IP de saída verificado: Brasil e sem repetição.',
+        },
+        { status: ip.bloqueio?.status ?? 200 }
       );
+    }
+
+    // Atribui um IP livre do pool a uma instancia JA existente (ex.: migrar o chip
+    // do proxy rotativo antigo para um IP fixo). Reiniciar o socket e o que faz o
+    // IP novo valer, e derruba os envios por instantes: por isso recusa dentro da
+    // janela de disparo (8h-20h MS), a menos que venha force:true.
+    if (action === 'assign_ip') {
+      const reiniciar = body.restart !== false;
+      if (reiniciar && dentroDaJanela() && body.force !== true) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'dentro_da_janela',
+            message:
+              'Reiniciar o chip agora interrompe os disparos (janela 8h–20h MS). Faça fora da janela ou confirme com force.',
+          },
+          { status: 409 }
+        );
+      }
+      const quarantined = await chavesEmQuarentena();
+      const r = await ensureInstanceProxy(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName, {
+        quarantined,
+      });
+      if (!r.ok) {
+        return NextResponse.json({ success: false, error: r.error, message: r.message }, { status: r.status });
+      }
+      if (!r.proxyKey) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'sem_ip_livre',
+            message: r.message || 'Nenhum IP livre no pool (EVOLUTION_PROXY_POOL).',
+          },
+          { status: 409 }
+        );
+      }
+      const ip = await validarIpDaInstancia(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
+      if (ip.bloqueio) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: ip.bloqueio.error,
+            message: `${ip.bloqueio.message} O IP foi gravado na instância, mas o chip NÃO foi reiniciado.`,
+          },
+          { status: ip.bloqueio.status }
+        );
+      }
+      let reiniciado = false;
+      if (r.assigned && reiniciar) {
+        try {
+          const rr = await fetch(`${EVOLUTION_API_URL}/instance/restart/${encodeURIComponent(instanceName)}`, {
+            method: 'POST',
+            headers: { apikey: EVOLUTION_API_KEY },
+            signal: AbortSignal.timeout(15000),
+          });
+          reiniciado = rr.ok;
+        } catch {}
+      }
+      invalidateEvolutionCache(instanceName);
+      return NextResponse.json({
+        success: true,
+        assigned: r.assigned,
+        reiniciado,
+        proxyIp: `${r.host}:${r.port}`,
+        egressIp: ip.egress?.ip,
+        egressCountry: ip.egress?.countryCode,
+        ipAviso: ip.aviso,
+        message: r.assigned
+          ? reiniciado
+            ? 'IP fixo aplicado e chip reiniciado. Em instantes ele volta a `open` sem pedir QR.'
+            : 'IP fixo gravado. Reinicie o chip para ele passar a sair por esse IP.'
+          : 'O chip já usa um IP do pool; nada a alterar.',
+      });
+    }
+
+    // APOSENTAR (chip banido/perdido): apaga a instancia, tira do disparo, devolve
+    // a fila os contatos reservados para ele e poe o IP em QUARENTENA -- o IP nao
+    // vai direto para o numero novo. Banimento e da CONTA, nao do IP: trocar de
+    // IP so ajuda ao abrir um numero novo.
+    if (action === 'retire') {
+      if (instanceName === DEFAULT_INSTANCE) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'default_locked',
+            message:
+              'Esta é a instância padrão (EVOLUTION_INSTANCE). Defina outra instância como padrão antes de aposentá-la.',
+          },
+          { status: 400 }
+        );
+      }
+      const motivo = String(body.motivo || 'banido').trim().slice(0, 120) || 'banido';
+
+      // Le o IP ANTES de apagar: depois de apagada, a instancia leva o proxy junto.
+      const px = await lerProxyDaInstancia(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
+
+      for (const [metodo, caminho] of [
+        ['DELETE', 'logout'],
+        ['DELETE', 'delete'],
+      ] as const) {
+        try {
+          await fetch(`${EVOLUTION_API_URL}/instance/${caminho}/${encodeURIComponent(instanceName)}`, {
+            method: metodo,
+            headers: { apikey: EVOLUTION_API_KEY },
+            signal: AbortSignal.timeout(8000),
+          });
+        } catch {}
+      }
+
+      const { devolvidos } = await aposentarChipNaFila(instanceName);
+      let quarentenaAte: string | undefined;
+      if (px?.key) {
+        quarentenaAte = await colocarEmQuarentena({
+          proxyKey: px.key,
+          host: px.host,
+          port: px.port,
+          instanceName,
+          motivo,
+        });
+      }
+      invalidateEvolutionCache(instanceName);
+      unregisterInstance(instanceName);
+
+      return NextResponse.json({
+        success: true,
+        contatosDevolvidos: devolvidos,
+        ipEmQuarentena: px ? `${px.host}:${px.port}` : undefined,
+        quarentenaAte,
+        message:
+          `Chip aposentado. ${devolvidos} contato(s) voltaram para a fila dos outros chips.` +
+          (px
+            ? ` O IP ${px.host}:${px.port} ficou ${QUARENTENA_DIAS} dias em quarentena.`
+            : ' O chip não tinha IP registrado.') +
+          ' Para substituir, crie um número novo: ele recebe outro IP livre.',
+      });
     }
 
     // Desconecta (logout) o número, mantendo a instância registrada

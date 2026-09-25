@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { prepareInstanceForQr } from '@/lib/proxyPool';
+import { garantirWebhookAtual, invalidateEvolutionCache } from '@/lib/evolutionService';
+import { chavesEmQuarentena } from '@/lib/proxyRegistry';
+import { validarIpDaInstancia } from '@/lib/proxyGuard';
 
 export const dynamic = 'force-dynamic';
+// QR = criar + proxy + medir IP de saida + connect: passa dos 10s padrao.
+export const maxDuration = 60;
 
 // CR-004 T5: exige usuário autenticado na própria rota (defesa em profundidade,
 // não só no middleware). Retorna null se ok, ou uma resposta 401.
@@ -131,37 +137,18 @@ async function syncInstanceDetails(appOrigin?: string): Promise<EvolutionState> 
           localEvolutionState.qrCodeBase64 = undefined;
           localEvolutionState.pairingCode = undefined;
 
-          // Se tiver origin, garante auto-configuração do webhook para receber mensagens
+          // Webhook: idempotente e com a MESMA URL/token do receptor. Antes esta
+          // rotina REESCREVIA o webhook a cada poll da tela de Configuracoes com
+          // a origem de quem estava olhando (ex.: URL de preview `git-master`) e,
+          // sem EVOLUTION_WEBHOOK_TOKEN, SEM token -- o receptor respondia 401 e a
+          // instancia ficava surda (foi assim que a aiviq_inbox_01 perdeu o
+          // tempo real). urlDoWebhook() prioriza a env e cai no mesmo fallback do
+          // receptor; so regrava se divergir.
           if (appOrigin && !appOrigin.includes('localhost')) {
-            // CR-004 T3: inclui o token compartilhado para o webhook autenticar o ingress.
-            const webhookToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
-            const targetWebhookUrl = `${appOrigin}/api/webhooks/whatsapp${webhookToken ? `?token=${encodeURIComponent(webhookToken)}` : ''}`;
             try {
-              await fetch(`${apiUrl}/webhook/set/${instanceName}`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  apikey: apiKey,
-                },
-                body: JSON.stringify({
-                  webhook: {
-                    enabled: true,
-                    url: targetWebhookUrl,
-                    // Token também por header — usado onde a Evolution reenvia
-                    // headers (Cloud/versões recentes); a query segue como fallback
-                    // confiável no self-hosted. O receiver prefere o header.
-                    headers: webhookToken
-                      ? { 'x-webhook-token': webhookToken }
-                      : undefined,
-                    byEvents: false,
-                    base64: false,
-                    events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
-                  },
-                }),
-                signal: AbortSignal.timeout(3500),
-              });
-            } catch (wErr) {
-              // Silently catch webhook set error
+              await garantirWebhookAtual(instanceName, appOrigin);
+            } catch {
+              // best-effort
             }
           }
         } else if (inst.connectionStatus === 'connecting') {
@@ -282,24 +269,27 @@ export async function POST(req: NextRequest) {
       }
 
       let lastError = '';
+      let lastHttp = 0;
+      let lastState = '';
 
-      // 1. Tenta criar a instância na Evolution API (modo Baileys)
-      try {
-        await fetch(`${currentUrl}/instance/create`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: currentKey,
-          },
-          body: JSON.stringify({
-            instanceName: currentInstance,
-            qrcode: true,
-            integration: 'WHATSAPP-BAILEYS',
-          }),
-          signal: AbortSignal.timeout(6000),
-        });
-      } catch (e: any) {
-        lastError = e.message;
+      // 1. Cria a instância (sem abrir o socket) e garante o IP dedicado
+      //    (estrito só com EVOLUTION_PROXY_REQUIRED=true; senão avisa).
+      const quarantined = await chavesEmQuarentena();
+      const proxy = await prepareInstanceForQr(currentUrl, currentKey, currentInstance, { quarantined });
+      if (!proxy.ok) {
+        return NextResponse.json(
+          { success: false, error: proxy.error, message: proxy.message },
+          { status: proxy.status }
+        );
+      }
+
+      // IP de saida do Brasil, sem repeticao entre chips; registra a atribuicao.
+      const ip = await validarIpDaInstancia(currentUrl, currentKey, currentInstance);
+      if (ip.bloqueio) {
+        return NextResponse.json(
+          { success: false, error: ip.bloqueio.error, message: ip.bloqueio.message },
+          { status: ip.bloqueio.status }
+        );
       }
 
       // 2. Busca o QR code real gerado pelo Baileys
@@ -322,24 +312,74 @@ export async function POST(req: NextRequest) {
             localEvolutionState.pairingCode = qrData.pairingCode;
             localEvolutionState.status = 'connecting';
 
+            // Webhook com URL/token atuais antes de o numero conectar.
+            const wh = await garantirWebhookAtual(currentInstance, origin).catch(() => null);
+            invalidateEvolutionCache(currentInstance);
+
             return NextResponse.json({
               success: true,
               qrCode: base64Clean,
               pairingCode: qrData.pairingCode,
               status: 'connecting',
-              message: 'QR Code real gerado com sucesso pela Evolution API!',
+              proxyIp: proxy.host ? `${proxy.host}:${proxy.port}` : undefined,
+              proxyWarning: proxy.warning,
+              egressIp: ip.egress?.ip,
+              egressCountry: ip.egress?.countryCode,
+              ipAviso: ip.aviso,
+              webhookConfigurado: wh?.ok ?? false,
+              message:
+                (proxy.warning ? `⚠️ ${proxy.message} ` : '') +
+                (ip.aviso ? `⚠️ ${ip.aviso} ` : '') +
+                'QR Code real gerado com sucesso pela Evolution API!',
             });
           }
+          lastState = qrData?.instance?.state || qrData?.state || '';
+          lastHttp = qrRes.status;
+        } else {
+          lastHttp = qrRes.status;
+          lastError = (await qrRes.text().catch(() => '')).slice(0, 300);
         }
       } catch (err: any) {
         lastError = err.message;
       }
 
+      // Erro HONESTO: antes qualquer falha virava "servidor inacessivel", o que
+      // mascarava o motivo real (instancia ja conectada, sessao presa, 401...).
+      if (lastState === 'open') {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'already_connected',
+            message: 'Este número já está conectado na Evolution. Desconecte antes de gerar um novo QR.',
+          },
+          { status: 409 }
+        );
+      }
+      if (lastState) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'no_qr',
+            message: `A Evolution não devolveu QR (estado da instância: ${lastState}). Se ficar preso em "connecting", remova a instância e crie de novo.`,
+          },
+          { status: 409 }
+        );
+      }
+      if (lastHttp) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'evolution_error',
+            message: `A Evolution respondeu HTTP ${lastHttp} ao gerar o QR${lastError ? ': ' + lastError : ''}.`,
+          },
+          { status: 502 }
+        );
+      }
       return NextResponse.json(
         {
           success: false,
           error: 'server_offline',
-          message: `Servidor Evolution API inacessível em ${currentUrl}. Verifique se a instância está ativa e se a Global API Key está correta.`,
+          message: `Servidor Evolution API inacessível em ${currentUrl} (${lastError || 'timeout'}). Verifique a URL e a Global API Key.`,
           details: lastError,
         },
         { status: 502 }

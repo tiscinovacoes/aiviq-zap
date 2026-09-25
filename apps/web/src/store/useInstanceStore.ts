@@ -24,6 +24,29 @@ export interface InstanceView {
   proxyProtocol?: string;
   proxyUsername?: string;
   proxyHasPassword?: boolean;
+  /** online / conectando / caiu / recusando / duplicada (calculado no servidor). */
+  estado?: 'online' | 'conectando' | 'caiu' | 'recusando' | 'duplicada';
+  estadoMotivo?: string;
+  /** host:porta do IP do chip. */
+  proxyHostPort?: string;
+  /** false = usa um proxy fora do EVOLUTION_PROXY_POOL (ex.: o rotativo antigo). */
+  ipNoPool?: boolean;
+  egressIp?: string;
+  egressCountry?: string;
+}
+
+export interface PoolResumo {
+  total: number;
+  emUso: number;
+  livres: number;
+  emQuarentena: number;
+  ilimitado: boolean;
+  obrigatorio: boolean;
+}
+
+export interface AcaoResultado {
+  ok: boolean;
+  message: string;
 }
 
 export const SELECTED_INSTANCE_KEY = 'aiviq_selected_instance';
@@ -38,6 +61,7 @@ export function getSelectedInstance(): string | null {
 
 interface InstanceState {
   instances: InstanceView[];
+  poolResumo: PoolResumo | null;
   selected: string | null;
   isLoading: boolean;
   fetchInstances: () => Promise<void>;
@@ -45,18 +69,63 @@ interface InstanceState {
   setDispatchEnabled: (instanceName: string, enabled: boolean) => Promise<void>;
   setMaturidade: (instanceName: string, maturidade: 'novo' | 'maduro') => Promise<void>;
   repararWebhook: (instanceName: string) => Promise<boolean>;
+<<<<<<< Updated upstream
   setProxy: (
     instanceName: string,
     config: { host: string; port: string; protocol?: string; username?: string; password?: string }
   ) => Promise<{ ok: boolean; message?: string }>;
   removeProxy: (instanceName: string) => Promise<{ ok: boolean; message?: string }>;
   liberarCooldown: (instanceName: string) => Promise<boolean>;
+=======
+  /** Mede o IP de saida do chip (Brasil, sem repeticao, sem datacenter). */
+  verificarIp: (instanceName: string) => Promise<AcaoResultado>;
+  /** Aposenta o chip (banido/perdido): apaga, devolve a fila e poe o IP em quarentena. */
+  aposentar: (instanceName: string, motivo: string) => Promise<AcaoResultado>;
+  /** Move o chip para um IP fixo livre do pool e reinicia o socket. */
+  fixarIp: (instanceName: string, force?: boolean) => Promise<AcaoResultado>;
+}
+
+async function postarAcao(instanceName: string, corpo: Record<string, unknown>): Promise<AcaoResultado> {
+  try {
+    const res = await fetch(`/api/instances/${encodeURIComponent(instanceName)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo),
+    });
+    const data = await res.json().catch(() => ({}));
+    return {
+      ok: Boolean(data?.success),
+      message: String(data?.message || data?.error || (res.ok ? 'Concluído.' : `Erro HTTP ${res.status}.`)),
+    };
+  } catch {
+    return { ok: false, message: 'Erro de rede.' };
+  }
+>>>>>>> Stashed changes
 }
 
 export const useInstanceStore = create<InstanceState>((set, get) => ({
   instances: [],
+  poolResumo: null,
   selected: typeof window !== 'undefined' ? getSelectedInstance() : null,
   isLoading: false,
+
+  verificarIp: async (instanceName: string) => {
+    const r = await postarAcao(instanceName, { action: 'check_ip' });
+    await get().fetchInstances();
+    return r;
+  },
+
+  aposentar: async (instanceName: string, motivo: string) => {
+    const r = await postarAcao(instanceName, { action: 'retire', motivo });
+    await get().fetchInstances();
+    return r;
+  },
+
+  fixarIp: async (instanceName: string, force = false) => {
+    const r = await postarAcao(instanceName, { action: 'assign_ip', force });
+    await get().fetchInstances();
+    return r;
+  },
 
   fetchInstances: async () => {
     set({ isLoading: true });
@@ -65,7 +134,7 @@ export const useInstanceStore = create<InstanceState>((set, get) => ({
       const data = await res.json();
       if (data?.success) {
         const instances: InstanceView[] = data.instances || [];
-        set({ instances, isLoading: false });
+        set({ instances, poolResumo: data.poolResumo || null, isLoading: false });
 
         // Garante uma seleção válida: mantém a atual se ainda existir, senão usa
         // a instância padrão (ou a primeira disponível).

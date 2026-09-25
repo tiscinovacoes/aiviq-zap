@@ -27,6 +27,28 @@ export default function GlobalDispatchRunner() {
   const workerRef = useRef<Worker | null>(null);
   const previousTotalRef = useRef<number>(0);
 
+  // LIDER ENTRE ABAS: so UMA aba do navegador dispara o tick. Antes cada aba
+  // aberta (Inbox, CRM, Configuracoes...) chamava /tick a cada minuto -- o
+  // claim atomico impedia envio duplicado, mas cada chamada custa ~10 queries
+  // e chamadas a Evolution. Eleicao simples por heartbeat em localStorage.
+  const tabIdRef = useRef(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
+  const LEADER_KEY = 'aiviq_dispatch_leader';
+  const LEADER_TTL_MS = 15000;
+  const souLider = (): boolean => {
+    try {
+      const raw = localStorage.getItem(LEADER_KEY);
+      const agora = Date.now();
+      if (raw) {
+        const { id, at } = JSON.parse(raw) as { id: string; at: number };
+        if (id !== tabIdRef.current && agora - at < LEADER_TTL_MS) return false;
+      }
+      localStorage.setItem(LEADER_KEY, JSON.stringify({ id: tabIdRef.current, at: agora }));
+      return true;
+    } catch {
+      return true; // sem localStorage (modo privado): nao bloqueia
+    }
+  };
+
   // 1. Inicializa Web Worker para evitar throttling do navegador em aba em 2º plano
   useEffect(() => {
     // Código do Web Worker em blob: gera um tick a cada 1000ms ininterruptamente
@@ -63,6 +85,8 @@ export default function GlobalDispatchRunner() {
       // A cada segundo pelo worker ininterrupto
       const cur = statusRef.current;
       if (!cur || !cur.ativo || cur.pausado) return;
+      // Renova o heartbeat de lider; se outra aba e a lider, esta so observa.
+      if (!souLider()) return;
 
       if (cur.segundosRestantesProximo > 0) {
         const nextSec = cur.segundosRestantesProximo - 1;
@@ -83,7 +107,15 @@ export default function GlobalDispatchRunner() {
       worker.postMessage('stop');
       worker.terminate();
       URL.revokeObjectURL(workerUrl);
+      // Libera a lideranca para outra aba assumir na hora.
+      try {
+        const raw = localStorage.getItem(LEADER_KEY);
+        if (raw && (JSON.parse(raw) as { id: string }).id === tabIdRef.current) {
+          localStorage.removeItem(LEADER_KEY);
+        }
+      } catch {}
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 2. Consulta o status da fila no servidor

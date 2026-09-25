@@ -103,6 +103,7 @@ export default function PesquisaSenadoKanban() {
   const [instanciaEscolhida, setInstanciaEscolhida] = useState('');
   const [disparando, setDisparando] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
+  const [erroDisparo, setErroDisparo] = useState<string | null>(null);
 
   // Modal e Estado de Importação de Planilha Excel/CSV
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
@@ -249,6 +250,7 @@ export default function PesquisaSenadoKanban() {
     if (!novoTelefone.trim()) return;
     setDisparando(true);
     setMensagemSucesso(null);
+    setErroDisparo(null);
 
     try {
       const res = await fetch('/api/pesquisa/senado', {
@@ -263,11 +265,20 @@ export default function PesquisaSenadoKanban() {
           sendWhatsApp: true,
         }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setMensagemSucesso(
-          `Disparo enviado com sucesso! ${data.dispatchedWhatsApp ? 'WhatsApp notificado em tempo real.' : 'Registrado na fila.'}`
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        // Antes esta rota falhava calada: o operador clicava e nada acontecia.
+        setErroDisparo(
+          data?.message || data?.error || `O servidor respondeu com erro (HTTP ${res.status}).`
         );
+      } else if (data.gated) {
+        // Pulado pelo anti-ban (fora do horario, teto do chip ou contato ja no fluxo).
+        setErroDisparo(data.message || 'Disparo pulado pelas regras anti-ban.');
+      } else if (!data.dispatchedWhatsApp) {
+        setErroDisparo(data.message || 'A mensagem não saiu pelo WhatsApp.');
+        fetchDados();
+      } else {
+        setMensagemSucesso('Disparo enviado com sucesso! WhatsApp notificado em tempo real.');
         setNovoNome('');
         setNovoTelefone('');
         setInstanciaEscolhida('');
@@ -277,8 +288,9 @@ export default function PesquisaSenadoKanban() {
           setMensagemSucesso(null);
         }, 2000);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao disparar:', err);
+      setErroDisparo(`Erro de rede ao disparar: ${err?.message || 'sem resposta do servidor'}.`);
     } finally {
       setDisparando(false);
     }
@@ -715,7 +727,11 @@ export default function PesquisaSenadoKanban() {
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
+<<<<<<< Updated upstream
               <span>Fila Multi-Instâncias (Cluster Anti-Ban · 1 lead a cada 5 min em cada chip (tempo fixo, chips se revezam) · 8h–21h · teto 150/dia por chip):</span>
+=======
+              <span>Fila Multi-Instâncias (Cluster Anti-Ban · 1 lead por minuto em cada chip · teto 250/dia por chip):</span>
+>>>>>>> Stashed changes
             </div>
             {porChip.length > 0 && (
               <span className="flex items-center gap-1.5 flex-wrap">
@@ -1290,6 +1306,12 @@ export default function PesquisaSenadoKanban() {
                 </div>
               )}
 
+              {erroDisparo && (
+                <div role="alert" className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs">
+                  {erroDisparo}
+                </div>
+              )}
+
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -1330,7 +1352,11 @@ export default function PesquisaSenadoKanban() {
                 <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
                 <div>
                   <h3 className="font-bold text-sm text-slate-900">Importar Planilha Excel / CSV</h3>
+<<<<<<< Updated upstream
                   <p className="text-[11px] text-slate-500">Tempo fixo de 5 min entre envios de cada chip, chips se revezando · 8h–21h · teto de 150 mensagens/dia por chip</p>
+=======
+                  <p className="text-[11px] text-slate-500">Cadência de 1 envio por minuto em cada chip · teto de 250 mensagens/dia por chip</p>
+>>>>>>> Stashed changes
                 </div>
               </div>
               <button
@@ -1402,7 +1428,11 @@ export default function PesquisaSenadoKanban() {
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex gap-2 text-[11px] text-amber-800">
                 <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
+<<<<<<< Updated upstream
                   <strong>Cadência Anti-Ban:</strong> A lista é dividida entre os chips conectados na importação e cada chip dispara 1 eleitor a cada 5 min cravados (tempo fixo, das 8h às 21h, chips se revezando) da própria sub-lista, com teto rígido de 150 mensagens por chip por dia. Se um chip cair, sua sub-lista é redistribuída para os que estiverem de pé.
+=======
+                  <strong>Cadência Anti-Ban:</strong> A lista é dividida entre os chips conectados na importação e cada chip dispara 1 eleitor por minuto da própria sub-lista, com teto rígido de 250 mensagens por chip por dia. Se um chip cair, sua sub-lista é redistribuída para os que estiverem de pé.
+>>>>>>> Stashed changes
                 </span>
               </div>
 

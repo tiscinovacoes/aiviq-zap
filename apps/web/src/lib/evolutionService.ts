@@ -1,6 +1,10 @@
 import { Contact, Conversation, Message } from '@/types';
 import { getDefaultInstanceName, resolveInstanceName } from '@/lib/instanceRegistry';
+<<<<<<< Updated upstream
 import { mapConnectionStatus, precisaConfirmar } from '@/lib/instanceStatus';
+=======
+import { proxyKey as chaveDoProxy } from '@/lib/proxyPool';
+>>>>>>> Stashed changes
 
 // CR-004 T1: sem default de credencial/URL no código — exige env, falha fechada.
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
@@ -336,7 +340,10 @@ export async function getRealMessages(
         sender_name: fromMe ? 'Você (Atendente)' : m.pushName || 'Contato',
         content: text,
         message_type: 'text',
-        delivery_status: fromMe ? 'delivered' : 'read',
+        // Honesto: a Evolution nao entrega o ack nesta consulta, entao nao
+        // inventamos "entregue". O status real vem do Supabase (atualizado pelo
+        // MESSAGES_UPDATE) e prevalece no merge da rota de mensagens.
+        delivery_status: fromMe ? 'sent' : 'delivered',
         external_message_id: msgId,
         created_at: isoTime,
       });
@@ -573,24 +580,36 @@ export interface EvolutionLiveInstance {
   phoneNumber?: string;
   profileName?: string;
   profilePicUrl?: string;
+  /** JID do numero vinculado (ex.: 5567...@s.whatsapp.net). */
+  ownerJid?: string;
+  /** Proxy gravado na instancia (so host:porta; usuario/senha nunca saem do servidor). */
+  proxyHost?: string;
+  proxyPort?: string;
+  /** Identidade host:porta:usuario do proxy -- uso INTERNO do servidor, nao enviar ao cliente. */
+  proxyKey?: string;
+  /**
+   * Outra instancia esta vinculada ao MESMO numero. Duas sessoes Baileys da
+   * mesma conta geram `401 conflict / device_removed` em loop (visto em
+   * 19/09 com `67992143047` e `aiviq_inbox_01`). A duplicada e rebaixada para
+   * 'disconnected' e NUNCA entra no pool de disparo.
+   */
+  duplicateOf?: string;
 }
 
 
 let liveInstancesCache: CacheEntry<EvolutionLiveInstance[]> | null = null;
 
-/** Consulta o servidor Evolution e retorna TODAS as instâncias existentes nele. */
 /**
  * Reconciliacao de status: o /instance/fetchInstances devolve um
  * `connectionStatus` que fica preso em "connecting" para sessoes que na
- * verdade ja morreram (socket Baileys derrubado, device_removed, etc.). O
- * /instance/connectionState de cada instancia diz a verdade.
+ * verdade ja morreram (socket Baileys derrubado, device_removed, etc.) -- e,
+ * numa sessao deslogada em loop de reconexao, oscila entre "open" e
+ * "connecting" a cada ciclo. O /instance/connectionState diz a verdade.
  *
- * Sem isso a tela pinta de amarelo "Conectando..." um chip que esta `close`, e
- * o operador fica esperando uma conexao que nunca vem -- achando que tem N
- * chips no cluster quando tem menos. Tambem confirma o `open` de chip com
- * logout antigo gravado (ver teveLogoutDefinitivo).
+ * Sem isso a tela pinta de amarelo "Conectando..." um chip que esta `close`,
+ * e o tick chega a reservar contato para um chip que nao envia.
  */
-async function confirmarConnecting(name: string): Promise<EvolutionLiveInstance['status']> {
+async function confirmarEstado(name: string): Promise<EvolutionLiveInstance['status']> {
   try {
     const res = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${encodeURIComponent(name)}`, {
       headers: { apikey: EVOLUTION_API_KEY },
@@ -620,32 +639,50 @@ export async function fetchLiveEvolutionInstances(forceRefresh = false): Promise
     if (!res.ok) return [];
     const data = await res.json();
     if (!Array.isArray(data)) return [];
-    const linhas = data
-      .map((i: any) => {
-        const raw = i.connectionStatus || i.state || i.instance?.state;
-        const inst: EvolutionLiveInstance = {
-          instanceName: i.name || i.instanceName || i.instance?.instanceName || '',
-          status: mapConnectionStatus(raw, i),
-          phoneNumber: formatCleanPhone(i.ownerJid || i.number || i.instance?.owner) || undefined,
-          profileName: i.profileName || i.instance?.profileName || undefined,
-          profilePicUrl: i.profilePicUrl || i.instance?.profilePicUrl || undefined,
-        };
-        return { inst, confirmar: precisaConfirmar(raw, i) };
-      })
-      .filter((l: { inst: EvolutionLiveInstance }) => l.inst.instanceName);
-    const instances: EvolutionLiveInstance[] = linhas.map((l: { inst: EvolutionLiveInstance }) => l.inst);
+    const instances: EvolutionLiveInstance[] = data.map((i: any) => ({
+      instanceName: i.name || i.instanceName || i.instance?.instanceName || '',
+      status: mapConnectionStatus(i.connectionStatus || i.state || i.instance?.state, i),
+      phoneNumber: formatCleanPhone(i.ownerJid || i.number || i.instance?.owner) || undefined,
+      profileName: i.profileName || i.instance?.profileName || undefined,
+      profilePicUrl: i.profilePicUrl || i.instance?.profilePicUrl || undefined,
+      ownerJid: i.ownerJid || i.instance?.owner || undefined,
+      proxyHost: i.Proxy?.enabled && i.Proxy?.host ? String(i.Proxy.host) : undefined,
+      proxyPort: i.Proxy?.enabled && i.Proxy?.host ? String(i.Proxy.port ?? '') : undefined,
+      proxyKey: i.Proxy?.enabled && i.Proxy?.host ? chaveDoProxy(i.Proxy) : undefined,
+    })).filter((i: EvolutionLiveInstance) => i.instanceName);
 
-    // Segunda opiniao do /instance/connectionState (socket vivo) para o que a
-    // lista nao garante: "connecting" preso de sessao morta e "open" de chip que
-    // ja levou logout e foi reconectado. Em paralelo, para nao somar latencia.
-    const pendentes = linhas.filter((l: { confirmar: boolean }) => l.confirmar);
+    // Segunda opiniao para TODAS as que a lista diz 'open' ou 'connecting':
+    // a lista mente nos dois sentidos (ver confirmarEstado). Em paralelo.
+    const pendentes = instances.filter((i) => i.status !== 'disconnected');
     if (pendentes.length > 0) {
-      const reais = await Promise.all(
-        pendentes.map((l: { inst: EvolutionLiveInstance }) => confirmarConnecting(l.inst.instanceName))
-      );
-      pendentes.forEach((l: { inst: EvolutionLiveInstance }, idx: number) => {
-        l.inst.status = reais[idx];
+      const reais = await Promise.all(pendentes.map((i) => confirmarEstado(i.instanceName)));
+      pendentes.forEach((i, idx) => {
+        i.status = reais[idx];
       });
+    }
+
+    // Duas instancias no MESMO numero: fica a conectada (ou a primeira); a
+    // outra e rebaixada e marcada como duplicada para o painel avisar.
+    const porNumero = new Map<string, EvolutionLiveInstance[]>();
+    for (const i of instances) {
+      const jid = (i.ownerJid || '').replace(/\D/g, '');
+      if (!jid) continue;
+      const grupo = porNumero.get(jid) || [];
+      grupo.push(i);
+      porNumero.set(jid, grupo);
+    }
+    for (const grupo of Array.from(porNumero.values())) {
+      if (grupo.length < 2) continue;
+      const vencedora = grupo.find((g) => g.status === 'connected') || grupo[0];
+      for (const g of grupo) {
+        if (g === vencedora) continue;
+        g.status = 'disconnected';
+        g.duplicateOf = vencedora.instanceName;
+        console.warn(
+          `[Evolution] instancia ${g.instanceName} esta vinculada ao mesmo numero de ${vencedora.instanceName}; ` +
+            'removida do pool (conflito device_removed). Apague-a no painel.'
+        );
+      }
     }
 
     liveInstancesCache = { data: instances, timestamp: now };
@@ -706,7 +743,10 @@ export function urlDoWebhook(origemDetectada?: string): string {
   if (base.includes('aiviq-zap-web.vercel.app') && !base.includes('-tiscinovacoes-projects')) {
     base = 'https://aiviq-zap-web-tiscinovacoes-projects.vercel.app';
   }
-  const token = process.env.EVOLUTION_WEBHOOK_TOKEN || process.env.EVOLUTION_API_KEY || 'aiviq_zap_secret_2026';
+  // MESMA expressao do receptor (api/webhooks/whatsapp): se divergir, todo
+  // evento da Evolution volta 401 e o tempo real morre em silencio. Sem literal
+  // hardcoded aqui por isso mesmo.
+  const token = process.env.EVOLUTION_WEBHOOK_TOKEN || process.env.EVOLUTION_API_KEY || '';
   let target = base.endsWith('/api/webhooks/whatsapp')
     ? base
     : `${base.replace(/\/$/, '')}/api/webhooks/whatsapp`;
@@ -794,6 +834,7 @@ export async function configurarWebhookInstancia(
   return { ok: false, error: 'A Evolution recusou a configuração do webhook.' };
 }
 
+<<<<<<< Updated upstream
 // ============================================================================
 // PROXY POR INSTÂNCIA
 //
@@ -885,4 +926,25 @@ export async function configurarProxyInstancia(
     }
     return { ok: false, error: e.message || 'Erro de conexão ao configurar o proxy.' };
   }
+=======
+/**
+ * Garante que o webhook da instancia aponta para a URL/token ATUAIS. Chamado a
+ * cada QR gerado e a cada CONNECTION_UPDATE=open: em 21/09 a `aiviq_inbox_01`
+ * apontava para uma URL de preview `git-master` SEM token -- todo evento dela
+ * voltava 401 e nada chegava no Inbox. Idempotente: so regrava se divergir.
+ */
+export async function garantirWebhookAtual(
+  instanceName: string,
+  origemDetectada?: string
+): Promise<{ ok: boolean; alterado: boolean; url?: string; error?: string }> {
+  const esperado = urlDoWebhook(origemDetectada);
+  const atual = await getWebhookInstancia(instanceName);
+  const eventosOk =
+    !!atual?.events && EVENTOS_WEBHOOK.every((e) => atual.events!.includes(e));
+  if (atual && atual.enabled && atual.url === esperado && eventosOk) {
+    return { ok: true, alterado: false, url: atual.url };
+  }
+  const r = await configurarWebhookInstancia(instanceName, esperado, origemDetectada);
+  return { ok: r.ok, alterado: r.ok, url: r.url, error: r.error };
+>>>>>>> Stashed changes
 }
