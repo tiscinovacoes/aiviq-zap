@@ -1349,3 +1349,14 @@ Três pedidos do operador. Dois implementados, um avaliado (risco demais para im
 - A Evolution expõe endpoints de mensagem interativa (`sendList`/`sendButtons`), mas eles usam o protocolo Baileys (WhatsApp Web não-oficial). O WhatsApp trata mensagens interativas fora da Cloud API oficial como sinal mais forte de automação — é um vetor de detecção conhecido, e o operador já teve dois bloqueios de chip nesta mesma semana usando só texto simples. Recomendação: não implementar agora. Se quiser reconsiderar depois que o disparo estiver mais estável, dá para reavaliar com um teste controlado num único chip descartável.
 
 - ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 25/09/2026 — Remoção da Legenda do KPI (v3.8.1)
+
+### Claude
+Pedido do operador: tirar a legenda "Eleitores abordados desde 19/09" do KPI "Total de Contatos Disparados".
+
+- ✅ Removida a linha de legenda; o KPI mostra só o número.
+- ✅ Validação: `tsc --noEmit` 0 erros.
