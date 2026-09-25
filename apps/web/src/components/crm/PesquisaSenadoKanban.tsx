@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
@@ -39,6 +39,7 @@ import {
 } from '@/lib/pesquisaSenado';
 import type { PesquisaStats } from '@/lib/pesquisaSenadoStore';
 import type { EstadoDisparador, ItemFilaDisparo } from '@/lib/disparadorTypes';
+import { useInstanceStore } from '@/store/useInstanceStore';
 
 type VisaoModo = 'funil' | 'voto1' | 'voto2' | 'geral';
 
@@ -65,6 +66,23 @@ export default function PesquisaSenadoKanban() {
   const [stats, setStats] = useState<PesquisaStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [visao, setVisao] = useState<VisaoModo>('funil');
+
+  // Telefone (final) de cada instância/chip -- para mostrar junto do final do
+  // telefone do lead nos cards, e dar pra ver de relance qual chip abordou
+  // quem sem precisar abrir a conversa.
+  const instances = useInstanceStore((s) => s.instances);
+  const fetchInstances = useInstanceStore((s) => s.fetchInstances);
+  useEffect(() => {
+    fetchInstances();
+  }, [fetchInstances]);
+  const finalTelefoneInstancia = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const i of instances) {
+      const digits = (i.phoneNumber || '').replace(/\D/g, '');
+      map[i.instanceName] = digits ? digits.slice(-4) : '';
+    }
+    return map;
+  }, [instances]);
 
   // Modal de Disparo Único
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -862,13 +880,24 @@ export default function PesquisaSenadoKanban() {
                         key={s.id}
                         className="bg-white p-3 rounded-lg border border-slate-200/80 shadow-2xs hover:shadow-sm transition-all"
                       >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-semibold text-xs text-slate-900">{s.name}</span>
-                          <span
-                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${etapaLabels[s.etapa].bg} ${etapaLabels[s.etapa].cor}`}
-                          >
-                            {s.phone.slice(-4)}
-                          </span>
+                        <div className="flex items-center justify-between mb-1.5 gap-1.5">
+                          <span className="font-semibold text-xs text-slate-900 truncate">{s.name}</span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {s.instanceName && finalTelefoneInstancia[s.instanceName] && (
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-200 font-mono"
+                                title={`Chip que abordou: ${s.instanceName}`}
+                              >
+                                <Smartphone className="w-2.5 h-2.5" />
+                                {finalTelefoneInstancia[s.instanceName]}
+                              </span>
+                            )}
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${etapaLabels[s.etapa].bg} ${etapaLabels[s.etapa].cor}`}
+                            >
+                              {s.phone.slice(-4)}
+                            </span>
+                          </div>
                         </div>
 
                         <div className="space-y-1 text-[11px] text-slate-500 mb-2">
