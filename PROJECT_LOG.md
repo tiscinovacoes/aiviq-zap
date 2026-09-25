@@ -1190,3 +1190,266 @@ Pergunta do operador: "toda vez que conectar um novo número vai rodar certo?". 
 - 📌 Cobertura resultante: criado pelo painel → automático; criado direto na Evolution → nasce surdo, mas o badge vermelho **SEM WEBHOOK ⟳** aparece na lista e conserta em um clique; reconexão por QR novo → a configuração persiste na instância.
 - ✅ Validação: `tsc --noEmit` 0 erros; `next build` compilado com sucesso.
 
+
+
+---
+
+## DATA: 23/09/2026 — Perfil Pós-Ban: 150/dia por Chip com Intervalo Largo (v3.2.0)
+
+### Claude
+Origem: o chip `vinicius` caiu em 22/09 após 26 envios em 49 min (~1 a cada 1m50s).
+
+- ✅ **Teto de regime 480 → 150 por chip/dia** (`ANTIBAN.DAILY_CAP`). Warm-up mantido (30/dia +20/dia): chip `novo` chega a 150 em ~6 dias.
+- ✅ **Intervalo 45–75s → 150–330s sorteado** (média 4 min). Lote de 15 com pausa de 10 min. 150 envios × 4 min + 9 pausas ≈ 690 min: o chip trabalha a janela 8h–20h inteira em ritmo baixo, sem rajada.
+- ✅ **`forceNow` não zera mais o intervalo dos chips**: `?force=true` no tick e `test_simultaneo` faziam o chip disparar a cada poucos segundos, furando o gap. Agora `force` só libera a janela de horário.
+- ✅ Cooldown por falhas 60 → 90 min; cooldown por ack de erro 120 → 180 min; presença "digitando" 1,8s → 3s.
+- ✅ Textos da UI atualizados (150/dia, ~4 min por chip).
+- 📊 **Respostas no chip banido (`vinicius`, 22/09)**: 26 enviados, 10 responderam (38%).
+  - 1 concluído: Vander Loubet (voto 1) / Branco-nulo (voto 2).
+  - 2 opt-out ("SAIR"), 1 "contato errado", 3 "quem é?" — sinal de denúncia, provável causa do ban.
+  - 7 responderam a saudação e pararam em `aguardando_voto1`; 16 sem resposta.
+- ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 23/09/2026 — Tempo Fixo por Chip, Janela 8h–21h e Revezamento (v3.3.0)
+
+### Claude
+Decisão do operador: 150 por chip, trabalhar das 8h às 21h, tempo fixo por chip.
+
+- ✅ **Janela 8h–20h → 8h–21h** (`HORA_FIM: 21`).
+- ✅ **Intervalo FIXO por chip = janela útil / teto do dia** (`intervaloFixoDoChipSegundos`). Janela útil = 780 min − 30 min de margem = 750 min. Chip de 150/dia → **5 min cravados**; chip em warm-up com 30/dia → 25 min. Substitui o sorteio de 150–330s.
+- ✅ **Revezamento entre chips**: no máximo 1 envio do pool por vez, espaçado de (menor intervalo / nº de chips). 2 chips → 1 mensagem a cada 2m30, alternando A/B; nunca dois chips no mesmo segundo. Disputa atômica pela mesma RPC `claim_instance_slot`, numa linha de controle `__revezamento_pool__` (sem migration).
+- ✅ Pausa de lote desligada: quebraria a conta da janela (o chip não fecharia as 150).
+- ⚠️ `ana` (único chip no pool) está como `novo` sem `warmup_started_on` → teto de 30/dia (25 min de intervalo) até o operador declarar a maturidade em Configurações.
+- ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 23/09/2026 — Pesquisa com 5 Candidatos em Ordem Alfabética (v3.4.0)
+
+### Claude
+Decisão do operador: a lista do Senado cai de 10 candidatos para 5, em ordem alfabética.
+
+- ✅ **Lista nova (v2)**: 1 Capitão Contar (PL) · 2 Reinaldo Azambuja (PL) · 3 Roberto Oshiro (NOVO) · 4 Soraya (PSB) · 5 Vander Loubet (PT) · 6 Branco/nulo · 7 Não sabe/não respondeu.
+- ✅ **IDs estáveis**: o `id` gravado em `voto1_id`/`voto2_id` não mudou (Contar=2, Azambuja=5, Oshiro=6, Soraya=7, Vander=10, branco=11, não sabe=12). Mudou só a `opcao`, o número exibido. Os votos já registrados continuam apontando para o candidato certo.
+- ✅ **Quem recebeu a lista antiga continua sendo lido pela lista antiga** (`019_pesquisa_lista_versao.sql`, aplicada): `pesquisa_senado.lista_versao` = 1 (default, tudo que existia) ou 2 (gravado ao enviar Msg 3/Msg 4 nova). Sem isso, quem recebeu a lista de 12 e digitasse "10" (Vander) cairia em "opção inválida", e "5" (Azambuja na antiga) viraria Vander na nova.
+- ✅ Candidatos que saíram (Daniel Junior, Valter da Comagran…) só aparecem no painel e nos rankings se tiverem voto gravado, marcados "(fora da lista)".
+- ✅ Resposta por texto aceita nome sem acento e grafias alternativas ("soraya", "reinaldo", "branco", "não sei").
+- ✅ Validação: `tsc --noEmit` 0 erros; mensagens e parser conferidos com `tsx`.
+
+
+---
+
+## DATA: 23/09/2026 — Espera de 30s Após a 1ª Resposta e Msg 2 em 1ª Pessoa (v3.5.0)
+
+### Claude
+Pedido do operador: o eleitor responde a saudação em pedaços ("oi" … "tudo bem"); o robô deve esperar 30s antes da Msg 2/3. E a Msg 2 passa para a 1ª pessoa do singular.
+
+- 🐞 Antes: o "oi" disparava a Msg 2/3 na hora e o "tudo bem" caía na etapa do 1º voto, recebendo "não consegui identificar".
+- ✅ **Espera de 30s** (`ESPERA_SAUDACAO_S`, `020_pesquisa_espera_saudacao.sql`, aplicada):
+  - A 1ª resposta marca `saudacao_respondida_em` num UPDATE condicional (`etapa = 'disparado'`): com webhooks concorrentes, só a primeira mensagem vence.
+  - A Msg 2/3 sai 30s depois em segundo plano (`waitUntil` da Vercel, sem dependência nova); o webhook responde à Evolution na hora. `maxDuration = 60` no webhook.
+  - Mensagens que chegam enquanto a Msg 2/3 não saiu são ignoradas (não viram tentativa de voto).
+  - `msg3_enviada_em` é reservado de forma atômica antes do envio: a Msg 2/3 nunca sai duas vezes. Se o envio falha, a reserva é desfeita.
+  - **Rede de segurança no tick**: Msg 2/3 com a espera vencida há mais de 2 min e não enviada é reenviada (`reenviarMsg3Atrasadas`), inclusive com a fila pausada.
+- ✅ **Msg 2 em 1ª pessoa**: `{Estou fazendo|Estou realizando} uma pesquisa…` (saíram "Estamos fazendo" e "Faço parte de").
+- ✅ Validação: `tsc --noEmit` 0 erros; marcação/reserva conferidas em modo local com `tsx`.
+
+
+---
+
+## DATA: 23/09/2026 — IP Dedicado (Proxy) por Instância (v3.7.0)
+
+### Claude
+Causa investigada do bloqueio do Antonio (número "quente" banido no 1º disparo): o código não tinha NENHUMA configuração de proxy por instância — todos os chips passam pela mesma `EVOLUTION_API_URL`, um único servidor Evolution/Baileys. Sem proxy dedicado, todo chip sai pelo IP compartilhado do servidor, e um número novo herda a reputação ruim desse IP (histórico de disparo em massa dos outros chips) mesmo sendo "quente". Confirmado: Lindalva recebeu e respondeu normalmente (a mensagem chegou), descartando conteúdo/número como causa.
+
+Operador confirmou: contratou IPs ISP e residenciais estáticos. Pedido: trazer essa configuração para o painel.
+
+- ✅ **`evolutionService.ts`**: `getProxyInstancia()` e `configurarProxyInstancia()`, mesmo padrão do webhook (`/proxy/find/{instance}` e `/proxy/set/{instance}` da Evolution API).
+- ✅ **`/api/instances/[name]`**: ações `get_proxy`, `set_proxy` (host, porta, protocolo, usuário, senha) e `remove_proxy`.
+- ✅ **`/api/instances` (GET)**: cada instância devolve `proxyOk` e `proxyHost`.
+- ✅ **Painel (`MultiInstancePanel.tsx`)**: badge "IP PRÓPRIO" (verde) ou "IP COMPARTILHADO" (cinza) em cada chip, igual ao badge de webhook. Clicar abre modal para configurar host/porta/protocolo/usuário/senha, ou remover o proxy.
+- ✅ Validação: `tsc --noEmit` 0 erros.
+- ⚠️ Não testado contra o servidor Evolution real (endpoint `/proxy/set`/`/proxy/find` — confirmar formato exato do payload na versão da Evolution em uso; código tenta seguir o padrão documentado da v2).
+
+
+---
+
+## DATA: 23/09/2026 — Timeout do Proxy Aumentado (v3.7.1)
+
+### Claude
+Operador testou o proxy da Decodo (isp.decodo.com) e recebeu "The operation was aborted due to timeout" ao salvar. Causa: `configurarProxyInstancia()` tinha 6s de timeout, curto para a Evolution validar a conexão real com um proxy externo.
+
+- ✅ Timeout de `set_proxy` na Evolution: 6s → 20s.
+- ✅ `maxDuration = 30` na rota `/api/instances/[name]`, para a função da Vercel não encerrar antes do timeout interno.
+- ✅ Mensagem de erro específica para timeout, em vez do texto cru do navegador.
+- ⚠️ Ponto de atenção passado ao operador: o campo Host deve ser o hostname do provedor (`isp.decodo.com`), não o IP de saída resultante daquele proxy.
+
+
+---
+
+## DATA: 24/09/2026 — QR Code se Renova Sozinho (v3.7.2)
+
+### Claude
+Operador relatou: ao conectar um número novo (sec saude2), "não lê o QR" — a imagem aparecia mas o WhatsApp recusava. Causa confirmada no código: o modal QR fazia polling só do status de conexão a cada 3.5s; o próprio QR nunca era regenerado. Como o QR do WhatsApp expira em segundos, ele ficava "morto" na tela até o operador notar e clicar manualmente em "Gerar novo QR".
+
+- ✅ Novo QR gerado automaticamente a cada 25s enquanto o modal estiver aberto e o número não tiver conectado (chama `get_qr` de novo e atualiza a imagem, sem fechar o modal nem mexer no estado de erro/busy da lista).
+- ✅ Aviso no modal: "o código se renova sozinho a cada 25s".
+- ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 24/09/2026 — Número Inexistente Falha na 1ª Tentativa (v3.7.3)
+
+### Claude
+Operador notou: contatos com erro "número não existe no WhatsApp" (Evolution devolve `"exists":false`) continuavam consumindo 3 tentativas antes de desistir, mesmo sabendo de cara que o número é inválido — a 2ª e 3ª tentativa sempre dão o mesmo erro. Também descobri que essa falha estava contando contra o cooldown de 90min do CHIP ("RESFRIANDO"), sem ser culpa do chip.
+
+- ✅ `ehErroPermanente()` em `dispatchQueue.ts`: detecta `"exists":false` (e variações) no texto do erro.
+- ✅ `markItemError()`: erro permanente marca `status_definitivo=true` já na 1ª tentativa, sem esperar 3.
+- ✅ `dispararContato()`: erro permanente NÃO conta para `registrarSaude(instancia, false)` — não entra no cálculo de falhas seguidas do chip, não derruba ele em cooldown.
+- ✅ Resposta ao operador: cooldown "RESFRIANDO" dura 90 minutos (3 falhas seguidas do chip).
+- ⚠️ Contatos já esgotados em 3 tentativas antes desta correção continuam `status_definitivo=true` normalmente — nada a corrigir neles.
+
+
+---
+
+## DATA: 24/09/2026 — Liberar Cooldown Manualmente (v3.7.4)
+
+### Claude
+Operador pediu para poder desativar o resfriamento. Confirmado o escopo: um botão para liberar um chip específico que está em RESFRIANDO/PAUSA DE LOTE agora, sem esperar os 90/180 min — mantendo o mecanismo de proteção ativo para acionar de novo se houver novas falhas seguidas (não é um desligamento geral, que removeria essa camada anti-ban).
+
+- ✅ `liberarCooldownChip()` (`dispatchQueue.ts`): zera `cooldown_ate`, `cooldown_motivo`, `falhas_seguidas`, `acks_erro_seguidos` de um chip.
+- ✅ Ação `liberar_cooldown` em `/api/instances/[name]`.
+- ✅ Painel: o badge "RESFRIANDO"/"PAUSA DE LOTE" agora é clicável — libera na hora.
+- ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 25/09/2026 — Só Conta Quem Recebeu de Verdade + Responsividade Mobile (v3.8.0)
+
+### Claude
+Três pedidos do operador. Dois implementados, um avaliado (risco demais para implementar agora).
+
+**1. Falhas não contam mais como "disparado"**
+- 🐞 Causa raiz: `dispararContato()` criava a sessão da pesquisa (`pesquisa_senado`, etapa='disparado') **antes** de tentar enviar a mensagem. Se o envio falhasse (número inválido, etc.), a sessão ficava registrada como "disparado" mesmo a mensagem nunca tendo saído — inflava a coluna 1 do funil e os KPIs.
+- ✅ Reordenado: a sessão só é criada **depois** do envio confirmado (`r.ok`).
+- ✅ `getTelefonesComFalhaSemEnvio()` (`dispatchQueue.ts`): segunda camada de proteção — telefones que só têm registro de erro em `dispatch_queue` (nenhum "enviado"). `aplicarRecorteFunil()` agora é assíncrona e usa isso para excluir do funil qualquer contato etapa='disparado' que nunca recebeu de fato, corrigindo também os 35 contatos já contaminados no banco (validado via SQL direto: `35` órfãos pós-19/09).
+- Um contato com pelo menos 1 envio confirmado nunca é excluído, mesmo que outra tentativa dele tenha falhado.
+
+**2. Responsividade mobile**
+- `PesquisaSenadoKanban.tsx`: padding lateral responsivo (`px-3 sm:px-8`) nas 4 faixas horizontais; abas de visão com `overflow-x-auto` e padding menor; botões de ação (Exportar/Importar/Disparo) escondem o texto em mobile (`hidden sm:inline`), mantendo ícone + title; tabela de falhas com `overflow-x-auto` e `min-w-[640px]` para não estourar o modal.
+- `MultiInstancePanel.tsx`: card de cada chip com `flex-wrap` (antes travava numa linha só e cortava em telas pequenas); header da seção também com `flex-wrap`.
+
+**3. Resposta clicável em vez de digitar** — avaliado, não implementado
+- A Evolution expõe endpoints de mensagem interativa (`sendList`/`sendButtons`), mas eles usam o protocolo Baileys (WhatsApp Web não-oficial). O WhatsApp trata mensagens interativas fora da Cloud API oficial como sinal mais forte de automação — é um vetor de detecção conhecido, e o operador já teve dois bloqueios de chip nesta mesma semana usando só texto simples. Recomendação: não implementar agora. Se quiser reconsiderar depois que o disparo estiver mais estável, dá para reavaliar com um teste controlado num único chip descartável.
+
+- ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 25/09/2026 — Remoção da Legenda do KPI (v3.8.1)
+
+### Claude
+Pedido do operador: tirar a legenda "Eleitores abordados desde 19/09" do KPI "Total de Contatos Disparados".
+
+- ✅ Removida a linha de legenda; o KPI mostra só o número.
+- ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 25/09/2026 — Vander Loubet em 1º + Relatório em PDF (v3.9.0)
+
+### Claude
+Dois pedidos do operador.
+
+**1. Vander Loubet em 1ª opção**
+- Nova versão de lista (v3, `LISTA_VERSAO_ATUAL = 3`): Vander Loubet passa a ser a opção 1. Os demais mantêm a ordem alfabética que já tinham (Capitão Contar, Reinaldo Azambuja, Roberto Oshiro, Soraya), seguidos de Branco/nulo e Não sabe.
+- IDs continuam estáveis: votos já registrados não mudam de candidato.
+- `CANDIDATOS_LISTA_V2` preserva a numeração alfabética anterior, para ler corretamente quem já recebeu essa lista e ainda não votou — mesmo padrão usado na migração v1→v2.
+- `LISTAS_POR_VERSAO` (mapa central) substitui o if/else espalhado em `parseOpcaoVoto`/`ultimaOpcao`, facilitando futuras reordenações.
+
+**2. Relatório em PDF**
+- Novo endpoint `GET /api/pesquisa/senado/relatorio-pdf`, renderiza com `@react-pdf/renderer` (sem depender de browser headless/puppeteer — mais leve e previsível em função serverless).
+- Conteúdo: KPIs, resultado consolidado (1º+2º voto) com barras proporcionais, 1º e 2º voto lado a lado, funil de coleta, cabeçalho/rodapé com data de geração e paginação.
+- Botão "Relatório PDF" no painel, ao lado de "Exportar CSV".
+- 🐞 **Achado técnico durante a implementação**: `@react-pdf/renderer` declara seus tipos com `export =` (estilo CommonJS) — importar com named imports (`import { Document, ... }`) compila mas o TypeScript confunde os tipos dos componentes com `React.Component` de forma incompatível. E o inverso também quebra: importar como `default` (`import ReactPDF from '...'`) compila certinho nos tipos, mas em **runtime** o objeto `default` não tem `renderToBuffer` (só existe nos named exports do módulo). Solução: `import * as ReactPDF from '@react-pdf/renderer'` (preserva os named exports funcionais em runtime) + cast `as unknown as ComponentType<...>` nos componentes visuais para contornar a incompatibilidade de tipos.
+- ✅ Validação: `tsc --noEmit` 0 erros; `next build` de produção completo com sucesso; testado via `next dev` real (não só tsx) — PDF de 6.5KB gerado com HTTP 200, layout conferido visualmente.
+
+
+---
+
+## DATA: 25/09/2026 — Relatório PDF Falhava em Produção (v3.9.1)
+
+### Claude
+Operador reportou "Não foi possível gerar o relatório em PDF" em produção, apesar de funcionar localmente. Causa raiz encontrada com trace do build da Vercel (sem acesso a runtime logs neste projeto): `pdfkit` (usado pelo `@react-pdf/renderer` para as fontes padrão) carrega os arquivos de métrica `.afm` via `fs.readFileSync` em runtime — o rastreador de arquivos da Vercel só segue `require`/`import` estáticos, então esses arquivos ficavam de fora do pacote da função. Funcionava local (node_modules inteiro em disco) e quebrava isolado em produção.
+
+Agravante: é um monorepo com workspaces — `pdfkit` fica hoisted no `node_modules` da RAIZ, não em `apps/web/node_modules`, então o primeiro glob relativo (`./node_modules/...`) não batia em lugar nenhum.
+
+- ✅ `next.config.mjs`: `experimental.outputFileTracingIncludes` força a inclusão de `node_modules/pdfkit/js/data/**/*` e `node_modules/@react-pdf/**/*`, com os dois caminhos (`./` e `../../`) para cobrir qualquer topologia de instalação.
+- ✅ Validação: build de produção confirmado com `.nft.json` da rota — antes 0 arquivos `.afm` no pacote, depois 14 (todas as fontes padrão do pdfkit).
+
+
+---
+
+## DATA: 25/09/2026 — Relatório PDF: Causa Real Era Outra (v3.9.2)
+
+### Claude
+A correção anterior (v3.9.1) mirou no lugar errado. Operador trouxe o erro exato via DevTools: `Cannot find module '/var/task/node_modules/pdfkit/js/standard-fonts/Helvetica.cjs'`.
+
+Essa versão do `pdfkit` não usa mais arquivos `.afm` (o que eu tinha corrigido antes) — usa módulos `.cjs`/`.mjs` carregados via **subpath import dinâmico do Node** (`require('#standard-fonts/Helvetica')`, mapeado no campo `imports` do `package.json` do pdfkit para `js/standard-fonts/*.cjs`). É ainda mais opaco para o rastreador de arquivos do que um `fs.readFileSync`: nem é um caminho de string reconhecível, é resolução de subpath import em runtime.
+
+- ✅ `next.config.mjs`: em vez de mirar arquivos específicos, inclui o pacote `pdfkit` **inteiro** (`node_modules/pdfkit/**/*`) — evita esse tipo de descoberta incremental dolorosa a cada nova versão do pacote.
+- ✅ Validação: `.nft.json` da rota confirma `Helvetica.cjs` presente (30 arquivos de `standard-fonts` no total); testado via `next start` real, PDF de 6.5KB gerado com HTTP 200.
+- Lição: quando um pacote gera erro de "módulo não encontrado" só em produção serverless, mirar arquivo por arquivo é frágil — melhor incluir o pacote todo de uma vez.
+
+
+---
+
+## DATA: 25/09/2026 — Espaçamento Fixo de 1 min Entre Chips (v3.9.3)
+
+### Claude
+Operador reparou disparos de chips diferentes saindo com 5 min de diferença (não 1min40 esperado com 3 chips) e pediu 1 minuto fixo entre eles.
+
+- 🐞 Causa: `intervaloEntreChipsSegundos()` calculava "menor intervalo fixo / nº de chips" — isso é só um mínimo. Quando apenas 1 chip estava com o relógio individual vencido no momento em que o pool liberava, o próximo disparo dele só saía quando o PRÓPRIO relógio dele vencesse de novo (5 min), dando a impressão de "5 min entre chips" em vez de revezamento real.
+- ✅ `intervaloEntreChipsSegundos()` agora é fixo em 60s (nunca maior que o intervalo individual mais curto dos chips, então continua seguro — o que protege cada número contra ban é o relógio individual de 5 min dele, não este espaçamento do pool).
+- ✅ Validação: `tsc --noEmit` 0 erros; função testada com 1, 2, 3 chips e com chip em warm-up — sempre 60s.
+
+
+---
+
+## DATA: 25/09/2026 — Responsividade Mobile: Correção Estrutural (v3.10.0)
+
+### Claude
+Operador reportou que a responsividade "ainda não está 100%, muito ruim de ver no celular", mesmo após os ajustes anteriores (v3.8.0). Investigação com Playwright em viewport real de celular (375×812, como um iPhone) revelou o problema estrutural: a correção anterior só tinha ajustado o CONTEÚDO de cada página, mas o LAYOUT compartilhado tinha barras laterais fixas que nenhum ajuste de conteúdo resolve.
+
+**Causa raiz:** `NavigationRail` (72px) é fixa e sempre visível, e em `/settings` uma segunda barra (`aside`, 256px) soma 328px de UI fixa — quase toda a largura de um celular comum (375px), sobrando ~47px pro conteúdo real.
+
+**Correção estrutural:**
+- ✅ `MobileBottomNav.tsx` (novo): barra de navegação fixa embaixo, só em mobile (`md:hidden`), com os 7 itens principais. Aplicada nas 8 páginas que usam `NavigationRail`.
+- ✅ `NavigationRail`: vira `hidden md:flex` — só aparece em telas médias+.
+- ✅ `/settings`: o `aside` de 256px vira `hidden md:block`; em mobile, os 5 módulos (WhatsApp, Organização, Equipe, IA, Alertas) viram uma barra de abas horizontal rolável no topo.
+- ✅ `/inbox`: era o mais crítico — 3 colunas fixas (lista 360px + chat + inspector 340px) somavam bem mais que qualquer tela de celular. Agora mostra **um painel por vez** em mobile: lista de conversas OU chat ativo (nunca os dois simultaneamente), com botão "voltar" no cabeçalho do chat (`clearActiveConversation`, nova ação no `useInboxStore`). O painel de detalhes do contato (`ContactInspector`) fica oculto até telas `lg+` (1024px).
+- ✅ Cabeçalhos de página (`h-16 px-8` fixo, presente em 6 páginas: bots, campaigns, contacts, contacts/[id], crm, reports) padronizados para `min-h-16 px-3 sm:px-8` com `flex-wrap`, permitindo crescer de altura e não cortar texto/botões em telas estreitas. Textos longos (ex. "Pesquisa Senado MS 2026", "Protocolos Ouvidoria") abreviados em mobile.
+- ✅ `MultiInstancePanel`: nome do chip ganha `w-full` em mobile (linha própria) em vez de competir por espaço com os badges na mesma linha.
+- ✅ Validação: testado com Playwright real (Chromium, viewport 375×812) em todas as 8 páginas, antes e depois de cada correção — screenshots conferidos visualmente a cada rodada, não só `tsc`/build. `next build` de produção completo com sucesso.
+
+
+---
+
+## DATA: 25/09/2026 — Funil Cortado ao Rolar em Mobile (v3.10.1)
+
+### Claude
+Operador reportou: rolando a tela de Pesquisa (CRM) pra baixo no celular, o funil não aparecia — ficava em branco depois dos KPIs.
+
+- 🐞 Causa: o container raiz do `PesquisaSenadoKanban` usa `overflow-hidden` (pensado pra desktop, onde header + banner + KPIs + kanban cabem juntos na tela, e só o kanban rola, horizontalmente). Em mobile, esse conjunto já ocupa quase toda a altura da viewport, e como não havia scroll vertical liberado, o kanban ficava cortado em vez de aparecer ao rolar.
+- ✅ Container raiz: `overflow-y-auto` em mobile (a página toda rola), mantém `overflow-hidden` em desktop (`md:`).
+- ✅ Área do kanban: ganha `min-h-[70vh]` em mobile, para ter altura própria suficiente em vez de depender só do espaço que sobra da tela.
+- ✅ Banner da fila (Cluster Anti-Ban): o grupo de texto/badges internamente não tinha `flex-wrap` (só o banner todo tinha) — o badge "PAUSADO" e os botões Retomar/Parar ficavam espremidos contra o texto longo em vez de quebrar linha. Corrigido.
+- ✅ Validação: testado com Playwright real (viewport 375×812) — capturado o topo e o resultado após rolar até o fim; o card "1. Disparado" aparece completo agora. `next build` de produção ok.

@@ -5,6 +5,7 @@ import {
   getPesquisaSessionByPhone,
   createOrUpdateSessionByPhone,
   savePesquisaSession,
+  aplicarRecorteFunil,
 } from '@/lib/pesquisaSenadoStore';
 import {
   gerarMensagem1,
@@ -14,6 +15,7 @@ import {
   gerarMensagemAgradecimento,
   validarVoto,
   obterCandidatoPorId,
+  LISTA_VERSAO_ATUAL,
 } from '@/lib/pesquisaSenado';
 import { sendRealMessageDetailed, resolveSendInstance } from '@/lib/evolutionService';
 import { addBotDispatchedMessage } from '@/lib/conversationStore';
@@ -26,8 +28,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const sessions = await getPesquisaSessions();
-    const stats = await getPesquisaStats();
+    // Recorte do funil: disparos sem resposta anteriores a 19/09, e qualquer
+    // contato que so tem falha registrada (nunca recebeu a Msg 1), ficam de fora.
+    const sessions = await aplicarRecorteFunil(await getPesquisaSessions());
+    const stats = await getPesquisaStats(sessions);
     return NextResponse.json({
       success: true,
       sessions,
@@ -72,7 +76,7 @@ export async function POST(req: NextRequest) {
           success: true,
           gated: true,
           reason: 'banco_de_erros',
-          message: `Número já deu erro em um disparo anterior (${erroAnterior.error || 'falha de entrega'}) — bloqueado automaticamente para não arriscar ban. Use "Tentar Novamente" na auditoria de falhas se quiser reabordar.`,
+          message: `Número já deu erro em um disparo anterior (${erroAnterior.error || 'falha de entrega'}) — bloqueado automaticamente para não arriscar ban. Confira a auditoria de falhas: "Tentar Novamente" só reativa erros antigos, não os já marcados como definitivos.`,
           dispatchedWhatsApp: false,
         });
       }
@@ -208,6 +212,7 @@ export async function POST(req: NextRequest) {
 
       if (session.etapa === 'disparado') {
         session.etapa = 'aguardando_voto1';
+        session.listaVersao = LISTA_VERSAO_ATUAL;
         await savePesquisaSession(session);
         sincronizarContatoEleitor({
           name: session.name,
@@ -229,6 +234,7 @@ export async function POST(req: NextRequest) {
           session.voto1Id = c1.id;
           session.voto1Nome = c1.nome;
           session.etapa = 'aguardando_voto2';
+          session.listaVersao = LISTA_VERSAO_ATUAL;
           await savePesquisaSession(session);
           sincronizarContatoEleitor({
             name: session.name,

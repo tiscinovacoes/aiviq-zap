@@ -9,18 +9,24 @@ import { ANTIBAN } from '@/lib/antiBan';
 import {
   getPesquisaSessionByPhone,
   savePesquisaSession,
+  marcarSaudacaoRespondida,
+  ESPERA_SAUDACAO_S,
 } from '@/lib/pesquisaSenadoStore';
+import { emSegundoPlano, enviarMsg2e3AposEspera } from '@/lib/pesquisaFluxo';
 import {
-  gerarMensagem2,
-  gerarMensagem3,
   gerarMensagemSegundoVoto,
   gerarMensagemAgradecimento,
   validarVoto,
   obterCandidatoPorId,
+  ultimaOpcao,
+  LISTA_VERSAO_ATUAL,
 } from '@/lib/pesquisaSenado';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 
 export const dynamic = 'force-dynamic';
+// A Msg 2/3 sai 30s depois da 1ª resposta, em segundo plano (waitUntil): a
+// função precisa sobreviver à espera + envio depois de responder à Evolution.
+export const maxDuration = 60;
 
 const isProduction = process.env.NODE_ENV === 'production';
 const VERIFY_TOKEN =
@@ -340,30 +346,45 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // Etapa 1: respondeu à saudação → Msg 2 + Msg 3
+          // Etapa 1: respondeu à saudação → Msg 2 + Msg 3 depois de 30s.
+          // O eleitor costuma mandar a resposta em pedaços ("oi" ... "tudo
+          // bem"). Só a 1ª mensagem vale (marcação atômica); a Msg 2/3 sai
+          // em segundo plano após a espera, e o webhook responde na hora.
           if (session.etapa === 'disparado') {
+            const venceu = await marcarSaudacaoRespondida(session.id, LISTA_VERSAO_ATUAL);
+            if (!venceu) continue; // outra mensagem do mesmo eleitor chegou antes
             session.etapa = 'aguardando_voto1';
-            await savePesquisaSession(session);
+            session.listaVersao = LISTA_VERSAO_ATUAL;
             sincronizarContatoEleitor({
               name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'aguardando_voto1',
             }).catch((e) => console.error('[Webhook] Erro sync contato:', e));
 
-            await botReply(msg.from, session.name, gerarMensagem2(seed), stickyInst);
-            await botReply(msg.from, session.name, gerarMensagem3(seed), stickyInst);
-            console.log(`[Pesquisa Senado MS] Saudação respondida — Msg 2 e 3 enviadas para ${msg.from} via ${stickyInst || 'default'}`);
+            emSegundoPlano(enviarMsg2e3AposEspera(session, stickyInst, msg.from));
+            console.log(`[Pesquisa Senado MS] Saudação respondida por ${msg.from} — Msg 2 e 3 em ${ESPERA_SAUDACAO_S}s`);
+          }
+
+          // Ainda dentro da espera (Msg 2/3 não saiu): é o resto da resposta à
+          // saudação ("tudo bem", "quem é?"). Não é voto: ignora.
+          else if (session.etapa === 'aguardando_voto1' && session.saudacaoRespondidaEm && !session.msg3EnviadaEm) {
+            console.log(`[Pesquisa Senado MS] ${msg.from} escreveu durante a espera da Msg 2/3 — ignorado`);
           }
 
           // Etapa 2: aguardando 1º voto
           else if (session.etapa === 'aguardando_voto1') {
-            const votoValido = validarVoto(cleanText);
+            // Lê pela numeração da lista que ESTE eleitor recebeu (quem recebeu a
+            // lista antiga de 12 ainda digita os números antigos).
+            const versao = session.listaVersao ?? 1;
+            const votoValido = validarVoto(cleanText, versao);
             if (!votoValido) {
-              await botReply(msg.from, session.name, 'Opa, não consegui identificar direitinho por aqui 😅 Pode me mandar só o número da opção (de 1 a 12)?', stickyInst);
+              await botReply(msg.from, session.name, `Opa, não consegui identificar direitinho por aqui 😅 Pode me mandar só o número da opção (de 1 a ${ultimaOpcao(versao)})?`, stickyInst);
             } else {
               const candidato1 = obterCandidatoPorId(votoValido);
               if (candidato1) {
                 session.voto1Id = candidato1.id;
                 session.voto1Nome = candidato1.nome;
                 session.etapa = 'aguardando_voto2';
+                // Msg 4 sai com a lista ATUAL, qualquer que tenha sido a do 1º voto.
+                session.listaVersao = LISTA_VERSAO_ATUAL;
                 await savePesquisaSession(session);
                 sincronizarContatoEleitor({
                   name: session.name, phone: msg.from, bairro: session.bairro,
@@ -378,10 +399,10 @@ export async function POST(req: NextRequest) {
 
           // Etapa 3: aguardando 2º voto
           else if (session.etapa === 'aguardando_voto2') {
-            const votoValido = validarVoto(cleanText);
+            const votoValido = validarVoto(cleanText, session.listaVersao ?? 1);
             if (!votoValido) {
               await botReply(msg.from, session.name, 'Opa, não consegui identificar por aqui 😅 Pode me mandar só o número da sua segunda escolha?', stickyInst);
-            } else if (session.voto1Id && session.voto1Id === votoValido && votoValido <= 10) {
+            } else if (session.voto1Id && session.voto1Id === votoValido && !obterCandidatoPorId(votoValido)?.isEspecial) {
               await botReply(msg.from, session.name, 'Como a gente tem direito a dois votos para candidatos diferentes, essa segunda escolha precisa ser em outro nome 🙂\nDá uma olhadinha na lista e me fala quem seria sua segunda opção:', stickyInst);
             } else {
               const candidato2 = obterCandidatoPorId(votoValido);

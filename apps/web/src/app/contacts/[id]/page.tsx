@@ -20,6 +20,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import NavigationRail from '@/components/layout/NavigationRail';
+import MobileBottomNav from '@/components/layout/MobileBottomNav';
 import { crmService } from '@/services/crmService';
 import { Contact, Protocolo, ProtocoloStatus, TipoManifestacao, Prioridade } from '@/types';
 
@@ -138,10 +139,11 @@ export default function CitizenCRMPage() {
   return (
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
       <NavigationRail />
+      <MobileBottomNav />
 
-      <main className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
+      <main className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden pb-16 md:pb-0">
         {/* Header */}
-        <header className="h-16 px-8 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
+        <header className="min-h-16 px-3 sm:px-8 py-2 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-3">
             <Link
               href="/contacts"

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import NavigationRail from '@/components/layout/NavigationRail';
+import MobileBottomNav from '@/components/layout/MobileBottomNav';
 import { useCampaignStore } from '@/store/useCampaignStore';
 import {
   Send,
@@ -160,11 +161,12 @@ export default function CampaignsPage() {
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 antialiased overflow-hidden font-sans">
       {/* 72px Left Navigation Rail */}
       <NavigationRail />
+      <MobileBottomNav />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto pb-16 md:pb-0">
         {/* Topbar Header */}
-        <header className="h-16 px-8 border-b border-slate-200 bg-white flex items-center justify-between shrink-0 sticky top-0 z-10">
+        <header className="min-h-16 px-3 sm:px-8 py-2 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0 sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
               <Send className="w-5 h-5" />
@@ -179,8 +181,8 @@ export default function CampaignsPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="relative w-64">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-none sm:w-64 min-w-[140px]">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
@@ -196,7 +198,7 @@ export default function CampaignsPage() {
                 setIsWizardOpen(true);
                 setWizardStep(1);
               }}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-2 transition-all"
+              className="shrink-0 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-2 transition-all"
             >
               <Plus className="w-4 h-4" />
               Nova Campanha
@@ -285,8 +287,8 @@ export default function CampaignsPage() {
           </div>
 
           {/* Filter Pills */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 overflow-x-auto">
+            <div className="flex items-center gap-2 shrink-0">
               {[
                 { id: 'all', label: 'Todas' },
                 { id: 'running', label: 'Em Execução' },

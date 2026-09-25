@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Loader2,
   Send,
+  Globe,
 } from 'lucide-react';
 import { useInstanceStore } from '@/store/useInstanceStore';
 
@@ -25,6 +26,9 @@ export default function MultiInstancePanel() {
   const { instances, selected, fetchInstances, setSelected, setDispatchEnabled, setMaturidade } =
     useInstanceStore();
   const repararWebhook = useInstanceStore((s) => s.repararWebhook);
+  const setProxy = useInstanceStore((s) => s.setProxy);
+  const removeProxy = useInstanceStore((s) => s.removeProxy);
+  const liberarCooldown = useInstanceStore((s) => s.liberarCooldown);
 
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
@@ -39,6 +43,11 @@ export default function MultiInstancePanel() {
     qrCode?: string;
     pairingCode?: string;
   } | null>(null);
+
+  const [proxyModal, setProxyModal] = useState<{ instanceName: string; label: string } | null>(null);
+  const [proxyForm, setProxyForm] = useState({ host: '', port: '', protocol: 'http', username: '', password: '' });
+  const [proxySaving, setProxySaving] = useState(false);
+  const [proxyMsg, setProxyMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetchInstances();
@@ -60,6 +69,34 @@ export default function MultiInstancePanel() {
     }, 3500);
     return () => clearInterval(id);
   }, [qrModal, fetchInstances]);
+
+  // O QR code do WhatsApp expira rapido (segundos). Sem isto, ele ficava "morto"
+  // na tela ate o operador notar e clicar manualmente em "Gerar novo QR" -- e
+  // enquanto isso o celular so recusava a leitura, parecendo bug. Renova sozinho
+  // a cada 25s enquanto o modal estiver aberto e o numero ainda nao conectou.
+  useEffect(() => {
+    if (!qrModal) return;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/instances/${encodeURIComponent(qrModal.instanceName)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get_qr' }),
+        });
+        const data = await res.json();
+        if (data.success && data.qrCode) {
+          setQrModal((cur) =>
+            cur && cur.instanceName === qrModal.instanceName
+              ? { ...cur, qrCode: data.qrCode, pairingCode: data.pairingCode }
+              : cur
+          );
+        }
+      } catch {
+        // silencioso: tenta de novo no proximo ciclo
+      }
+    }, 25000);
+    return () => clearInterval(id);
+  }, [qrModal?.instanceName]);
 
   async function handleCreate() {
     setError(null);
@@ -160,8 +197,8 @@ export default function MultiInstancePanel() {
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 mb-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center">
             <Smartphone className="w-4 h-4" />
@@ -169,7 +206,7 @@ export default function MultiInstancePanel() {
           <div>
             <h3 className="text-sm font-bold text-slate-900">Números de WhatsApp (Multi-instância)</h3>
             <p className="text-[11px] text-slate-500">
-              Conecte vários celulares. A lista é <strong className="text-slate-700">dividida entre todos os números marcados em &quot;No disparo&quot;</strong> na importação — 1 lead por minuto em cada, teto de 480/dia por número. O selo ATIVO é outra coisa: define só qual número o Inbox e os Contatos exibem.
+              Conecte vários celulares. A lista é <strong className="text-slate-700">dividida entre todos os números marcados em &quot;No disparo&quot;</strong> na importação — 1 lead a cada 5 min em cada (tempo fixo, das 8h às 21h), teto de 150/dia por número. O selo ATIVO é outra coisa: define só qual número o Inbox e os Contatos exibem.
             </p>
           </div>
         </div>
@@ -277,7 +314,7 @@ export default function MultiInstancePanel() {
           return (
             <div
               key={i.instanceName}
-              className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+              className={`flex flex-wrap items-center gap-2 sm:gap-3 p-3 rounded-xl border transition-colors ${
                 isSel ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200 bg-white'
               }`}
             >
@@ -297,17 +334,46 @@ export default function MultiInstancePanel() {
                   {busy === i.instanceName ? 'CORRIGINDO…' : 'SEM WEBHOOK ⟳'}
                 </button>
               )}
+              <button
+                onClick={() => {
+                  setProxyModal({ instanceName: i.instanceName, label: i.label });
+                  setProxyForm({ host: '', port: '', protocol: 'http', username: '', password: '' });
+                  setProxyMsg(null);
+                }}
+                title={
+                  i.proxyOk
+                    ? `IP dedicado: ${i.proxyHost}. Clique para trocar ou remover.`
+                    : 'Sem IP dedicado: este número sai pelo IP COMPARTILHADO do servidor, o mesmo de todos os outros chips. Clique para configurar um proxy próprio.'
+                }
+                className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 flex items-center gap-0.5 ${
+                  i.proxyOk
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                }`}
+              >
+                <Globe className="w-2.5 h-2.5" />
+                {i.proxyOk ? 'IP PRÓPRIO' : 'IP COMPARTILHADO'}
+              </button>
               {i.cooldownAte && new Date(i.cooldownAte) > new Date() && (
-                <span
+                <button
+                  onClick={async () => {
+                    setBusy(i.instanceName);
+                    await liberarCooldown(i.instanceName);
+                    setBusy(null);
+                  }}
+                  disabled={busy === i.instanceName}
                   title={'Fora do disparo até ' +
                     new Date(i.cooldownAte).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) +
-                    (i.cooldownMotivo === 'falhas_seguidas' ? ' (falhas seguidas)' : ' (pausa de lote)')}
-                  className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0"
+                    (i.cooldownMotivo === 'falhas_seguidas' ? ' (falhas seguidas)' : ' (pausa de lote)') +
+                    ' — clique para liberar agora'}
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0 hover:bg-amber-200 disabled:opacity-60"
                 >
-                  {i.cooldownMotivo === 'falhas_seguidas' ? 'RESFRIANDO' : 'PAUSA DE LOTE'}
-                </span>
+                  {busy === i.instanceName
+                    ? 'LIBERANDO…'
+                    : (i.cooldownMotivo === 'falhas_seguidas' ? 'RESFRIANDO' : 'PAUSA DE LOTE') + ' ⟳'}
+                </button>
               )}
-              <div className="min-w-0 flex-1">
+              <div className="w-full sm:w-auto sm:min-w-[140px] sm:flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-slate-800 truncate">{i.label}</span>
                   {i.isDefault && (
@@ -456,8 +522,112 @@ export default function MultiInstancePanel() {
               <RefreshCw className="w-3.5 h-3.5" /> Gerar novo QR
             </button>
             <p className="mt-2 text-[10px] text-slate-400">
-              A janela fecha sozinha quando o número conectar.
+              A janela fecha sozinha quando o número conectar. O código se renova
+              sozinho a cada 25s — se o WhatsApp recusar a leitura, espere a
+              imagem trocar antes de apontar a câmera de novo.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Proxy: IP dedicado por instancia. Sem isso, todo chip sai pelo
+          mesmo IP do servidor Evolution -- um numero quente herda a reputacao
+          do IP compartilhado (foi o caso do Antonio, banido no 1o disparo). */}
+      {proxyModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-sm p-6 relative">
+            <button
+              onClick={() => setProxyModal(null)}
+              className="absolute top-3 right-3 text-slate-400 hover:text-slate-700"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-1.5">
+              <Globe className="w-4 h-4 text-emerald-600" /> IP dedicado — {proxyModal.label}
+            </h3>
+            <p className="text-[11px] text-slate-500 mb-4">
+              Informe o proxy (ISP/residencial) contratado para este número. Sem isso, ele sai pelo
+              IP compartilhado do servidor — o mesmo de todos os outros chips.
+            </p>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Host / IP"
+                  value={proxyForm.host}
+                  onChange={(e) => setProxyForm({ ...proxyForm, host: e.target.value })}
+                  className="flex-[2] px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
+                <input
+                  type="text"
+                  placeholder="Porta"
+                  value={proxyForm.port}
+                  onChange={(e) => setProxyForm({ ...proxyForm, port: e.target.value })}
+                  className="flex-1 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
+              </div>
+              <select
+                value={proxyForm.protocol}
+                onChange={(e) => setProxyForm({ ...proxyForm, protocol: e.target.value })}
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg"
+              >
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Usuário (opcional)"
+                  value={proxyForm.username}
+                  onChange={(e) => setProxyForm({ ...proxyForm, username: e.target.value })}
+                  className="flex-1 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
+                <input
+                  type="password"
+                  placeholder="Senha (opcional)"
+                  value={proxyForm.password}
+                  onChange={(e) => setProxyForm({ ...proxyForm, password: e.target.value })}
+                  className="flex-1 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
+              </div>
+            </div>
+            {proxyMsg && <p className="mt-3 text-[11px] text-slate-600">{proxyMsg}</p>}
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={async () => {
+                  setProxySaving(true);
+                  setProxyMsg(null);
+                  const r = await removeProxy(proxyModal.instanceName);
+                  setProxyMsg(r.message || null);
+                  setProxySaving(false);
+                  if (r.ok) setProxyModal(null);
+                }}
+                disabled={proxySaving}
+                className="flex-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-semibold disabled:opacity-60"
+              >
+                Remover proxy
+              </button>
+              <button
+                onClick={async () => {
+                  if (!proxyForm.host || !proxyForm.port) {
+                    setProxyMsg('Informe host e porta.');
+                    return;
+                  }
+                  setProxySaving(true);
+                  setProxyMsg(null);
+                  const r = await setProxy(proxyModal.instanceName, proxyForm);
+                  setProxyMsg(r.message || null);
+                  setProxySaving(false);
+                  if (r.ok) setProxyModal(null);
+                }}
+                disabled={proxySaving}
+                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60"
+              >
+                {proxySaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+                Salvar
+              </button>
+            </div>
           </div>
         </div>
       )}

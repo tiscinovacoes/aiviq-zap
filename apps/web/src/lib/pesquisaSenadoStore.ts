@@ -1,4 +1,6 @@
-import { RespostaEleitor, EtapaPesquisa, CANDIDATOS_SENADO_MS } from './pesquisaSenado';
+import { RespostaEleitor, EtapaPesquisa, candidatosParaExibir } from './pesquisaSenado';
+import { getTelefonesComFalhaSemEnvio } from './dispatchQueue';
+import { canonicalDigits } from './conversationRepo';
 import { getServiceContext, isPlaceholderEnv } from './supabase/authContext';
 
 // Persistência das sessões da Pesquisa Senado.
@@ -27,6 +29,9 @@ function rowToSession(r: any): RespostaEleitor {
     voto2Id: r.voto2_id ?? undefined,
     voto2Nome: r.voto2_nome ?? undefined,
     instanceName: r.instance_name ?? r.instanceName ?? undefined,
+    listaVersao: r.lista_versao ?? undefined,
+    saudacaoRespondidaEm: r.saudacao_respondida_em ?? undefined,
+    msg3EnviadaEm: r.msg3_enviada_em ?? undefined,
     createdAt: r.created_at,
     lastMessageAt: r.updated_at,
   };
@@ -110,6 +115,9 @@ export async function savePesquisaSession(
     voto2_id: session.voto2Id ?? null,
     voto2_nome: session.voto2Nome ?? null,
   };
+  // Só grava a versão da lista quando ela foi definida (ao enviar Msg 3/4);
+  // omitida, o banco mantém a que já estava.
+  if (session.listaVersao) payloadBase.lista_versao = session.listaVersao;
 
   let data: any;
   let error: any;
@@ -176,8 +184,37 @@ export interface PesquisaStats {
   rankingGeral: Array<{ id: number; nome: string; rotulo: string; votos1: number; votos2: number; totalVotos: number; percentual: string }>;
 }
 
-export async function getPesquisaStats(): Promise<PesquisaStats> {
-  const sessions = await getPesquisaSessions();
+// ---------------------------------------------------------------------------
+// RECORTE DO FUNIL (decisão do operador, 23/09/2026)
+// A coluna "1. Disparado" e o total de disparos contam só a partir de 19/09.
+// Os contatos abordados antes disso que NUNCA responderam ficam fora do funil e
+// das proporções (são da fase em que os chips caíram / disparavam no vazio).
+// Quem respondeu, votou ou concluiu continua valendo, qualquer que seja a data.
+// Nada é apagado do banco: é só o recorte do que o painel mostra.
+// ---------------------------------------------------------------------------
+export const CORTE_DISPAROS_ISO = '2026-09-19T00:00:00-04:00'; // 19/09 00h MS
+
+// ---------------------------------------------------------------------------
+// SO CONTA QUEM RECEBEU DE VERDADE (decisão do operador, 25/09/2026)
+// A etapa 'disparado' e criada quando o envio e CONFIRMADO (dispatcher corrigido
+// para so criar a sessao depois do envio dar certo). Mas sessoes de antes dessa
+// correcao, ou qualquer contato cuja UNICA tentativa registrada foi falha (erro
+// permanente, numero invalido etc.), ficam de fora do funil e das estatisticas:
+// a mensagem nunca chegou nele.
+// ---------------------------------------------------------------------------
+export async function aplicarRecorteFunil(sessions: RespostaEleitor[]): Promise<RespostaEleitor[]> {
+  const corte = new Date(CORTE_DISPAROS_ISO).getTime();
+  const semEnvio = await getTelefonesComFalhaSemEnvio();
+  return sessions.filter((s) => {
+    if (s.etapa !== 'disparado') return true;
+    if (semEnvio.has(canonicalDigits(s.phone))) return false;
+    const t = s.createdAt ? new Date(s.createdAt).getTime() : NaN;
+    return isNaN(t) || t >= corte;
+  });
+}
+
+export async function getPesquisaStats(base?: RespostaEleitor[]): Promise<PesquisaStats> {
+  const sessions = base ?? (await aplicarRecorteFunil(await getPesquisaSessions()));
   const totalEleitores = sessions.length;
   const concluidos = sessions.filter((s) => s.etapa === 'concluido');
   const totalConcluidos = concluidos.length;
@@ -202,20 +239,24 @@ export async function getPesquisaStats(): Promise<PesquisaStats> {
     if (s.voto2Id) mapVoto2[s.voto2Id] = (mapVoto2[s.voto2Id] || 0) + 1;
   });
 
-  const rankingVoto1 = CANDIDATOS_SENADO_MS.map((c) => {
+  const rankingVoto1 = candidatosParaExibir(mapVoto1).map((c) => {
     const votos = mapVoto1[c.id] || 0;
     const percentual = totalConcluidos > 0 ? `${((votos / totalConcluidos) * 100).toFixed(1)}%` : '0.0%';
     return { id: c.id, nome: c.nome, rotulo: c.rotulo, votos, percentual };
   }).sort((a, b) => b.votos - a.votos);
 
-  const rankingVoto2 = CANDIDATOS_SENADO_MS.map((c) => {
+  const rankingVoto2 = candidatosParaExibir(mapVoto2).map((c) => {
     const votos = mapVoto2[c.id] || 0;
     const percentual = totalConcluidos > 0 ? `${((votos / totalConcluidos) * 100).toFixed(1)}%` : '0.0%';
     return { id: c.id, nome: c.nome, rotulo: c.rotulo, votos, percentual };
   }).sort((a, b) => b.votos - a.votos);
 
+  const somaVotos: Record<number, number> = {};
+  for (const [id, n] of [...Object.entries(mapVoto1), ...Object.entries(mapVoto2)]) {
+    somaVotos[Number(id)] = (somaVotos[Number(id)] || 0) + n;
+  }
   const totalVotosCombinados = totalConcluidos * 2;
-  const rankingGeral = CANDIDATOS_SENADO_MS.map((c) => {
+  const rankingGeral = candidatosParaExibir(somaVotos).map((c) => {
     const votos1 = mapVoto1[c.id] || 0;
     const votos2 = mapVoto2[c.id] || 0;
     const totalVotos = votos1 + votos2;
@@ -225,4 +266,102 @@ export async function getPesquisaStats(): Promise<PesquisaStats> {
   }).sort((a, b) => b.totalVotos - a.totalVotos);
 
   return { totalEleitores, totalConcluidos, taxaConclusao, porEtapa, rankingVoto1, rankingVoto2, rankingGeral };
+}
+
+// ---------------------------------------------------------------------------
+// ESPERA DE 30s ENTRE A 1ª RESPOSTA E A MSG 2/3 (020)
+// O eleitor costuma responder a saudação em pedaços ("oi" ... "tudo bem"). A 1ª
+// mensagem marca a sessão e agenda a Msg 2/3 para 30s depois; as seguintes,
+// enquanto a Msg 2/3 não saiu, são ignoradas. As duas marcações são UPDATEs
+// condicionais (atômicos): com webhooks concorrentes, só um vence.
+// ---------------------------------------------------------------------------
+export const ESPERA_SAUDACAO_S = 30;
+
+/** 1ª resposta à saudação: disparado -> aguardando_voto1. true = esta chamada venceu. */
+export async function marcarSaudacaoRespondida(id: string, listaVersao: number): Promise<boolean> {
+  const agora = new Date().toISOString();
+  if (isPlaceholderEnv()) {
+    const s = (global.__aiviq_pesquisa_senado || []).find((x) => x.id === id);
+    if (!s || s.etapa !== 'disparado') return false;
+    Object.assign(s, { etapa: 'aguardando_voto1', listaVersao, saudacaoRespondidaEm: agora, lastMessageAt: agora });
+    return true;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return false;
+  const { data, error } = await ctx.db
+    .from(TABLE)
+    .update({ etapa: 'aguardando_voto1', lista_versao: listaVersao, saudacao_respondida_em: agora })
+    .eq('organization_id', ctx.organizationId)
+    .eq('id', id)
+    .eq('etapa', 'disparado')
+    .select('id');
+  if (error) {
+    console.error('[pesquisa] marcarSaudacaoRespondida:', error.message);
+    return false;
+  }
+  return (data?.length || 0) > 0;
+}
+
+/** Reserva o envio da Msg 2/3 para ESTE processo. true = pode enviar. */
+export async function reivindicarEnvioMsg3(id: string): Promise<boolean> {
+  const agora = new Date().toISOString();
+  if (isPlaceholderEnv()) {
+    const s = (global.__aiviq_pesquisa_senado || []).find((x) => x.id === id);
+    if (!s || s.msg3EnviadaEm) return false;
+    s.msg3EnviadaEm = agora;
+    return true;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return false;
+  const { data, error } = await ctx.db
+    .from(TABLE)
+    .update({ msg3_enviada_em: agora })
+    .eq('organization_id', ctx.organizationId)
+    .eq('id', id)
+    .eq('etapa', 'aguardando_voto1')
+    .is('msg3_enviada_em', null)
+    .select('id');
+  if (error) {
+    console.error('[pesquisa] reivindicarEnvioMsg3:', error.message);
+    return false;
+  }
+  return (data?.length || 0) > 0;
+}
+
+/** Desfaz a reserva quando o envio falhou (o tick tenta de novo depois). */
+export async function liberarEnvioMsg3(id: string): Promise<void> {
+  if (isPlaceholderEnv()) {
+    const s = (global.__aiviq_pesquisa_senado || []).find((x) => x.id === id);
+    if (s) s.msg3EnviadaEm = undefined;
+    return;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return;
+  await ctx.db
+    .from(TABLE)
+    .update({ msg3_enviada_em: null })
+    .eq('organization_id', ctx.organizationId)
+    .eq('id', id);
+}
+
+/** Sessões cuja espera venceu há mais de `atrasoMin` e a Msg 2/3 não saiu (envio perdido). */
+export async function listarMsg3Atrasadas(atrasoMin = 2, limite = 5): Promise<RespostaEleitor[]> {
+  const corte = new Date(Date.now() - (ESPERA_SAUDACAO_S + atrasoMin * 60) * 1000).toISOString();
+  if (isPlaceholderEnv()) {
+    return (global.__aiviq_pesquisa_senado || [])
+      .filter((s) => s.etapa === 'aguardando_voto1' && s.saudacaoRespondidaEm && !s.msg3EnviadaEm && s.saudacaoRespondidaEm < corte)
+      .slice(0, limite);
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return [];
+  const { data } = await ctx.db
+    .from(TABLE)
+    .select('*')
+    .eq('organization_id', ctx.organizationId)
+    .eq('etapa', 'aguardando_voto1')
+    .is('msg3_enviada_em', null)
+    .not('saudacao_respondida_em', 'is', null)
+    .lt('saudacao_respondida_em', corte)
+    .limit(limite);
+  return (data ?? []).map(rowToSession);
 }

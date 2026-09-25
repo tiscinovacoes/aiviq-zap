@@ -15,6 +15,9 @@ export interface InstanceView {
   cooldownAte?: string;
   cooldownMotivo?: string;
   webhookOk?: boolean;
+  /** true = IP dedicado configurado na Evolution para este numero. */
+  proxyOk?: boolean;
+  proxyHost?: string;
 }
 
 export const SELECTED_INSTANCE_KEY = 'aiviq_selected_instance';
@@ -36,6 +39,12 @@ interface InstanceState {
   setDispatchEnabled: (instanceName: string, enabled: boolean) => Promise<void>;
   setMaturidade: (instanceName: string, maturidade: 'novo' | 'maduro') => Promise<void>;
   repararWebhook: (instanceName: string) => Promise<boolean>;
+  setProxy: (
+    instanceName: string,
+    config: { host: string; port: string; protocol?: string; username?: string; password?: string }
+  ) => Promise<{ ok: boolean; message?: string }>;
+  removeProxy: (instanceName: string) => Promise<{ ok: boolean; message?: string }>;
+  liberarCooldown: (instanceName: string) => Promise<boolean>;
 }
 
 export const useInstanceStore = create<InstanceState>((set, get) => ({
@@ -122,6 +131,56 @@ export const useInstanceStore = create<InstanceState>((set, get) => ({
       });
     } finally {
       await get().fetchInstances();
+    }
+  },
+
+  // Associa um IP dedicado (ISP/residencial) a este numero. Sem proxy, a
+  // instancia sai pelo IP compartilhado do servidor Evolution -- o mesmo de
+  // todos os outros chips -- e herda a reputacao deles mesmo sendo "quente".
+  setProxy: async (instanceName, config) => {
+    try {
+      const res = await fetch(`/api/instances/${encodeURIComponent(instanceName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_proxy', ...config }),
+      });
+      const data = await res.json();
+      await get().fetchInstances();
+      return { ok: Boolean(data?.success), message: data?.message };
+    } catch (e: any) {
+      return { ok: false, message: e.message };
+    }
+  },
+
+  removeProxy: async (instanceName) => {
+    try {
+      const res = await fetch(`/api/instances/${encodeURIComponent(instanceName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove_proxy' }),
+      });
+      const data = await res.json();
+      await get().fetchInstances();
+      return { ok: Boolean(data?.success), message: data?.message };
+    } catch (e: any) {
+      return { ok: false, message: e.message };
+    }
+  },
+
+  // Libera manualmente um chip em RESFRIANDO/PAUSA DE LOTE (zera o cooldown
+  // e os contadores de falha), sem esperar os 90/180 min.
+  liberarCooldown: async (instanceName) => {
+    try {
+      const res = await fetch(`/api/instances/${encodeURIComponent(instanceName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'liberar_cooldown' }),
+      });
+      const data = await res.json();
+      await get().fetchInstances();
+      return Boolean(data?.success);
+    } catch {
+      return false;
     }
   },
 
