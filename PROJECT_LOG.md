@@ -1466,3 +1466,15 @@ Operador reportou: rolando a tela de Pesquisa (CRM) pra baixo no celular, o funi
 - ✅ Área do kanban: ganha `min-h-[70vh]` em mobile, para ter altura própria suficiente em vez de depender só do espaço que sobra da tela.
 - ✅ Banner da fila (Cluster Anti-Ban): o grupo de texto/badges internamente não tinha `flex-wrap` (só o banner todo tinha) — o badge "PAUSADO" e os botões Retomar/Parar ficavam espremidos contra o texto longo em vez de quebrar linha. Corrigido.
 - ✅ Validação: testado com Playwright real (viewport 375×812) — capturado o topo e o resultado após rolar até o fim; o card "1. Disparado" aparece completo agora. `next build` de produção ok.
+
+
+---
+
+## DATA: 25/09/2026 — Timeout de Envio Aumentado (v3.10.2)
+
+### Claude
+Operador reportou: disparo para um lead via Magrela não apareceu em lugar nenhum, precisou mandar manualmente. Causa: o envio deu **timeout** (`"The operation was aborted due to timeout"`), não uma falha do WhatsApp — com a correção anterior (a sessão só entra no funil depois do envio confirmado), um timeout faz o contato desaparecer silenciosamente até esgotar as 3 tentativas.
+
+- 🐞 O timeout do envio real (`/message/sendText`) estava em 8s — curto para o tráfego que agora passa por proxy dedicado (ISP/residencial), que adiciona latência real de rede.
+- ✅ Aumentado para 15s, dentro da folga do `maxDuration = 60` da rota do tick (que processa só 1 envio por chamada).
+- ✅ Validação: `tsc --noEmit` 0 erros. Achados apenas 2 casos de timeout nas últimas 6h (Magrela e Gisele) — não é um padrão massivo, mas o ajuste evita perdas silenciosas em picos de latência do proxy.

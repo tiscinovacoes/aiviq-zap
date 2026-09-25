@@ -485,7 +485,12 @@ export async function sendRealMessageDetailed(
         delay: delayMs,
         linkPreview: true,
       }),
-      signal: AbortSignal.timeout(8000),
+      // 15s (nao 8s): com IP dedicado (proxy ISP/residencial), o envio real
+      // passa por uma rede externa mais lenta que uma conexao direta ao
+      // servidor Evolution -- 8s dava timeout em picos de latencia normais do
+      // proxy, perdendo o disparo em silencio (o contato so aparecia como
+      // "nao disparou" sem erro visivel, ate o operador notar e mandar na mao).
+      signal: AbortSignal.timeout(15000),
     });
 
     if (res.ok) {
