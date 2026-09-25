@@ -1,5 +1,6 @@
 import { Contact, Conversation, Message } from '@/types';
 import { getDefaultInstanceName, resolveInstanceName } from '@/lib/instanceRegistry';
+import { mapConnectionStatus, precisaConfirmar } from '@/lib/instanceStatus';
 
 // CR-004 T1: sem default de credencial/URL no código — exige env, falha fechada.
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
@@ -569,14 +570,6 @@ export interface EvolutionLiveInstance {
   profilePicUrl?: string;
 }
 
-function mapConnectionStatus(raw?: string, rawObj?: any): EvolutionLiveInstance['status'] {
-  if (rawObj?.disconnectionReasonCode === 401 || (rawObj?.disconnectionObject && String(rawObj.disconnectionObject).includes('device_removed'))) {
-    return 'disconnected';
-  }
-  if (raw === 'open') return 'connected';
-  if (raw === 'connecting') return 'connecting';
-  return 'disconnected';
-}
 
 let liveInstancesCache: CacheEntry<EvolutionLiveInstance[]> | null = null;
 
@@ -589,7 +582,8 @@ let liveInstancesCache: CacheEntry<EvolutionLiveInstance[]> | null = null;
  *
  * Sem isso a tela pinta de amarelo "Conectando..." um chip que esta `close`, e
  * o operador fica esperando uma conexao que nunca vem -- achando que tem N
- * chips no cluster quando tem menos.
+ * chips no cluster quando tem menos. Tambem confirma o `open` de chip com
+ * logout antigo gravado (ver teveLogoutDefinitivo).
  */
 async function confirmarConnecting(name: string): Promise<EvolutionLiveInstance['status']> {
   try {
@@ -621,21 +615,31 @@ export async function fetchLiveEvolutionInstances(forceRefresh = false): Promise
     if (!res.ok) return [];
     const data = await res.json();
     if (!Array.isArray(data)) return [];
-    const instances = data.map((i: any) => ({
-      instanceName: i.name || i.instanceName || i.instance?.instanceName || '',
-      status: mapConnectionStatus(i.connectionStatus || i.state || i.instance?.state, i),
-      phoneNumber: formatCleanPhone(i.ownerJid || i.number || i.instance?.owner) || undefined,
-      profileName: i.profileName || i.instance?.profileName || undefined,
-      profilePicUrl: i.profilePicUrl || i.instance?.profilePicUrl || undefined,
-    })).filter((i: EvolutionLiveInstance) => i.instanceName);
+    const linhas = data
+      .map((i: any) => {
+        const raw = i.connectionStatus || i.state || i.instance?.state;
+        const inst: EvolutionLiveInstance = {
+          instanceName: i.name || i.instanceName || i.instance?.instanceName || '',
+          status: mapConnectionStatus(raw, i),
+          phoneNumber: formatCleanPhone(i.ownerJid || i.number || i.instance?.owner) || undefined,
+          profileName: i.profileName || i.instance?.profileName || undefined,
+          profilePicUrl: i.profilePicUrl || i.instance?.profilePicUrl || undefined,
+        };
+        return { inst, confirmar: precisaConfirmar(raw, i) };
+      })
+      .filter((l: { inst: EvolutionLiveInstance }) => l.inst.instanceName);
+    const instances: EvolutionLiveInstance[] = linhas.map((l: { inst: EvolutionLiveInstance }) => l.inst);
 
-    // So os "connecting" precisam de segunda opiniao: 'open' e 'close' a lista
-    // reporta corretamente. Em paralelo, para nao somar latencia.
-    const pendentes = instances.filter((i: EvolutionLiveInstance) => i.status === 'connecting');
+    // Segunda opiniao do /instance/connectionState (socket vivo) para o que a
+    // lista nao garante: "connecting" preso de sessao morta e "open" de chip que
+    // ja levou logout e foi reconectado. Em paralelo, para nao somar latencia.
+    const pendentes = linhas.filter((l: { confirmar: boolean }) => l.confirmar);
     if (pendentes.length > 0) {
-      const reais = await Promise.all(pendentes.map((i: EvolutionLiveInstance) => confirmarConnecting(i.instanceName)));
-      pendentes.forEach((i: EvolutionLiveInstance, idx: number) => {
-        i.status = reais[idx];
+      const reais = await Promise.all(
+        pendentes.map((l: { inst: EvolutionLiveInstance }) => confirmarConnecting(l.inst.instanceName))
+      );
+      pendentes.forEach((l: { inst: EvolutionLiveInstance }, idx: number) => {
+        l.inst.status = reais[idx];
       });
     }
 

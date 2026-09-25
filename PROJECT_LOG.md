@@ -1275,10 +1275,23 @@ Operador confirmou: contratou IPs ISP e residenciais estáticos. Pedido: trazer 
 - ✅ Validação: `tsc --noEmit` 0 erros.
 - ⚠️ Não testado contra o servidor Evolution real (endpoint `/proxy/set`/`/proxy/find` — confirmar formato exato do payload na versão da Evolution em uso; código tenta seguir o padrão documentado da v2).
 
+## DATA: 24/09/2026 — Chip reconectado aparecia "Desconectado" e ficava fora do disparo (v3.7.1)
+
+### Claude
+Relato do operador: reconectou um número por QR, o celular mostra o aparelho "Ativo", mas o painel mantém o chip cinza e ele não entra no disparo ("1 marcado mas ainda não conectado").
+
+Causa: `mapConnectionStatus` (v17/09) marcava como desconectado todo chip com `disconnectionReasonCode === 401` ou `device_removed` no `/instance/fetchInstances`, **antes** de olhar o `connectionStatus`. A Evolution grava esses dois campos no logout e **não os limpa** quando o chip reconecta — o update de `connection === 'open'` (`whatsapp.baileys.service.ts`) só mexe em `ownerJid`, `profileName`, `profilePicUrl` e `connectionStatus`. Resultado: qualquer chip que já levou logout uma vez (caso do Antonio) ficava "Desconectado" para sempre, e o `prepararDisparoSimultaneo` ainda o tirava do pool a cada rodada.
+
+- ✅ **`src/lib/instanceStatus.ts`** (novo): `mapConnectionStatus` agora deixa o `open` mandar; o 401 antigo só derruba quem não está `open`. `precisaConfirmar` manda o `open` com logout antigo (e o `connecting`, como antes) para a segunda opinião do `/instance/connectionState`, que lê o socket vivo.
+- ✅ **`evolutionService.ts`**: `fetchLiveEvolutionInstances` usa as duas funções; o disparo (`getConnectedDispatchInstances`) herda a correção.
+- ✅ **`__tests__/instance-status.test.ts`**: 5 casos, incluindo a linha real de um chip reconectado com 401 gravado.
+- ✅ Validação: `tsc --noEmit` 0 erros; vitest 5/5 no teste novo. As 6 falhas de `security-hardening.test.ts` (migration 002 ausente no disco) já existiam no `master`.
+- ⚠️ Se depois do deploy o chip continuar cinza, a causa é outra: o socket do servidor não conecta (ex.: proxy do "IP PRÓPRIO" recusando). O celular mostra "Ativo" mesmo assim, porque isso só indica aparelho vinculado.
+
 
 ---
 
-## DATA: 23/09/2026 — Timeout do Proxy Aumentado (v3.7.1)
+## DATA: 23/09/2026 — Timeout do Proxy Aumentado (v3.7.2)
 
 ### Claude
 Operador testou o proxy da Decodo (isp.decodo.com) e recebeu "The operation was aborted due to timeout" ao salvar. Causa: `configurarProxyInstancia()` tinha 6s de timeout, curto para a Evolution validar a conexão real com um proxy externo.
