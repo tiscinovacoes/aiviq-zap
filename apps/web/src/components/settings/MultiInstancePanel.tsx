@@ -267,6 +267,9 @@ export default function MultiInstancePanel() {
               <span className="font-bold px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">No disparo</span> (checkbox) — se DESMARCADO, o número fica fora do rodízio de campanhas (mas continua disponível pra atender no Inbox manualmente).
             </div>
             <div>
+              <span className="font-bold px-1 rounded bg-slate-100 text-slate-500 border border-slate-200">OCIOSO</span> — chip conectado e ligado no disparo, mas sem nenhum contato pendente atribuído a ele agora (terminou a fatia da lista). Volta a disparar sozinho na próxima importação ou redistribuição.
+            </div>
+            <div>
               <span className="font-bold px-1 rounded bg-slate-100 text-slate-500 border border-slate-200">PADRÃO</span> — número que não pode ser removido.{' '}
               <span className="font-bold px-1 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">NO INBOX</span> — é o número que o Inbox/Contatos estão exibindo agora (não afeta o disparo).
             </div>
@@ -449,6 +452,22 @@ export default function MultiInstancePanel() {
                           : 'PAUSA DE LOTE') + ' ⟳'}
                 </button>
               )}
+              {/* OCIOSO: chip operando (conectado, "No disparo" ligado, sem
+                  resfriamento) mas sem nenhum contato pendente carimbado para
+                  ele -- terminou a fatia da lista que recebeu. Só some quando
+                  uma nova importação ou "Sincronizar Chips" carimbar mais
+                  pendentes para ele. */}
+              {i.status === 'connected' &&
+                noDisparo &&
+                !(i.cooldownAte && new Date(i.cooldownAte) > new Date()) &&
+                (i.pendentesNaFila ?? 0) === 0 && (
+                  <span
+                    title="Sem contatos pendentes atribuídos a este número agora. Ele volta a disparar sozinho assim que uma nova lista for importada ou os pendentes forem redistribuídos."
+                    className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 shrink-0"
+                  >
+                    OCIOSO
+                  </span>
+                )}
               <div className="w-full sm:w-auto sm:min-w-[140px] sm:flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-slate-800 truncate">{i.label}</span>

@@ -7,7 +7,7 @@ import {
   DEFAULT_INSTANCE,
 } from '@/lib/instanceRegistry';
 import { fetchLiveEvolutionInstances, EvolutionLiveInstance } from '@/lib/evolutionService';
-import { getDispatchPool, getMaturidadeChips } from '@/lib/dispatchQueue';
+import { getDispatchPool, getMaturidadeChips, getProgressoPorChip } from '@/lib/dispatchQueue';
 import { configurarWebhookInstancia, getWebhookInstancia, getProxyInstancia } from '@/lib/evolutionService';
 import { capDoChip, ANTIBAN } from '@/lib/antiBan';
 
@@ -64,6 +64,10 @@ export interface InstanceView {
   /** Fora do pool ate este horario (resfriamento por falhas ou pausa de lote). */
   cooldownAte?: string;
   cooldownMotivo?: string;
+  /** Quantos contatos pendentes estao carimbados (assigned_instance) para
+   *  este chip agora -- 0 com o chip operando normalmente = fatia esgotada,
+   *  ocioso ate a proxima importacao ou redistribuicao. */
+  pendentesNaFila: number;
   /** false = a Evolution nao tem para onde avisar respostas nem acks. */
   webhookOk: boolean;
   /** true = a instancia tem IP dedicado (proxy) configurado na Evolution.
@@ -84,13 +88,15 @@ export async function GET() {
     const unauthorized = await requireUser();
     if (unauthorized) return unauthorized;
 
-    const [live, pool, maturidades] = await Promise.all([
+    const [live, pool, maturidades, progressoPorChip] = await Promise.all([
       fetchLiveEvolutionInstances(),
       getDispatchPool(),
       getMaturidadeChips(),
+      getProgressoPorChip(),
     ]);
     const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Campo_Grande' });
     const liveByName = new Map(live.map((i) => [i.instanceName, i]));
+    const pendentesByName = new Map(progressoPorChip.map((p) => [p.instancia, p.pendentes]));
 
     // Qualquer instância que exista no servidor mas não no registro local é auto-registrada,
     // para aparecer no seletor e permitir troca.
@@ -119,6 +125,7 @@ export async function GET() {
           capHoje: await capDoChip(k.instanceName, hoje),
           cooldownAte: m?.cooldownAte,
           cooldownMotivo: m?.cooldownMotivo,
+          pendentesNaFila: pendentesByName.get(k.instanceName) || 0,
           webhookOk: Boolean(await getWebhookInstancia(k.instanceName)),
           proxyOk: Boolean(proxy?.enabled && proxy?.host),
           proxyHost: proxy?.host,
