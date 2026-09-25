@@ -25,6 +25,8 @@ interface InboxState {
   syncConversations: () => Promise<void>;
   syncActiveMessages: () => Promise<void>;
   selectConversation: (conversation: Conversation) => Promise<void>;
+  /** Volta para a lista de conversas em mobile (o chat some, a lista reaparece). */
+  clearActiveConversation: () => void;
   selectConversationByPhoneOrId: (idOrPhone: string) => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
@@ -131,6 +133,8 @@ export const useInboxStore = create<InboxState>((set, get) => ({
       set({ error: err.message, isLoading: false });
     }
   },
+
+  clearActiveConversation: () => set({ activeConversation: null }),
 
   selectConversation: async (conversation) => {
     // Garante que a conversa selecionada esteja na lista

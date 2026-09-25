@@ -27,7 +27,7 @@ export default function ContactInspector() {
   };
 
   return (
-    <aside className="w-[340px] h-full bg-white border-l border-slate-200 flex flex-col overflow-y-auto">
+    <aside className="hidden lg:flex w-[340px] h-full bg-white border-l border-slate-200 flex-col overflow-y-auto">
       {/* Profile Header */}
       <div className="p-5 border-b border-slate-200 text-center">
         <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 mx-auto flex items-center justify-center text-xl font-bold text-emerald-700 mb-3 shadow-xs">

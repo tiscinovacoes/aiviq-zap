@@ -1420,3 +1420,22 @@ Operador reparou disparos de chips diferentes saindo com 5 min de diferença (n�
 - 🐞 Causa: `intervaloEntreChipsSegundos()` calculava "menor intervalo fixo / nº de chips" — isso é só um mínimo. Quando apenas 1 chip estava com o relógio individual vencido no momento em que o pool liberava, o próximo disparo dele só saía quando o PRÓPRIO relógio dele vencesse de novo (5 min), dando a impressão de "5 min entre chips" em vez de revezamento real.
 - ✅ `intervaloEntreChipsSegundos()` agora é fixo em 60s (nunca maior que o intervalo individual mais curto dos chips, então continua seguro — o que protege cada número contra ban é o relógio individual de 5 min dele, não este espaçamento do pool).
 - ✅ Validação: `tsc --noEmit` 0 erros; função testada com 1, 2, 3 chips e com chip em warm-up — sempre 60s.
+
+
+---
+
+## DATA: 25/09/2026 — Responsividade Mobile: Correção Estrutural (v3.10.0)
+
+### Claude
+Operador reportou que a responsividade "ainda não está 100%, muito ruim de ver no celular", mesmo após os ajustes anteriores (v3.8.0). Investigação com Playwright em viewport real de celular (375×812, como um iPhone) revelou o problema estrutural: a correção anterior só tinha ajustado o CONTEÚDO de cada página, mas o LAYOUT compartilhado tinha barras laterais fixas que nenhum ajuste de conteúdo resolve.
+
+**Causa raiz:** `NavigationRail` (72px) é fixa e sempre visível, e em `/settings` uma segunda barra (`aside`, 256px) soma 328px de UI fixa — quase toda a largura de um celular comum (375px), sobrando ~47px pro conteúdo real.
+
+**Correção estrutural:**
+- ✅ `MobileBottomNav.tsx` (novo): barra de navegação fixa embaixo, só em mobile (`md:hidden`), com os 7 itens principais. Aplicada nas 8 páginas que usam `NavigationRail`.
+- ✅ `NavigationRail`: vira `hidden md:flex` — só aparece em telas médias+.
+- ✅ `/settings`: o `aside` de 256px vira `hidden md:block`; em mobile, os 5 módulos (WhatsApp, Organização, Equipe, IA, Alertas) viram uma barra de abas horizontal rolável no topo.
+- ✅ `/inbox`: era o mais crítico — 3 colunas fixas (lista 360px + chat + inspector 340px) somavam bem mais que qualquer tela de celular. Agora mostra **um painel por vez** em mobile: lista de conversas OU chat ativo (nunca os dois simultaneamente), com botão "voltar" no cabeçalho do chat (`clearActiveConversation`, nova ação no `useInboxStore`). O painel de detalhes do contato (`ContactInspector`) fica oculto até telas `lg+` (1024px).
+- ✅ Cabeçalhos de página (`h-16 px-8` fixo, presente em 6 páginas: bots, campaigns, contacts, contacts/[id], crm, reports) padronizados para `min-h-16 px-3 sm:px-8` com `flex-wrap`, permitindo crescer de altura e não cortar texto/botões em telas estreitas. Textos longos (ex. "Pesquisa Senado MS 2026", "Protocolos Ouvidoria") abreviados em mobile.
+- ✅ `MultiInstancePanel`: nome do chip ganha `w-full` em mobile (linha própria) em vez de competir por espaço com os badges na mesma linha.
+- ✅ Validação: testado com Playwright real (Chromium, viewport 375×812) em todas as 8 páginas, antes e depois de cada correção — screenshots conferidos visualmente a cada rodada, não só `tsc`/build. `next build` de produção completo com sucesso.

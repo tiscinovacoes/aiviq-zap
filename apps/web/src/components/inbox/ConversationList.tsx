@@ -35,7 +35,7 @@ export default function ConversationList() {
   };
 
   return (
-    <section className="w-[360px] h-full bg-white border-r border-slate-200 flex flex-col">
+    <section className="w-full md:w-[360px] h-full bg-white border-r border-slate-200 flex flex-col">
       {/* Header & Controls */}
       <div className="p-4 border-b border-slate-200 space-y-3">
         <div className="flex items-center justify-between">

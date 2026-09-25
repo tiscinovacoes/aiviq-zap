@@ -31,6 +31,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import NavigationRail from '@/components/layout/NavigationRail';
+import MobileBottomNav from '@/components/layout/MobileBottomNav';
 import PesquisaSenadoKanban from '@/components/crm/PesquisaSenadoKanban';
 import { useCRMStore } from '@/store/useCRMStore';
 import { Protocolo, ProtocoloStatus, TipoManifestacao, Prioridade } from '@/types';
@@ -323,38 +324,39 @@ export default function CRMPage() {
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
       {/* Left Navigation Rail */}
       <NavigationRail />
+      <MobileBottomNav />
 
       {/* Main Workspace */}
-      <main className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
+      <main className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden pb-16 md:pb-0">
         {/* Top Header com Tabs de Módulo */}
-        <header className="h-16 px-8 border-b border-slate-200 flex items-center justify-between bg-white/95 backdrop-blur-md shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+        <header className="min-h-16 px-3 sm:px-8 py-2 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-white/95 backdrop-blur-md shrink-0">
+          <div className="flex items-center gap-4 overflow-x-auto">
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
               <button
                 onClick={() => setModuloAtivo('pesquisa_senado')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 sm:gap-2 transition-all shrink-0 ${
                   moduloAtivo === 'pesquisa_senado'
                     ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/80'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <Vote className="w-4 h-4 text-emerald-600" />
-                <span>Pesquisa Senado MS 2026</span>
-                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-emerald-100 text-emerald-800 uppercase">
+                <Vote className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Pesquisa Senado MS<span className="hidden sm:inline"> 2026</span></span>
+                <span className="hidden sm:inline px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-emerald-100 text-emerald-800 uppercase">
                   Robô Ativo
                 </span>
               </button>
 
               <button
                 onClick={() => setModuloAtivo('ouvidoria')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 sm:gap-2 transition-all shrink-0 ${
                   moduloAtivo === 'ouvidoria'
                     ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <FileText className="w-4 h-4 text-slate-500" />
-                <span>Protocolos Ouvidoria</span>
+                <FileText className="w-4 h-4 text-slate-500 shrink-0" />
+                <span>Protocolos<span className="hidden sm:inline"> Ouvidoria</span></span>
               </button>
             </div>
           </div>
