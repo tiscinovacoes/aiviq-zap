@@ -518,6 +518,31 @@ export async function markItemError(
   return { failed };
 }
 
+/**
+ * Telefones (digitos canonicos) que tentaram e NAO tem nenhum envio
+ * confirmado -- so falhas (erro/status_definitivo). Usado para tirar do
+ * funil da pesquisa contatos que nunca receberam a Msg 1 de verdade, mesmo
+ * que uma sessao tenha chegado a existir para eles.
+ */
+export async function getTelefonesComFalhaSemEnvio(): Promise<Set<string>> {
+  if (isPlaceholderEnv()) return new Set();
+  const ctx = await getServiceContext();
+  if (!ctx) return new Set();
+  const [comErro, comEnvio] = await Promise.all([
+    ctx.db.from('dispatch_queue').select('phone').eq('organization_id', ctx.organizationId).eq('status', 'erro'),
+    ctx.db.from('dispatch_queue').select('phone').eq('organization_id', ctx.organizationId).eq('status', 'enviado'),
+  ]);
+  // Um telefone com pelo menos 1 envio confirmado NUNCA e excluido, mesmo que
+  // outra tentativa dele tenha falhado (retry apos reconexao, por exemplo).
+  const enviados = new Set((comEnvio.data || []).map((r: any) => canonicalDigits(r.phone)));
+  const semEnvio = new Set<string>();
+  for (const r of comErro.data || []) {
+    const tel = canonicalDigits(r.phone);
+    if (!enviados.has(tel)) semEnvio.add(tel);
+  }
+  return semEnvio;
+}
+
 export interface FailedQueueItem {
   id: string;
   phone: string;

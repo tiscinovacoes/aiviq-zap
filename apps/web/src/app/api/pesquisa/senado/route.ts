@@ -27,8 +27,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Recorte do funil: disparos sem resposta anteriores a 19/09 ficam de fora.
-    const sessions = aplicarRecorteFunil(await getPesquisaSessions());
+    // Recorte do funil: disparos sem resposta anteriores a 19/09, e qualquer
+    // contato que so tem falha registrada (nunca recebeu a Msg 1), ficam de fora.
+    const sessions = await aplicarRecorteFunil(await getPesquisaSessions());
     const stats = await getPesquisaStats(sessions);
     return NextResponse.json({
       success: true,
