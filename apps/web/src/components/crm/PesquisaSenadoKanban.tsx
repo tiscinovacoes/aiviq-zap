@@ -480,11 +480,12 @@ export default function PesquisaSenadoKanban() {
     document.body.removeChild(link);
   };
 
-  // "Falhas no Disparo" = falhas definitivas (3 tentativas, status 'erro') +
-  // falhas em retentativa automatica (ja erraram ao menos 1x e vao tentar de
-  // novo sozinhas). Antes o card e o modal so contavam as definitivas, entao
-  // uma falha que tinha acabado de acontecer ficava fora do KPI ate a 3a
-  // tentativa -- mesmo com o motivo do erro ja gravado no banco.
+  // "Falhas no Disparo" = falhas definitivas (status 'erro' -- toda falha ja
+  // e definitiva na 1a tentativa) + falhas em retentativa automatica (so
+  // aparecem em registros de antes dessa regra existir). Antes o card e o
+  // modal so contavam as definitivas, entao uma falha que tinha acabado de
+  // acontecer ficava fora do KPI ate a 3a tentativa -- mesmo com o motivo do
+  // erro ja gravado no banco.
   const totalFalhasDisparo = (estadoDisparador?.erros || 0) + (estadoDisparador?.emRetentativa || 0);
   // Bloqueadas para sempre no banco de erros (status_definitivo) -- nem
   // "Tentar Novamente" reativa essas, so as 'erro' de antes da migration 021
@@ -713,7 +714,7 @@ export default function PesquisaSenadoKanban() {
           <p className="text-[11px] text-slate-400">Aguardando resposta</p>
         </div>
 
-        {/* KPI EXCLUSIVO DE FALHAS COM BOTÃO DE VERIFICAÇÃO — conta falhas definitivas (3 tentativas) + as que ja falharam e seguem em retentativa automatica */}
+        {/* KPI EXCLUSIVO DE FALHAS COM BOTÃO DE VERIFICAÇÃO — conta falhas definitivas (falha na 1a tentativa) + as antigas que ainda seguem em retentativa automatica */}
         <div
           onClick={() => setIsFalhasModalOpen(true)}
           className={`p-3 border rounded-xl cursor-pointer transition-all ${
@@ -1290,7 +1291,7 @@ export default function PesquisaSenadoKanban() {
                     </span>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Contatos que falharam ao enviar WhatsApp (número inexistente, sem WhatsApp ou timeout) — inclui quem já falhou e segue em retentativa automática
+                    Contatos que falharam ao enviar WhatsApp (número inexistente, sem WhatsApp ou timeout) — falha é definitiva já na 1ª tentativa, sem reenvio automático
                   </p>
                 </div>
               </div>
@@ -1413,7 +1414,7 @@ export default function PesquisaSenadoKanban() {
                             ) : (
                               <span
                                 className="inline-flex items-center gap-1 bg-amber-100 border border-amber-200 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
-                                title="Já falhou pelo menos 1x; o sistema tenta de novo automaticamente até completar 3 tentativas"
+                                title="Registro de antes da regra atual — hoje toda falha já é definitiva na 1ª tentativa, sem retentativa automática"
                               >
                                 Em retentativa
                               </span>
