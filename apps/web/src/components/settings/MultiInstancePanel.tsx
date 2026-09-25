@@ -44,7 +44,9 @@ export default function MultiInstancePanel() {
     pairingCode?: string;
   } | null>(null);
 
-  const [proxyModal, setProxyModal] = useState<{ instanceName: string; label: string } | null>(null);
+  const [proxyModal, setProxyModal] = useState<{ instanceName: string; label: string; hasPassword?: boolean } | null>(
+    null
+  );
   const [proxyForm, setProxyForm] = useState({ host: '', port: '', protocol: 'http', username: '', password: '' });
   const [proxySaving, setProxySaving] = useState(false);
   const [proxyMsg, setProxyMsg] = useState<string | null>(null);
@@ -336,8 +338,17 @@ export default function MultiInstancePanel() {
               )}
               <button
                 onClick={() => {
-                  setProxyModal({ instanceName: i.instanceName, label: i.label });
-                  setProxyForm({ host: '', port: '', protocol: 'http', username: '', password: '' });
+                  setProxyModal({ instanceName: i.instanceName, label: i.label, hasPassword: i.proxyHasPassword });
+                  // Pre-preenche com o que ja esta salvo na Evolution -- sem isso o
+                  // formulario sempre abre em branco e parece que o proxy configurado
+                  // antes "sumiu", mesmo com o IP dedicado ativo (botao IP PROPRIO).
+                  setProxyForm({
+                    host: i.proxyHost || '',
+                    port: i.proxyPort || '',
+                    protocol: i.proxyProtocol || 'http',
+                    username: i.proxyUsername || '',
+                    password: '',
+                  });
                   setProxyMsg(null);
                 }}
                 title={
@@ -585,7 +596,7 @@ export default function MultiInstancePanel() {
                 />
                 <input
                   type="password"
-                  placeholder="Senha (opcional)"
+                  placeholder={proxyModal.hasPassword ? 'Já cadastrada (deixe em branco p/ manter)' : 'Senha (opcional)'}
                   value={proxyForm.password}
                   onChange={(e) => setProxyForm({ ...proxyForm, password: e.target.value })}
                   className="flex-1 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
