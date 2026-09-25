@@ -197,8 +197,8 @@ export default function MultiInstancePanel() {
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 mb-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center">
             <Smartphone className="w-4 h-4" />
@@ -314,7 +314,7 @@ export default function MultiInstancePanel() {
           return (
             <div
               key={i.instanceName}
-              className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+              className={`flex flex-wrap items-center gap-2 sm:gap-3 p-3 rounded-xl border transition-colors ${
                 isSel ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200 bg-white'
               }`}
             >
@@ -373,7 +373,7 @@ export default function MultiInstancePanel() {
                     : (i.cooldownMotivo === 'falhas_seguidas' ? 'RESFRIANDO' : 'PAUSA DE LOTE') + ' ⟳'}
                 </button>
               )}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-[140px] flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-slate-800 truncate">{i.label}</span>
                   {i.isDefault && (

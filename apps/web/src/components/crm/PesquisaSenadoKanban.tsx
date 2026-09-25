@@ -453,11 +453,11 @@ export default function PesquisaSenadoKanban() {
   return (
     <div className="flex flex-col h-full overflow-hidden bg-slate-50">
       {/* Top Action & Sub-Tabs Bar */}
-      <div className="px-8 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+      <div className="px-3 sm:px-8 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/80 overflow-x-auto max-w-full">
           <button
             onClick={() => setVisao('funil')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
               visao === 'funil'
                 ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60'
                 : 'text-slate-600 hover:text-slate-900'
@@ -469,7 +469,7 @@ export default function PesquisaSenadoKanban() {
 
           <button
             onClick={() => setVisao('voto1')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
               visao === 'voto1'
                 ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60'
                 : 'text-slate-600 hover:text-slate-900'
@@ -481,7 +481,7 @@ export default function PesquisaSenadoKanban() {
 
           <button
             onClick={() => setVisao('voto2')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
               visao === 'voto2'
                 ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60'
                 : 'text-slate-600 hover:text-slate-900'
@@ -493,7 +493,7 @@ export default function PesquisaSenadoKanban() {
 
           <button
             onClick={() => setVisao('geral')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
               visao === 'geral'
                 ? 'bg-white text-emerald-700 shadow-xs border border-slate-200/60'
                 : 'text-slate-600 hover:text-slate-900'
@@ -516,33 +516,36 @@ export default function PesquisaSenadoKanban() {
 
           <button
             onClick={handleExportarCSV}
-            className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+            title="Exportar CSV"
+            className="px-2 sm:px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
           >
             <Download className="w-3.5 h-3.5 text-slate-500" />
-            <span>Exportar CSV</span>
+            <span className="hidden sm:inline">Exportar CSV</span>
           </button>
 
           <button
             onClick={() => setIsExcelModalOpen(true)}
-            className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+            title="Importar Lista Excel"
+            className="px-2 sm:px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Importar Lista Excel</span>
+            <span className="hidden sm:inline">Importar Lista Excel</span>
           </button>
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+            title="Disparo Individual"
+            className="px-2 sm:px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>Disparo Individual</span>
+            <span className="hidden sm:inline">Disparo Individual</span>
           </button>
         </div>
       </div>
 
       {/* BANNER DE FILA DE DISPARO ANTI-BAN ATIVA */}
       {estadoDisparador && estadoDisparador.total > 0 && (
-        <div className="px-8 py-2.5 bg-emerald-50 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="px-3 sm:px-8 py-2.5 bg-emerald-50 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-bold text-emerald-800">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -614,7 +617,7 @@ export default function PesquisaSenadoKanban() {
       )}
 
       {/* Hero KPIs Bar da Pesquisa — agora com card exclusivo de Falhas */}
-      <div className="px-8 py-3 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-3 shrink-0">
+      <div className="px-3 sm:px-8 py-3 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 shrink-0">
         <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
           <div className="flex items-center justify-between text-xs text-slate-500 mb-0.5">
             <span className="font-medium">Total de Contatos Disparados</span>
@@ -689,7 +692,7 @@ export default function PesquisaSenadoKanban() {
       </div>
 
       {/* Main Kanban Content Area */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
+      <div className="flex-1 overflow-x-auto overflow-y-hidden p-3 sm:p-6">
         {/* 1. VISÃO FUNIL DE COLETA */}
         {visao === 'funil' && (
           <div className="flex gap-4 h-full min-w-max pb-2">
@@ -1281,7 +1284,7 @@ export default function PesquisaSenadoKanban() {
             </div>
 
             {/* Lista de Falhas */}
-            <div className="p-6 overflow-y-auto flex-1">
+            <div className="p-3 sm:p-6 overflow-y-auto flex-1">
               {falhasList.length === 0 ? (
                 <div className="py-12 text-center">
                   <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
@@ -1291,8 +1294,8 @@ export default function PesquisaSenadoKanban() {
                   </p>
                 </div>
               ) : (
-                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-                  <table className="w-full text-xs text-left">
+                <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-xs">
+                  <table className="w-full text-xs text-left min-w-[640px]">
                     <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase font-semibold text-[10px] tracking-wider">
                       <tr>
                         <th className="p-3">Eleitor</th>
@@ -1352,7 +1355,7 @@ export default function PesquisaSenadoKanban() {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs">
+            <div className="px-3 sm:px-6 py-3 border-t border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-slate-400">
                 Mostrando {falhasList.length} números com falha
               </span>

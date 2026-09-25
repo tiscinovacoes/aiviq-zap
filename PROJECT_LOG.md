@@ -1326,3 +1326,26 @@ Operador pediu para poder desativar o resfriamento. Confirmado o escopo: um bot�
 - ✅ Ação `liberar_cooldown` em `/api/instances/[name]`.
 - ✅ Painel: o badge "RESFRIANDO"/"PAUSA DE LOTE" agora é clicável — libera na hora.
 - ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 25/09/2026 — Só Conta Quem Recebeu de Verdade + Responsividade Mobile (v3.8.0)
+
+### Claude
+Três pedidos do operador. Dois implementados, um avaliado (risco demais para implementar agora).
+
+**1. Falhas não contam mais como "disparado"**
+- 🐞 Causa raiz: `dispararContato()` criava a sessão da pesquisa (`pesquisa_senado`, etapa='disparado') **antes** de tentar enviar a mensagem. Se o envio falhasse (número inválido, etc.), a sessão ficava registrada como "disparado" mesmo a mensagem nunca tendo saído — inflava a coluna 1 do funil e os KPIs.
+- ✅ Reordenado: a sessão só é criada **depois** do envio confirmado (`r.ok`).
+- ✅ `getTelefonesComFalhaSemEnvio()` (`dispatchQueue.ts`): segunda camada de proteção — telefones que só têm registro de erro em `dispatch_queue` (nenhum "enviado"). `aplicarRecorteFunil()` agora é assíncrona e usa isso para excluir do funil qualquer contato etapa='disparado' que nunca recebeu de fato, corrigindo também os 35 contatos já contaminados no banco (validado via SQL direto: `35` órfãos pós-19/09).
+- Um contato com pelo menos 1 envio confirmado nunca é excluído, mesmo que outra tentativa dele tenha falhado.
+
+**2. Responsividade mobile**
+- `PesquisaSenadoKanban.tsx`: padding lateral responsivo (`px-3 sm:px-8`) nas 4 faixas horizontais; abas de visão com `overflow-x-auto` e padding menor; botões de ação (Exportar/Importar/Disparo) escondem o texto em mobile (`hidden sm:inline`), mantendo ícone + title; tabela de falhas com `overflow-x-auto` e `min-w-[640px]` para não estourar o modal.
+- `MultiInstancePanel.tsx`: card de cada chip com `flex-wrap` (antes travava numa linha só e cortava em telas pequenas); header da seção também com `flex-wrap`.
+
+**3. Resposta clicável em vez de digitar** — avaliado, não implementado
+- A Evolution expõe endpoints de mensagem interativa (`sendList`/`sendButtons`), mas eles usam o protocolo Baileys (WhatsApp Web não-oficial). O WhatsApp trata mensagens interativas fora da Cloud API oficial como sinal mais forte de automação — é um vetor de detecção conhecido, e o operador já teve dois bloqueios de chip nesta mesma semana usando só texto simples. Recomendação: não implementar agora. Se quiser reconsiderar depois que o disparo estiver mais estável, dá para reavaliar com um teste controlado num único chip descartável.
+
+- ✅ Validação: `tsc --noEmit` 0 erros.

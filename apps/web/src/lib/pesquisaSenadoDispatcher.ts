@@ -93,19 +93,17 @@ async function registrarSaude(instancia: string, sucesso: boolean): Promise<void
   }
 }
 
-/** Dispara 1 contato por um chip especifico. Devolve o slot se o envio falhar. */
+/**
+ * Dispara 1 contato por um chip especifico. Devolve o slot se o envio falhar.
+ *
+ * A sessao da pesquisa (pesquisa_senado, etapa='disparado') so e criada DEPOIS
+ * do envio confirmado. Antes, a sessao nascia ANTES da tentativa de envio: um
+ * numero que nao existe (ou qualquer outra falha) ficava com etapa='disparado'
+ * no funil mesmo sem a Msg 1 ter chegado -- inflava a coluna 1 do funil e as
+ * estatisticas com contatos que nunca receberam nada.
+ */
 async function dispararContato(item: QueueItem, instancia: string): Promise<boolean> {
   try {
-    await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
-      bairro: item.bairro,
-      etapa: 'disparado',
-      instanceName: instancia,
-      voto1Id: undefined,
-      voto1Nome: undefined,
-      voto2Id: undefined,
-      voto2Nome: undefined,
-    });
-
     const msg1 = gerarMensagem1(item.name, item.phone);
     const r = await sendRealMessageDetailed(item.phone, msg1, instancia, ANTIBAN.PRESENCA_MS);
 
@@ -121,6 +119,17 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
 
     const instEnviou = r.instance || instancia;
     await markItemSent(item.id, instEnviou, r.messageId);
+
+    // So agora, com o envio CONFIRMADO, a sessao entra no funil como 'disparado'.
+    await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
+      bairro: item.bairro,
+      etapa: 'disparado',
+      instanceName: instEnviou,
+      voto1Id: undefined,
+      voto1Nome: undefined,
+      voto2Id: undefined,
+      voto2Nome: undefined,
+    });
 
     persistMessageByJid({
       phoneOrJid: item.phone,
