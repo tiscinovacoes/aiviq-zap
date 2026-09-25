@@ -1231,7 +1231,7 @@ export async function setMaturidadeChip(
  * LOTE): zera o horario de resfriamento e os contadores de falha, sem mexer
  * no relogio normal de disparo (intervalo fixo continua valendo). O operador
  * usa isto quando confirma que a causa da pausa ja foi resolvida (proxy
- * corrigido, numero verificado etc.) e nao quer esperar os 90/180 min.
+ * corrigido, numero verificado etc.) e nao quer esperar os 40/180 min.
  */
 export async function liberarCooldownChip(instance: string): Promise<void> {
   if (isPlaceholderEnv()) return;
