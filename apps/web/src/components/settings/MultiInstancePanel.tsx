@@ -373,7 +373,7 @@ export default function MultiInstancePanel() {
                     : (i.cooldownMotivo === 'falhas_seguidas' ? 'RESFRIANDO' : 'PAUSA DE LOTE') + ' ⟳'}
                 </button>
               )}
-              <div className="min-w-[140px] flex-1">
+              <div className="w-full sm:w-auto sm:min-w-[140px] sm:flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-slate-800 truncate">{i.label}</span>
                   {i.isDefault && (

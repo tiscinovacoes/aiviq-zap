@@ -1,11 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Clock, CheckCircle2, ChevronDown, UserCheck } from 'lucide-react';
+import { Clock, CheckCircle2, ChevronDown, UserCheck, ArrowLeft } from 'lucide-react';
 import { useInboxStore } from '@/store/useInboxStore';
 
 export default function ChatHeader() {
-  const { activeConversation, resolveConversation } = useInboxStore();
+  const { activeConversation, resolveConversation, clearActiveConversation } = useInboxStore();
 
   if (!activeConversation) return null;
 
@@ -15,6 +15,15 @@ export default function ChatHeader() {
     <header className="h-16 px-6 border-b border-slate-200 flex items-center justify-between bg-white z-10">
       {/* Left: Contact Info */}
       <div className="flex items-center gap-3">
+        {/* Voltar para a lista de conversas: só em mobile, onde lista e chat
+            ocupam a tela inteira alternadamente (não cabem lado a lado). */}
+        <button
+          onClick={clearActiveConversation}
+          className="md:hidden -ml-1 w-8 h-8 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center shrink-0"
+          title="Voltar para as conversas"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
         <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center font-bold text-sm text-emerald-700">
           {contact?.name.slice(0, 2).toUpperCase() || 'CX'}
         </div>

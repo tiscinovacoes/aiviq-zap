@@ -63,7 +63,9 @@ export default function NavigationRail() {
   ];
 
   return (
-    <nav className="w-[72px] h-full bg-white border-r border-[#E5E7EB] flex flex-col items-center justify-between py-5 z-20 shrink-0 select-none">
+    // Só em telas médias+: em mobile a navegação vira MobileBottomNav (barra
+    // fixa embaixo), para não roubar largura do conteúdo.
+    <nav className="hidden md:flex w-[72px] h-full bg-white border-r border-[#E5E7EB] flex-col items-center justify-between py-5 z-20 shrink-0 select-none">
       <div className="flex flex-col items-center gap-6">
         {/* Brand Logo - AIVIQ-ZAP */}
         <Link

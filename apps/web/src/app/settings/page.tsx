@@ -35,6 +35,7 @@ import {
   Key,
 } from 'lucide-react';
 import NavigationRail from '@/components/layout/NavigationRail';
+import MobileBottomNav from '@/components/layout/MobileBottomNav';
 import MultiInstancePanel from '@/components/settings/MultiInstancePanel';
 
 interface TeamMember {
@@ -398,11 +399,12 @@ export default function SettingsPage() {
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
       {/* 1. Barra Lateral de Navegação Global (72px) */}
       <NavigationRail />
+      <MobileBottomNav />
 
       {/* 2. Conteúdo Principal da Central de Configurações */}
-      <main className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden min-w-0">
+      <main className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden min-w-0 pb-16 md:pb-0">
         {/* Top Header */}
-        <header className="h-16 px-8 border-b border-slate-200 flex items-center justify-between bg-white/95 backdrop-blur-md shrink-0">
+        <header className="h-16 px-3 sm:px-8 border-b border-slate-200 flex items-center justify-between bg-white/95 backdrop-blur-md shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center shadow-xs">
               <SettingsIcon className="w-5 h-5" />
@@ -438,10 +440,11 @@ export default function SettingsPage() {
           )}
         </header>
 
-        {/* Layout da Tela de Configurações */}
-        <div className="flex-1 flex min-h-0 overflow-hidden">
+        {/* Layout da Tela de Configurações: coluna em mobile (abas em cima,
+            conteúdo embaixo), linha em desktop (sidebar à esquerda). */}
+        <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
           {/* Sub Navigation Lateral das Configurações */}
-          <aside className="w-64 border-r border-slate-200 bg-white p-4 space-y-1.5 shrink-0 overflow-y-auto">
+          <aside className="hidden md:block w-64 border-r border-slate-200 bg-white p-4 space-y-1.5 shrink-0 overflow-y-auto">
             <div className="px-3 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
               Módulos de Configuração
             </div>
@@ -522,8 +525,37 @@ export default function SettingsPage() {
             </button>
           </aside>
 
+          {/* Abas dos módulos em mobile: a sidebar de 256px vira uma barra
+              horizontal rolável no topo, para o conteúdo usar a tela toda. */}
+          <div className="md:hidden border-b border-slate-200 bg-white shrink-0 overflow-x-auto flex gap-1.5 px-3 py-2">
+            {([
+              { id: 'whatsapp', label: 'WhatsApp', icon: Smartphone },
+              { id: 'organization', label: 'Organização', icon: Building },
+              { id: 'team', label: 'Equipe', icon: Users },
+              { id: 'ai', label: 'IA', icon: Sparkles },
+              { id: 'notifications', label: 'Alertas', icon: Bell },
+            ] as const).map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    activeTab === tab.id
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
+                      : 'text-slate-600 bg-slate-50 border border-transparent'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Painel Central com Scroll */}
-          <div className="flex-1 overflow-y-auto p-8 space-y-6 max-w-5xl">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-8 space-y-6 max-w-5xl">
             {/* ================= ABA 1: CANAIS DE WHATSAPP ================= */}
             {activeTab === 'whatsapp' && (
               <div className="space-y-6">
