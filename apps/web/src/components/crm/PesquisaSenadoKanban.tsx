@@ -377,12 +377,13 @@ export default function PesquisaSenadoKanban() {
 
   const handleExportarFalhasCSV = () => {
     if (falhasList.length === 0) return;
-    const headers = ['Telefone', 'Nome', 'Chip que tentou', 'Motivo da Falha', 'Tentativas', 'Data'];
+    const headers = ['Telefone', 'Nome', 'Chip que tentou', 'Motivo da Falha', 'Situação', 'Tentativas', 'Data'];
     const rows = falhasList.map((f) => [
       `"${f.phone}"`,
       `"${(f.name || '').replace(/"/g, '""')}"`,
       `"${(f.instanceName || 'não registrado').replace(/"/g, '""')}"`,
       `"${(f.error || 'Falha de entrega').replace(/"/g, '""')}"`,
+      `"${f.definitivo ? 'Definitiva' : 'Em retentativa'}"`,
       f.attempts || 1,
       `"${f.createdAt || ''}"`,
     ]);
@@ -439,6 +440,14 @@ export default function PesquisaSenadoKanban() {
     link.click();
     document.body.removeChild(link);
   };
+
+  // "Falhas no Disparo" = falhas definitivas (3 tentativas, status 'erro') +
+  // falhas em retentativa automatica (ja erraram ao menos 1x e vao tentar de
+  // novo sozinhas). Antes o card e o modal so contavam as definitivas, entao
+  // uma falha que tinha acabado de acontecer ficava fora do KPI ate a 3a
+  // tentativa -- mesmo com o motivo do erro ja gravado no banco.
+  const totalFalhasDisparo = (estadoDisparador?.erros || 0) + (estadoDisparador?.emRetentativa || 0);
+  const totalFalhasDefinitivas = falhasList.filter((f) => f.definitivo).length;
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-slate-50">
@@ -556,7 +565,7 @@ export default function PesquisaSenadoKanban() {
 
             <span className="text-emerald-700">
               Progresso: <strong>{estadoDisparador.enviados}</strong> de <strong>{estadoDisparador.total}</strong> disparados
-              {estadoDisparador.erros > 0 && ` (${estadoDisparador.erros} falhas)`}
+              {totalFalhasDisparo > 0 && ` (${totalFalhasDisparo} falhas)`}
             </span>
 
             {estadoDisparador.ativo && estadoDisparador.segundosRestantesProximo > 0 && (
@@ -645,11 +654,11 @@ export default function PesquisaSenadoKanban() {
           <p className="text-[11px] text-slate-400">Aguardando resposta</p>
         </div>
 
-        {/* KPI EXCLUSIVO DE FALHAS COM BOTÃO DE VERIFICAÇÃO */}
+        {/* KPI EXCLUSIVO DE FALHAS COM BOTÃO DE VERIFICAÇÃO — conta falhas definitivas (3 tentativas) + as que ja falharam e seguem em retentativa automatica */}
         <div
           onClick={() => setIsFalhasModalOpen(true)}
           className={`p-3 border rounded-xl cursor-pointer transition-all ${
-            (estadoDisparador?.erros || 0) > 0
+            totalFalhasDisparo > 0
               ? 'bg-rose-50/70 border-rose-200 hover:bg-rose-100/60 shadow-xs'
               : 'bg-slate-50 border-slate-200/80 hover:bg-slate-100/80'
           }`}
@@ -657,11 +666,11 @@ export default function PesquisaSenadoKanban() {
         >
           <div className="flex items-center justify-between text-xs text-slate-500 mb-0.5">
             <span className="font-semibold text-rose-800">Falhas no Disparo</span>
-            <AlertTriangle className={`w-4 h-4 ${(estadoDisparador?.erros || 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`} />
+            <AlertTriangle className={`w-4 h-4 ${totalFalhasDisparo > 0 ? 'text-rose-600' : 'text-slate-400'}`} />
           </div>
           <div className="flex items-baseline justify-between">
-            <p className="text-xl font-bold text-rose-700">{estadoDisparador?.erros || 0}</p>
-            {(estadoDisparador?.erros || 0) > 0 && (
+            <p className="text-xl font-bold text-rose-700">{totalFalhasDisparo}</p>
+            {totalFalhasDisparo > 0 && (
               <span className="text-[10px] font-semibold text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded border border-rose-200 flex items-center gap-0.5">
                 Verificar ➔
               </span>
@@ -671,7 +680,7 @@ export default function PesquisaSenadoKanban() {
             Números s/ WhatsApp ou erro
             {(estadoDisparador?.emRetentativa || 0) > 0 && (
               <span className="block text-amber-700">
-                + {estadoDisparador?.emRetentativa} em retentativa
+                {estadoDisparador?.erros || 0} definitivas · {estadoDisparador?.emRetentativa} em retentativa
               </span>
             )}
           </p>
@@ -1222,7 +1231,7 @@ export default function PesquisaSenadoKanban() {
                     </span>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Contatos que falharam ao enviar WhatsApp (número inexistente, sem WhatsApp ou timeout)
+                    Contatos que falharam ao enviar WhatsApp (número inexistente, sem WhatsApp ou timeout) — inclui quem já falhou e segue em retentativa automática
                   </p>
                 </div>
               </div>
@@ -1252,7 +1261,12 @@ export default function PesquisaSenadoKanban() {
                 <button
                   type="button"
                   onClick={handleReenfileirarFalhas}
-                  disabled={falhasList.length === 0 || reenfileirandoFalhas}
+                  disabled={totalFalhasDefinitivas === 0 || reenfileirandoFalhas}
+                  title={
+                    totalFalhasDefinitivas === 0
+                      ? 'Ninguém desistiu ainda — as falhas atuais estão em retentativa automática'
+                      : `Re-enfileira as ${totalFalhasDefinitivas} falhas que já desistiram após 3 tentativas`
+                  }
                   className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-xs"
                 >
                   {reenfileirandoFalhas ? (
@@ -1289,6 +1303,7 @@ export default function PesquisaSenadoKanban() {
                         <th className="p-3">Telefone</th>
                         <th className="p-3">Chip que tentou</th>
                         <th className="p-3">Motivo da Falha</th>
+                        <th className="p-3 text-center">Situação</th>
                         <th className="p-3 text-center">Tentativas</th>
                         <th className="p-3 text-right">Ação</th>
                       </tr>
@@ -1318,6 +1333,20 @@ export default function PesquisaSenadoKanban() {
                                 {falha.error || 'Número não possui WhatsApp ou rejeitado pela API'}
                               </span>
                             </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            {falha.definitivo ? (
+                              <span className="inline-flex items-center gap-1 bg-rose-100 border border-rose-200 text-rose-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide">
+                                Definitiva
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-1 bg-amber-100 border border-amber-200 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
+                                title="Já falhou pelo menos 1x; o sistema tenta de novo automaticamente até completar 3 tentativas"
+                              >
+                                Em retentativa
+                              </span>
+                            )}
                           </td>
                           <td className="p-3 text-center text-slate-500 font-mono">
                             {falha.attempts || 1}

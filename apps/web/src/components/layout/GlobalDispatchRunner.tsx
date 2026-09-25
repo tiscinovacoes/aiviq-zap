@@ -236,8 +236,10 @@ export default function GlobalDispatchRunner() {
                 <span className="text-emerald-400 font-semibold">
                   {status.enviados} de {status.total} enviados
                 </span>
-                {status.erros > 0 && (
-                  <span className="text-rose-400 text-[11px]">({status.erros} falhas)</span>
+                {status.erros + (status.emRetentativa || 0) > 0 && (
+                  <span className="text-rose-400 text-[11px]">
+                    ({status.erros + (status.emRetentativa || 0)} falhas)
+                  </span>
                 )}
                 {status.pausado ? (
                   <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold text-[10px] border border-amber-500/30">

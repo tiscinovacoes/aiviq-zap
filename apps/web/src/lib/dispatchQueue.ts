@@ -477,12 +477,18 @@ export interface FailedQueueItem {
   attempts: number;
   instanceName?: string;
   createdAt?: string;
+  /** true = desistiu apos 3 tentativas (status 'erro'); false = ja falhou ao
+   *  menos 1x mas segue em retentativa automatica (status 'pendente'). Antes
+   *  esse segundo grupo nao aparecia na auditoria nem no KPI -- so virava
+   *  visivel na 3a tentativa, entao uma falha real podia ficar 1-2 ciclos
+   *  "invisivel" mesmo com o motivo do erro ja gravado no banco. */
+  definitivo: boolean;
 }
 
 export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
   if (isPlaceholderEnv()) {
     return (global.__aiviq_queue || [])
-      .filter((i) => i.status === 'erro')
+      .filter((i) => i.status === 'erro' || (i.status === 'pendente' && i.attempts > 0))
       .slice(0, limit)
       .map((i) => ({
         id: i.id,
@@ -491,15 +497,19 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
         bairro: i.bairro,
         error: 'Falha no envio WhatsApp',
         attempts: i.attempts,
+        definitivo: i.status === 'erro',
       }));
   }
   const ctx = await getServiceContext();
   if (!ctx) return [];
   const { data } = await ctx.db
     .from('dispatch_queue')
-    .select('id, phone, name, bairro, error, attempts, instance_name, created_at')
+    .select('id, phone, name, bairro, error, attempts, status, instance_name, created_at')
     .eq('organization_id', ctx.organizationId)
-    .eq('status', 'erro')
+    // Inclui tanto quem ja desistiu (3 tentativas, 'erro') quanto quem ja
+    // falhou ao menos 1x e segue 'pendente' aguardando a proxima retentativa.
+    .or('status.eq.erro,and(status.eq.pendente,attempts.gt.0)')
+    .order('attempts', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -512,6 +522,7 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
     instanceName: r.instance_name || undefined,
     attempts: r.attempts || 1,
     createdAt: r.created_at,
+    definitivo: r.status === 'erro',
   }));
 }
 
