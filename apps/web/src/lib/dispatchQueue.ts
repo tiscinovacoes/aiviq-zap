@@ -892,12 +892,16 @@ export async function prepararDisparoSimultaneo(): Promise<{
       .eq('status', 'pendente');
   }
 
-  // 3. Re-enfileira os contatos que estavam com status 'erro'
+  // 3. Re-enfileira os contatos que estavam com status 'erro' -- exceto os
+  //    marcados como status_definitivo (banco de erros): esses falharam para
+  //    sempre e "Sincronizar Chips"/"Retomar" não pode reativá-los, senão
+  //    desfaz a proteção anti-ban inteira num único clique.
   const { data: erros } = await ctx.db
     .from('dispatch_queue')
     .update({ status: 'pendente', attempts: 0, claimed_at: null, error: null })
     .eq('organization_id', ctx.organizationId)
     .eq('status', 'erro')
+    .eq('status_definitivo', false)
     .select('id');
 
   // 4. Re-enfileira os contatos que ficaram como 'enviado' pelas instâncias
