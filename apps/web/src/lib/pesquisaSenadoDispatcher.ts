@@ -120,7 +120,10 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
     const instEnviou = r.instance || instancia;
     await markItemSent(item.id, instEnviou, r.messageId);
 
-    // So agora, com o envio CONFIRMADO, a sessao entra no funil como 'disparado'.
+    // So agora, com o envio CONFIRMADO, a sessao entra no funil como
+    // 'disparado' -- e essa mesma sessao que o disparo individual usa para
+    // bloquear reenvio (ver route.ts), entao registra-la antes do envio
+    // deixava tanto o funil quanto aquele bloqueio errados numa falha.
     await createOrUpdateSessionByPhone(item.phone, item.name || `Eleitor ${item.phone.slice(-4)}`, {
       bairro: item.bairro,
       etapa: 'disparado',
