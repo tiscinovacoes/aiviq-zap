@@ -43,6 +43,15 @@ import { useInstanceStore } from '@/store/useInstanceStore';
 
 type VisaoModo = 'funil' | 'voto1' | 'voto2' | 'geral';
 
+/** Mais recente primeiro (por última atividade) -- listas de disparo mudam de
+ *  tamanho o dia inteiro, e quem acabou de entrar/mudar de etapa é o que o
+ *  operador mais precisa ver sem ter que rolar a coluna inteira. */
+function porMaisRecente(sessions: RespostaEleitor[]): RespostaEleitor[] {
+  return [...sessions].sort(
+    (a, b) => new Date(b.lastMessageAt || b.createdAt).getTime() - new Date(a.lastMessageAt || a.createdAt).getTime()
+  );
+}
+
 /** Votos por id de candidato — para mostrar também quem saiu da lista mas tem voto. */
 function contarVotos(sessions: RespostaEleitor[], campo: 'voto1Id' | 'voto2Id'): Record<number, number> {
   const out: Record<number, number> = {};
@@ -830,28 +839,28 @@ export default function PesquisaSenadoKanban() {
                 id: 'disparado',
                 label: '1. Disparado',
                 desc: 'Aguardando resposta à saudação (Msg 1) · desde 19/09',
-                items: sessions.filter((s) => s.etapa === 'disparado'),
+                items: porMaisRecente(sessions.filter((s) => s.etapa === 'disparado')),
                 cor: 'border-t-amber-500',
               },
               {
                 id: 'aguardando_voto1',
                 label: '2. Respondeu Saudação',
                 desc: 'Aguardando escolha do 1º voto (Msg 3)',
-                items: sessions.filter((s) => s.etapa === 'aguardando_voto1'),
+                items: porMaisRecente(sessions.filter((s) => s.etapa === 'aguardando_voto1')),
                 cor: 'border-t-blue-500',
               },
               {
                 id: 'aguardando_voto2',
                 label: '3. 1º Voto Registrado',
                 desc: 'Aguardando escolha do 2º voto (Msg 4)',
-                items: sessions.filter((s) => s.etapa === 'aguardando_voto2'),
+                items: porMaisRecente(sessions.filter((s) => s.etapa === 'aguardando_voto2')),
                 cor: 'border-t-purple-500',
               },
               {
                 id: 'concluido',
                 label: '4. Concluído',
                 desc: 'Ambos votos computados (Msg 5 enviada)',
-                items: sessions.filter((s) => s.etapa === 'concluido'),
+                items: porMaisRecente(sessions.filter((s) => s.etapa === 'concluido')),
                 cor: 'border-t-emerald-500',
               },
             ].map((col) => (
@@ -955,7 +964,7 @@ export default function PesquisaSenadoKanban() {
         {visao === 'voto1' && (
           <div className="flex gap-4 h-full min-w-max pb-2">
             {candidatosParaExibir(contarVotos(sessions, 'voto1Id')).map((cand) => {
-              const eleitores = sessions.filter((s) => s.voto1Id === cand.id);
+              const eleitores = porMaisRecente(sessions.filter((s) => s.voto1Id === cand.id));
               const totalConcluidos = stats?.totalConcluidos || 1;
               const percentual = totalConcluidos > 0 ? ((eleitores.length / totalConcluidos) * 100).toFixed(1) : '0';
 
@@ -1020,7 +1029,7 @@ export default function PesquisaSenadoKanban() {
         {visao === 'voto2' && (
           <div className="flex gap-4 h-full min-w-max pb-2">
             {candidatosParaExibir(contarVotos(sessions, 'voto2Id')).map((cand) => {
-              const eleitores = sessions.filter((s) => s.voto2Id === cand.id);
+              const eleitores = porMaisRecente(sessions.filter((s) => s.voto2Id === cand.id));
               const totalConcluidos = stats?.totalConcluidos || 1;
               const percentual = totalConcluidos > 0 ? ((eleitores.length / totalConcluidos) * 100).toFixed(1) : '0';
 
