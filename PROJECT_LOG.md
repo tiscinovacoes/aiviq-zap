@@ -1381,3 +1381,16 @@ Dois pedidos do operador.
 - Botão "Relatório PDF" no painel, ao lado de "Exportar CSV".
 - 🐞 **Achado técnico durante a implementação**: `@react-pdf/renderer` declara seus tipos com `export =` (estilo CommonJS) — importar com named imports (`import { Document, ... }`) compila mas o TypeScript confunde os tipos dos componentes com `React.Component` de forma incompatível. E o inverso também quebra: importar como `default` (`import ReactPDF from '...'`) compila certinho nos tipos, mas em **runtime** o objeto `default` não tem `renderToBuffer` (só existe nos named exports do módulo). Solução: `import * as ReactPDF from '@react-pdf/renderer'` (preserva os named exports funcionais em runtime) + cast `as unknown as ComponentType<...>` nos componentes visuais para contornar a incompatibilidade de tipos.
 - ✅ Validação: `tsc --noEmit` 0 erros; `next build` de produção completo com sucesso; testado via `next dev` real (não só tsx) — PDF de 6.5KB gerado com HTTP 200, layout conferido visualmente.
+
+
+---
+
+## DATA: 25/09/2026 — Relatório PDF Falhava em Produção (v3.9.1)
+
+### Claude
+Operador reportou "Não foi possível gerar o relatório em PDF" em produção, apesar de funcionar localmente. Causa raiz encontrada com trace do build da Vercel (sem acesso a runtime logs neste projeto): `pdfkit` (usado pelo `@react-pdf/renderer` para as fontes padrão) carrega os arquivos de métrica `.afm` via `fs.readFileSync` em runtime — o rastreador de arquivos da Vercel só segue `require`/`import` estáticos, então esses arquivos ficavam de fora do pacote da função. Funcionava local (node_modules inteiro em disco) e quebrava isolado em produção.
+
+Agravante: é um monorepo com workspaces — `pdfkit` fica hoisted no `node_modules` da RAIZ, não em `apps/web/node_modules`, então o primeiro glob relativo (`./node_modules/...`) não batia em lugar nenhum.
+
+- ✅ `next.config.mjs`: `experimental.outputFileTracingIncludes` força a inclusão de `node_modules/pdfkit/js/data/**/*` e `node_modules/@react-pdf/**/*`, com os dois caminhos (`./` e `../../`) para cobrir qualquer topologia de instalação.
+- ✅ Validação: build de produção confirmado com `.nft.json` da rota — antes 0 arquivos `.afm` no pacote, depois 14 (todas as fontes padrão do pdfkit).
