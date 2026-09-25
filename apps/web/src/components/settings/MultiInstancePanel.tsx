@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -13,11 +13,8 @@ import {
   Loader2,
   Send,
   Globe,
-<<<<<<< Updated upstream
   HelpCircle,
-=======
   Archive,
->>>>>>> Stashed changes
 } from 'lucide-react';
 import { useInstanceStore } from '@/store/useInstanceStore';
 
@@ -38,16 +35,13 @@ export default function MultiInstancePanel() {
   const { instances, selected, fetchInstances, setSelected, setDispatchEnabled, setMaturidade } =
     useInstanceStore();
   const repararWebhook = useInstanceStore((s) => s.repararWebhook);
-<<<<<<< Updated upstream
   const setProxy = useInstanceStore((s) => s.setProxy);
   const removeProxy = useInstanceStore((s) => s.removeProxy);
   const liberarCooldown = useInstanceStore((s) => s.liberarCooldown);
-=======
   const poolResumo = useInstanceStore((s) => s.poolResumo);
   const verificarIp = useInstanceStore((s) => s.verificarIp);
   const aposentar = useInstanceStore((s) => s.aposentar);
   const fixarIp = useInstanceStore((s) => s.fixarIp);
->>>>>>> Stashed changes
 
   const [showAdd, setShowAdd] = useState(false);
   const [showLegenda, setShowLegenda] = useState(false);
@@ -260,11 +254,8 @@ export default function MultiInstancePanel() {
           <div>
             <h3 className="text-sm font-bold text-slate-900">Números de WhatsApp (Multi-instância)</h3>
             <p className="text-[11px] text-slate-500">
-<<<<<<< Updated upstream
               Conecte vários celulares. A lista é <strong className="text-slate-700">dividida entre todos os números marcados em &quot;No disparo&quot;</strong> na importação — 1 lead a cada 5 min em cada (tempo fixo, das 8h às 21h), teto de 150/dia por número. O selo ATIVO é outra coisa: define só qual número o Inbox e os Contatos exibem.
-=======
               Conecte vários celulares. A lista é <strong className="text-slate-700">dividida entre todos os números marcados em &quot;No disparo&quot;</strong> na importação — 1 lead por minuto em cada, teto de 250/dia por número. O selo ATIVO é outra coisa: define só qual número o Inbox e os Contatos exibem.
->>>>>>> Stashed changes
             </p>
           </div>
         </div>

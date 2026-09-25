@@ -1,10 +1,7 @@
-import { Contact, Conversation, Message } from '@/types';
+﻿import { Contact, Conversation, Message } from '@/types';
 import { getDefaultInstanceName, resolveInstanceName } from '@/lib/instanceRegistry';
-<<<<<<< Updated upstream
 import { mapConnectionStatus, precisaConfirmar } from '@/lib/instanceStatus';
-=======
 import { proxyKey as chaveDoProxy } from '@/lib/proxyPool';
->>>>>>> Stashed changes
 
 // CR-004 T1: sem default de credencial/URL no código — exige env, falha fechada.
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
@@ -834,7 +831,6 @@ export async function configurarWebhookInstancia(
   return { ok: false, error: 'A Evolution recusou a configuração do webhook.' };
 }
 
-<<<<<<< Updated upstream
 // ============================================================================
 // PROXY POR INSTÂNCIA
 //
@@ -926,7 +922,6 @@ export async function configurarProxyInstancia(
     }
     return { ok: false, error: e.message || 'Erro de conexão ao configurar o proxy.' };
   }
-=======
 /**
  * Garante que o webhook da instancia aponta para a URL/token ATUAIS. Chamado a
  * cada QR gerado e a cada CONNECTION_UPDATE=open: em 21/09 a `aiviq_inbox_01`
@@ -946,5 +941,4 @@ export async function garantirWebhookAtual(
   }
   const r = await configurarWebhookInstancia(instanceName, esperado, origemDetectada);
   return { ok: r.ok, alterado: r.ok, url: r.url, error: r.error };
->>>>>>> Stashed changes
 }

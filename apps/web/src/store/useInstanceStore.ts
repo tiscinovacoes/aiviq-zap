@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 
 export interface InstanceView {
   instanceName: string;
@@ -69,14 +69,12 @@ interface InstanceState {
   setDispatchEnabled: (instanceName: string, enabled: boolean) => Promise<void>;
   setMaturidade: (instanceName: string, maturidade: 'novo' | 'maduro') => Promise<void>;
   repararWebhook: (instanceName: string) => Promise<boolean>;
-<<<<<<< Updated upstream
   setProxy: (
     instanceName: string,
     config: { host: string; port: string; protocol?: string; username?: string; password?: string }
   ) => Promise<{ ok: boolean; message?: string }>;
   removeProxy: (instanceName: string) => Promise<{ ok: boolean; message?: string }>;
   liberarCooldown: (instanceName: string) => Promise<boolean>;
-=======
   /** Mede o IP de saida do chip (Brasil, sem repeticao, sem datacenter). */
   verificarIp: (instanceName: string) => Promise<AcaoResultado>;
   /** Aposenta o chip (banido/perdido): apaga, devolve a fila e poe o IP em quarentena. */
@@ -100,7 +98,6 @@ async function postarAcao(instanceName: string, corpo: Record<string, unknown>):
   } catch {
     return { ok: false, message: 'Erro de rede.' };
   }
->>>>>>> Stashed changes
 }
 
 export const useInstanceStore = create<InstanceState>((set, get) => ({
