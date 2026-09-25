@@ -20,15 +20,18 @@ export { spin, isOptOut } from '@/lib/spintax';
 // Perfil pós-ban (23/09/2026), definido pelo operador:
 //   - teto de 150 mensagens por CHIP por dia;
 //   - janela de trabalho das 8h às 21h (fuso MS);
-//   - TEMPO FIXO por chip: o intervalo de cada chip é a janela dividida pelo
-//     teto dele, então as mensagens saem espalhadas pelo dia inteiro, sem
-//     rajada e sem silêncio no fim da tarde.
+//   - TEMPO por chip: o intervalo de cada chip é a janela dividida pelo teto
+//     dele, então as mensagens saem espalhadas pelo dia inteiro, sem rajada
+//     e sem silêncio no fim da tarde. Não é cravado: varia ±25s a cada
+//     disparo (ver intervaloFixoDoChipSegundos) para não bater sempre no
+//     mesmo número redondo, que sozinho já é um padrão mecânico.
 //
 // Conta para um chip de 150/dia:
 //   janela útil = 13h (780 min) - 30 min de margem = 750 min
-//   750 min / 150 = 5 min cravados entre um envio e outro do MESMO chip.
-// Chip em warm-up (teto menor) ganha intervalo proporcionalmente maior:
-// 30/dia -> 25 min; 50/dia -> 15 min; ...
+//   750 min / 150 = 300s (5 min) de BASE entre um envio e outro do MESMO
+//   chip, sorteado entre 275s e 325s a cada vez.
+// Chip em warm-up (teto menor) ganha intervalo base proporcionalmente maior:
+// 30/dia -> ~25 min; 50/dia -> ~15 min; ... (mesmo ±25s de jitter)
 //
 // Os chips também são ESCALONADOS entre si (ver intervaloEntreChipsSegundos):
 // o pool nunca deixa 2 disparos (de chips diferentes) saírem no mesmo
@@ -81,12 +84,19 @@ function janelaUtilMin(): number {
 }
 
 /**
- * Intervalo FIXO entre dois envios do MESMO chip: janela útil / teto do dia.
- * 150/dia -> 300s (5 min). Chip em warm-up (teto menor) -> intervalo maior.
+ * Intervalo entre dois envios do MESMO chip: janela útil / teto do dia, com
+ * jitter de ±25s. 150/dia -> base 300s (5 min), sorteado entre 275s e 325s a
+ * cada vez que o intervalo é calculado (ou seja, a cada disparo do chip) --
+ * 300s cravado toda vez é, sozinho, um padrão mecânico e detectável; variar
+ * em torno da mesma média humaniza sem abrir mão do teto diário (a janela
+ * útil ainda comporta o cap, só a distribuição deixa de ser um metrônomo).
+ * Chip em warm-up (teto menor) -> intervalo base maior, mesmo ±25s de jitter.
  */
 export function intervaloFixoDoChipSegundos(capDoDia: number): number {
   const cap = Math.max(1, capDoDia || ANTIBAN.DAILY_CAP);
-  return Math.floor((janelaUtilMin() * 60) / cap);
+  const base = Math.floor((janelaUtilMin() * 60) / cap);
+  const jitter = Math.floor(Math.random() * 51) - 25; // -25..+25, uniforme
+  return Math.max(1, base + jitter);
 }
 
 /**
