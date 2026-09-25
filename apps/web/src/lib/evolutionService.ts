@@ -1,4 +1,4 @@
-﻿import { Contact, Conversation, Message } from '@/types';
+import { Contact, Conversation, Message } from '@/types';
 import { getDefaultInstanceName, resolveInstanceName } from '@/lib/instanceRegistry';
 import { mapConnectionStatus, precisaConfirmar } from '@/lib/instanceStatus';
 import { proxyKey as chaveDoProxy } from '@/lib/proxyPool';
@@ -922,6 +922,8 @@ export async function configurarProxyInstancia(
     }
     return { ok: false, error: e.message || 'Erro de conexão ao configurar o proxy.' };
   }
+}
+
 /**
  * Garante que o webhook da instancia aponta para a URL/token ATUAIS. Chamado a
  * cada QR gerado e a cada CONNECTION_UPDATE=open: em 21/09 a `aiviq_inbox_01`

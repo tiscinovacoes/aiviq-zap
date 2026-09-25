@@ -1,4 +1,4 @@
-﻿import { getServiceContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
+import { getServiceContext, isPlaceholderEnv } from '@/lib/supabase/authContext';
 import { resolveInstanceName } from '@/lib/instanceRegistry';
 
 // Spintax/opt-out são puros (sem deps de servidor) e ficam em lib/spintax.ts para
@@ -52,9 +52,7 @@ export const ANTIBAN = {
   // centenas de mensagens no primeiro dia é o perfil de ban mais clássico.
   WARMUP_BASE: 30, // teto do dia 0
   WARMUP_STEP: 20, // ganho por dia até alcançar DAILY_CAP (~6 dias)
-  DAILY_CAP: 150, // teto de regime, por chip/dia
-  WARMUP_STEP: 20, // ganho por dia ate alcancar DAILY_CAP (~11 dias)
-  DAILY_CAP: 250, // teto de regime, por chip/dia (PO, 21/09/2026)
+  DAILY_CAP: 150, // teto de regime, por chip/dia (150/dia)
   HORA_INICIO: 8, // 08:00 MS
   HORA_FIM: 21, // 21:00 MS (exclusivo)
   // Folga no fim da janela para absorver atrasos do cron/ticks perdidos sem
