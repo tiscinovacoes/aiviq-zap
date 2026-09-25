@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   AlertCircle,
   AlertTriangle,
+  FileText,
 } from 'lucide-react';
 import {
   RespostaEleitor,
@@ -426,6 +427,34 @@ export default function PesquisaSenadoKanban() {
     }
   };
 
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [erroPdf, setErroPdf] = useState<string | null>(null);
+
+  const handleBaixarRelatorioPdf = async () => {
+    setGerandoPdf(true);
+    setErroPdf(null);
+    try {
+      const res = await fetch('/api/pesquisa/senado/relatorio-pdf');
+      if (!res.ok) throw new Error('Falha ao gerar o relatório');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pesquisa_senado_ms_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Erro ao baixar relatório PDF:', e);
+      setErroPdf('Não foi possível gerar o relatório em PDF. Tente novamente.');
+      setTimeout(() => setErroPdf(null), 6000);
+      window.alert('Não foi possível gerar o relatório em PDF. Tente novamente.');
+    } finally {
+      setGerandoPdf(false);
+    }
+  };
+
   const handleExportarCSV = () => {
     if (sessions.length === 0) return;
     const headers = ['ID', 'Nome', 'Telefone', 'Bairro', 'Status_Etapa', '1_Voto', '2_Voto', 'Data_Registro'];
@@ -521,6 +550,20 @@ export default function PesquisaSenadoKanban() {
           >
             <Download className="w-3.5 h-3.5 text-slate-500" />
             <span className="hidden sm:inline">Exportar CSV</span>
+          </button>
+
+          <button
+            onClick={handleBaixarRelatorioPdf}
+            disabled={gerandoPdf}
+            title="Relatório em PDF"
+            className="px-2 sm:px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs disabled:opacity-60"
+          >
+            {gerandoPdf ? (
+              <RefreshCw className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 text-rose-500" />
+            )}
+            <span className="hidden sm:inline">{gerandoPdf ? 'Gerando…' : 'Relatório PDF'}</span>
           </button>
 
           <button

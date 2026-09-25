@@ -1360,3 +1360,24 @@ Pedido do operador: tirar a legenda "Eleitores abordados desde 19/09" do KPI "To
 
 - ✅ Removida a linha de legenda; o KPI mostra só o número.
 - ✅ Validação: `tsc --noEmit` 0 erros.
+
+
+---
+
+## DATA: 25/09/2026 — Vander Loubet em 1º + Relatório em PDF (v3.9.0)
+
+### Claude
+Dois pedidos do operador.
+
+**1. Vander Loubet em 1ª opção**
+- Nova versão de lista (v3, `LISTA_VERSAO_ATUAL = 3`): Vander Loubet passa a ser a opção 1. Os demais mantêm a ordem alfabética que já tinham (Capitão Contar, Reinaldo Azambuja, Roberto Oshiro, Soraya), seguidos de Branco/nulo e Não sabe.
+- IDs continuam estáveis: votos já registrados não mudam de candidato.
+- `CANDIDATOS_LISTA_V2` preserva a numeração alfabética anterior, para ler corretamente quem já recebeu essa lista e ainda não votou — mesmo padrão usado na migração v1→v2.
+- `LISTAS_POR_VERSAO` (mapa central) substitui o if/else espalhado em `parseOpcaoVoto`/`ultimaOpcao`, facilitando futuras reordenações.
+
+**2. Relatório em PDF**
+- Novo endpoint `GET /api/pesquisa/senado/relatorio-pdf`, renderiza com `@react-pdf/renderer` (sem depender de browser headless/puppeteer — mais leve e previsível em função serverless).
+- Conteúdo: KPIs, resultado consolidado (1º+2º voto) com barras proporcionais, 1º e 2º voto lado a lado, funil de coleta, cabeçalho/rodapé com data de geração e paginação.
+- Botão "Relatório PDF" no painel, ao lado de "Exportar CSV".
+- 🐞 **Achado técnico durante a implementação**: `@react-pdf/renderer` declara seus tipos com `export =` (estilo CommonJS) — importar com named imports (`import { Document, ... }`) compila mas o TypeScript confunde os tipos dos componentes com `React.Component` de forma incompatível. E o inverso também quebra: importar como `default` (`import ReactPDF from '...'`) compila certinho nos tipos, mas em **runtime** o objeto `default` não tem `renderToBuffer` (só existe nos named exports do módulo). Solução: `import * as ReactPDF from '@react-pdf/renderer'` (preserva os named exports funcionais em runtime) + cast `as unknown as ComponentType<...>` nos componentes visuais para contornar a incompatibilidade de tipos.
+- ✅ Validação: `tsc --noEmit` 0 erros; `next build` de produção completo com sucesso; testado via `next dev` real (não só tsx) — PDF de 6.5KB gerado com HTTP 200, layout conferido visualmente.
