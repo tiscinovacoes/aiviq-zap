@@ -165,11 +165,17 @@ export function extrairPrimeiroNome(nomeCompleto?: string): string {
 // (integridade da pesquisa).
 // ------------------------------------------------------------------------------
 
-// Mensagem 1: Saudação inicial com nome e período
+// Mensagem 1: Saudação inicial (sem nome) + período do dia.
+//
+// O nome vem da base de eleitores, que casa nome x telefone -- e telefone
+// muda de dono (numero reciclado/revendido) sem a base ser atualizada. Uma
+// saudacao com o nome ERRADO ("Oi, Adriano" para quem hoje e o Tiago) soa
+// golpe/erro grosseiro e derruba a taxa de resposta mais do que uma
+// saudacao generica jamais derrubaria. `nome` fica no parametro so por
+// compatibilidade com quem chama esta funcao.
 export function gerarMensagem1(nome?: string, seed?: string): string {
-  const pNome = extrairPrimeiroNome(nome);
   const { saudacao } = getSaudacaoPeriodo();
-  const alvo = pNome ? `{Olá|Oi|Olá,|Oi,} ${pNome}` : `{Olá|Oi|Olá!|Oi!}`;
+  const alvo = `{Olá|Oi|Olá!|Oi!}`;
   return spin(`${alvo}, ${saudacao}{!|,}\n{tudo bem|como vai|espero que esteja bem|tudo certo}?`, seed);
 }
 
