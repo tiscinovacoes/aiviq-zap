@@ -31,8 +31,14 @@ export { spin, isOptOut } from '@/lib/spintax';
 // 30/dia -> 25 min; 50/dia -> 15 min; ...
 //
 // Os chips também são ESCALONADOS entre si (ver intervaloEntreChipsSegundos):
-// espaçamento fixo de 1 min entre disparos de chips diferentes, para nunca
-// sairem 2 mensagens no mesmo minuto, mesmo com varios chips no pool.
+// o pool nunca deixa 2 disparos (de chips diferentes) saírem no mesmo
+// instante, com um espaçamento que ENCOLHE conforme mais chips entram no
+// pool -- até um piso de 1 min para poucos chips -- em vez de ficar travado
+// nesse 1 min fixo pra sempre (isso capava TODO o sistema em 60 msgs/hora
+// não importa quantos chips estivessem conectados: com 150/dia por chip
+// cada um já respira 1 msg/5min sozinho, então 5+ chips sustentam mais de
+// 1 msg/min somados, e o piso fixo represava exatamente a capacidade extra
+// que motivava ligar mais chips).
 //
 // O teto continua sendo limite rígido, reservado de forma ATÔMICA a cada envio
 // (reserveDispatchSlot), e o intervalo é disputado de forma atômica por chip
@@ -54,8 +60,10 @@ export const ANTIBAN = {
   // SAÚDE DO CHIP
   // Falhas seguidas costumam ser o sinal PRECOCE de shadowban -- aparecem
   // antes de a conexão cair, então reagir só a connectionStatus chega tarde.
-  MAX_FALHAS_SEGUIDAS: 3,
-  COOLDOWN_MIN: 90, // resfriamento após as falhas seguidas
+  // Conta LEADS que desistiram de vez (esgotaram as próprias tentativas),
+  // não tentativas isoladas -- ver dispararContato() em pesquisaSenadoDispatcher.
+  MAX_FALHAS_SEGUIDAS: 2,
+  COOLDOWN_MIN: 40, // resfriamento após as falhas seguidas (decisão do operador, 25/09/2026)
   // Pausa por lote DESLIGADA: com o tempo fixo o chip já trabalha em ritmo
   // baixo o dia todo, e uma pausa extra quebraria a conta da janela (o chip
   // não fecharia as 150). Valor alto = nunca atinge o lote.
@@ -83,20 +91,35 @@ export function intervaloFixoDoChipSegundos(capDoDia: number): number {
 
 /**
  * Espaçamento mínimo entre DOIS envios quaisquer do pool, para os chips se
- * revezarem em vez de dispararem juntos. FIXO em 60s (decisão do operador,
- * 25/09/2026) -- antes era "menor intervalo fixo / nº de chips" (2 chips de
- * 5 min -> 150s; 3 chips -> 100s), mas na pratica isso so garantia um
- * espaçamento MINIMO: quando so 1 chip estava com o proprio relogio vencido
- * no momento em que o pool liberava, o disparo seguinte dele so saia 5 min
- * depois (o intervalo individual dele), dando a impressao de "5 min entre
- * chips" em vez de revezamento de verdade. 60s fixo nunca ultrapassa o
- * intervalo individual de nenhum chip (minimo real e ~100s, com warm-up de
- * 30/dia = 25min), entao continua seguro: o que protege cada numero contra
- * ban e o proprio relogio individual dele, nao este espaçamento do pool.
+ * revezarem em vez de dispararem juntos.
+ *
+ * = min(60s, menor intervalo individual do pool / nº de chips conectados).
+ *
+ * O PISO de 60s é o que resolveu o bug de 25/09/2026: com poucos chips (2-4),
+ * "intervalo / N" dava um número grande (2 chips de 5 min -> 150s) que na
+ * prática só garantia um espaçamento MÍNIMO -- se só 1 chip estivesse com o
+ * próprio relógio vencido no momento em que o pool liberava, o disparo
+ * seguinte dele só saía 5 min depois (o intervalo individual dele), dando a
+ * impressão de "5 min entre chips" em vez de revezamento de verdade. 60s
+ * fixo nunca ultrapassa o intervalo individual de nenhum chip (mínimo real é
+ * ~100s, com warm-up de 30/dia = 25min), então é seguro: quem protege cada
+ * número contra ban é o próprio relógio individual do chip, não este
+ * espaçamento do pool.
+ *
+ * Mas um piso FIXO (sem dividir por N) capava TODO o pool em 1 msg/min pra
+ * sempre, não importa quantos chips estivessem conectados: com 150/dia por
+ * chip (5 min = 300s de intervalo próprio), a partir do 6º chip conectado a
+ * soma das capacidades individuais já passa de 1 msg/min -- e o piso fixo
+ * represava exatamente essa capacidade extra, sem deixar os chips 6+
+ * disparar no ritmo que o próprio teto diário deles permitiria. Dividir por N
+ * faz o piso encolher (300s/6 chips = 50s) só quando há chips de sobra para
+ * sustentar isso, preservando o piso de 60s -- e o comportamento já testado
+ * -- para os casos de poucos chips que motivaram o valor fixo original.
  */
 export function intervaloEntreChipsSegundos(intervalosFixos: number[]): number {
   if (intervalosFixos.length === 0) return 0;
-  return Math.min(60, Math.min(...intervalosFixos));
+  const menorIntervalo = Math.min(...intervalosFixos);
+  return Math.min(60, Math.floor(menorIntervalo / intervalosFixos.length));
 }
 
 const TZ = 'America/Campo_Grande';

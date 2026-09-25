@@ -109,11 +109,16 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
 
     if (!r.ok) {
       const erroMsg = r.error || 'Falha no envio pelo WhatsApp';
-      await markItemError(item.id, item.attempts || 0, erroMsg, instancia);
+      const { failed } = await markItemError(item.id, item.attempts || 0, erroMsg, instancia);
       await releaseDispatchSlot(instancia); // nada saiu do chip: devolve a cota
-      // Numero que nao existe no WhatsApp nao e culpa do CHIP -- nao conta
-      // para o cooldown de falhas seguidas dele (90 min de resfriamento).
-      if (!ehErroPermanente(erroMsg)) await registrarSaude(instancia, false);
+      // So conta para a saude do chip quando o LEAD desiste de vez (esgotou
+      // as proprias tentativas ou levou erro permanente) -- nunca a cada
+      // tentativa isolada. Contar toda tentativa fazia um UNICO numero
+      // problematico, sozinho, gastar suas 3 retentativas (sempre no MESMO
+      // chip, que e quem o "carimbou" na importacao) e resfriar o chip por
+      // conta de 1 lead so, nao de um padrao real de recusa. Numero que nao
+      // existe no WhatsApp tambem nao conta: nao e culpa do chip.
+      if (failed && !ehErroPermanente(erroMsg)) await registrarSaude(instancia, false);
       return false;
     }
 
@@ -163,9 +168,9 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
     await registrarSaude(instancia, true);
     return true;
   } catch (err: any) {
-    await markItemError(item.id, item.attempts || 0, err?.message || 'Erro inesperado no envio', instancia);
+    const { failed } = await markItemError(item.id, item.attempts || 0, err?.message || 'Erro inesperado no envio', instancia);
     await releaseDispatchSlot(instancia);
-    await registrarSaude(instancia, false);
+    if (failed) await registrarSaude(instancia, false);
     return false;
   }
 }

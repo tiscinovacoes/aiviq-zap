@@ -65,11 +65,12 @@ export async function POST(req: NextRequest) {
       const instance = body.instance || undefined;
 
       // ============ ANTI-BAN: banco de erros bloqueia automaticamente ============
-      // Numero que ja esgotou 3 tentativas no disparo em massa (dispatch_queue
-      // status 'erro') e bloqueado aqui tambem -- mesmo que nunca tenha existido
-      // sessao de pesquisa para ele (ela so nasce em envio com sucesso). Sem
-      // isso, um numero comprovadamente sem WhatsApp voltava a ser tentado
-      // pelo formulario manual mesmo depois de bloqueado pelo disparo em lote.
+      // Numero que ja falhou 1x no disparo em massa (dispatch_queue status
+      // 'erro' -- toda falha e definitiva de primeira) e bloqueado aqui
+      // tambem -- mesmo que nunca tenha existido sessao de pesquisa para ele
+      // (ela so nasce em envio com sucesso). Sem isso, um numero
+      // comprovadamente sem WhatsApp voltava a ser tentado pelo formulario
+      // manual mesmo depois de bloqueado pelo disparo em lote.
       const erroAnterior = await getDispatchErrorForPhone(cleanPhone);
       if (erroAnterior && !body.forcar) {
         return NextResponse.json({
