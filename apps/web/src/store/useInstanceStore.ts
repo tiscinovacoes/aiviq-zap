@@ -14,6 +14,8 @@ export interface InstanceView {
   capHoje?: number;
   cooldownAte?: string;
   cooldownMotivo?: string;
+  /** Contatos pendentes carimbados para este chip agora. */
+  pendentesNaFila?: number;
   webhookOk?: boolean;
   /** true = IP dedicado configurado na Evolution para este numero. */
   proxyOk?: boolean;
