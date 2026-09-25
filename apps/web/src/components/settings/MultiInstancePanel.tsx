@@ -375,13 +375,23 @@ export default function MultiInstancePanel() {
                   disabled={busy === i.instanceName}
                   title={'Fora do disparo até ' +
                     new Date(i.cooldownAte).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) +
-                    (i.cooldownMotivo === 'falhas_seguidas' ? ' (falhas seguidas)' : ' (pausa de lote)') +
+                    (i.cooldownMotivo === 'falhas_seguidas'
+                      ? ' (falhas seguidas ao enviar)'
+                      : i.cooldownMotivo === 'entrega_recusada'
+                        ? ' (o WhatsApp recusou a entrega de 2 mensagens seguidas -- sinal serio, chip tirado do pool)'
+                        : i.cooldownMotivo?.startsWith('circuit_breaker_')
+                          ? ' (disjuntor: erros de entrega em sequência, chip tirado do pool)'
+                          : ' (pausa automática)') +
                     ' — clique para liberar agora'}
                   className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0 hover:bg-amber-200 disabled:opacity-60"
                 >
                   {busy === i.instanceName
                     ? 'LIBERANDO…'
-                    : (i.cooldownMotivo === 'falhas_seguidas' ? 'RESFRIANDO' : 'PAUSA DE LOTE') + ' ⟳'}
+                    : (i.cooldownMotivo === 'falhas_seguidas'
+                        ? 'RESFRIANDO'
+                        : i.cooldownMotivo === 'entrega_recusada' || i.cooldownMotivo?.startsWith('circuit_breaker_')
+                          ? 'ENTREGA RECUSADA'
+                          : 'PAUSA DE LOTE') + ' ⟳'}
                 </button>
               )}
               <div className="w-full sm:w-auto sm:min-w-[140px] sm:flex-1">
