@@ -98,6 +98,9 @@ export default function PesquisaSenadoKanban() {
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
   const [novoBairro, setNovoBairro] = useState('Campo Grande - MS');
+  // '' = deixa o sistema escolher (comportamento anterior). Qualquer outro
+  // valor força o disparo a sair por ESSE chip especificamente.
+  const [instanciaEscolhida, setInstanciaEscolhida] = useState('');
   const [disparando, setDisparando] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
 
@@ -256,6 +259,7 @@ export default function PesquisaSenadoKanban() {
           phone: novoTelefone.trim(),
           name: novoNome.trim(),
           bairro: novoBairro.trim(),
+          instance: instanciaEscolhida || undefined,
           sendWhatsApp: true,
         }),
       });
@@ -266,6 +270,7 @@ export default function PesquisaSenadoKanban() {
         );
         setNovoNome('');
         setNovoTelefone('');
+        setInstanciaEscolhida('');
         fetchDados();
         setTimeout(() => {
           setIsModalOpen(false);
@@ -1248,6 +1253,35 @@ export default function PesquisaSenadoKanban() {
                   onChange={(e) => setNovoBairro(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Chip que vai disparar</label>
+                <select
+                  value={instanciaEscolhida}
+                  onChange={(e) => setInstanciaEscolhida(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden bg-white"
+                >
+                  <option value="">Deixar o sistema escolher (padrão)</option>
+                  {instances.map((i) => {
+                    const emCooldown = Boolean(i.cooldownAte && new Date(i.cooldownAte) > new Date());
+                    return (
+                      <option
+                        key={i.instanceName}
+                        value={i.instanceName}
+                        disabled={i.status !== 'connected' || emCooldown}
+                      >
+                        {i.label} — {i.phoneNumber || i.instanceName}
+                        {i.status !== 'connected' ? ' (desconectado)' : ''}
+                        {emCooldown ? ' (resfriando — indisponível)' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Chips desconectados ou em resfriamento ficam bloqueados aqui. O chip escolhido ainda passa
+                  pela checagem de janela de horário e teto diário antes de disparar.
+                </p>
               </div>
 
               {mensagemSucesso && (
