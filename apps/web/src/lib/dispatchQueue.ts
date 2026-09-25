@@ -79,6 +79,8 @@ export interface EnqueueResult {
   optOut: number;
   /** Pulados por nao serem DDD 67 (campanha e so para eleitores de MS). */
   foraDoDDD: number;
+  /** Lote criado para esta importacao (null em modo placeholder/sem contato inserido). */
+  loteId: string | null;
 }
 
 /**
@@ -104,7 +106,7 @@ export interface EnqueueResult {
  */
 export async function enqueueContacts(
   contatos: Array<{ name?: string; phone: string; bairro?: string }>,
-  opts: { permitirReenvio?: boolean; chips?: string[] } = {}
+  opts: { permitirReenvio?: boolean; chips?: string[]; nomeLote?: string } = {}
 ): Promise<EnqueueResult> {
   const permitirReenvio = opts.permitirReenvio === true;
   // Chips que vao dividir a lista. Vazio = sem carimbo (o claim decide na hora).
@@ -142,11 +144,11 @@ export async function enqueueContacts(
       q.push({ id: `q-${Date.now()}-${n}`, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente', attempts: 0 });
       n++;
     }
-    return { enfileirados: n, ignorados: unicos.length - n - ja - jaErrou, jaEnviados: ja, jaErrados: jaErrou, divisaoPorChip: {}, optOut: 0, foraDoDDD };
+    return { enfileirados: n, ignorados: unicos.length - n - ja - jaErrou, jaEnviados: ja, jaErrados: jaErrou, divisaoPorChip: {}, optOut: 0, foraDoDDD, loteId: null };
   }
 
   const ctx = await getServiceContext();
-  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, jaErrados: 0, divisaoPorChip: {}, optOut: 0, foraDoDDD };
+  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, jaErrados: 0, divisaoPorChip: {}, optOut: 0, foraDoDDD, loteId: null };
 
   // Ja na fila (pendente/processando) -> pula sempre.
   const { data: pend } = await ctx.db
@@ -183,43 +185,63 @@ export async function enqueueContacts(
   }
 
   let puladosPorEnvio = 0;
-  const rows = unicos
-    .filter((c) => {
-      if (naFila.has(c.phone)) return false;
-      if (optOut.has(c.phone)) { puladosOptOut++; return false; }
-      if (jaErrados.has(c.phone)) { puladosPorErro++; return false; }
-      if (jaEnviados.has(c.phone)) { puladosPorEnvio++; return false; }
-      return true;
-    })
-    .map((c, idx) => ({
-      organization_id: ctx.organizationId,
-      phone: c.phone,
-      name: c.name,
-      bairro: c.bairro,
-      status: 'pendente',
-      // Divisao previa da lista: round-robin sobre os chips do pool. O contato
-      // ja entra carimbado com quem vai aborda-lo, em vez de sortear o chip no
-      // instante do envio.
-      assigned_instance: chips.length > 0 ? chips[idx % chips.length] : null,
-    }));
+  const contatosParaInserir = unicos.filter((c) => {
+    if (naFila.has(c.phone)) return false;
+    if (optOut.has(c.phone)) { puladosOptOut++; return false; }
+    if (jaErrados.has(c.phone)) { puladosPorErro++; return false; }
+    if (jaEnviados.has(c.phone)) { puladosPorEnvio++; return false; }
+    return true;
+  });
 
-  // Insere em lotes de 500 (limite de payload). O indice unico parcial da
+  // Cada importacao vira um LOTE proprio, cancelavel isoladamente (ver
+  // migration 024) -- sem isso o botao "Parar" so sabia cancelar TUDO que
+  // estava pendente, mesmo leads de uma lista completamente diferente da
+  // que o operador queria cancelar.
+  let loteId: string | null = null;
+  if (contatosParaInserir.length > 0) {
+    const { data: loteRow } = await ctx.db
+      .from('dispatch_lotes')
+      .insert({
+        organization_id: ctx.organizationId,
+        nome: opts.nomeLote || null,
+        total_contatos: contatosParaInserir.length,
+        status: 'ativo',
+      })
+      .select('id')
+      .single();
+    loteId = loteRow?.id || null;
+  }
+
+  const rows = contatosParaInserir.map((c, idx) => ({
+    organization_id: ctx.organizationId,
+    phone: c.phone,
+    name: c.name,
+    bairro: c.bairro,
+    status: 'pendente',
+    lote_id: loteId,
+    // Divisao previa da lista: round-robin sobre os chips do pool. O contato
+    // ja entra carimbado com quem vai aborda-lo, em vez de sortear o chip no
+    // instante do envio.
+    assigned_instance: chips.length > 0 ? chips[idx % chips.length] : null,
+  }));
+
+  // Insere em blocos de 500 (limite de payload). O indice unico parcial da
   // migration 015 recusa um telefone que ja esteja ativo na fila; no Postgres
-  // isso aborta o LOTE INTEIRO. Sem checar o erro, uma unica colisao derrubava
+  // isso aborta o BLOCO INTEIRO. Sem checar o erro, uma unica colisao derrubava
   // 500 contatos em silencio e a tela ainda dizia que foram enfileirados.
-  // Por isso: se o lote falhar, reinsere linha a linha e conta o que entrou.
+  // Por isso: se o bloco falhar, reinsere linha a linha e conta o que entrou.
   let inseridos = 0;
   let colisoes = 0;
   if (rows.length > 0) {
     for (let i = 0; i < rows.length; i += 500) {
-      const lote = rows.slice(i, i + 500);
-      const { error } = await ctx.db.from('dispatch_queue').insert(lote);
+      const bloco = rows.slice(i, i + 500);
+      const { error } = await ctx.db.from('dispatch_queue').insert(bloco);
       if (!error) {
-        inseridos += lote.length;
+        inseridos += bloco.length;
         continue;
       }
-      console.warn('[dispatchQueue] lote recusado, reinserindo individualmente:', error.message);
-      for (const linha of lote) {
+      console.warn('[dispatchQueue] bloco recusado, reinserindo individualmente:', error.message);
+      for (const linha of bloco) {
         const { error: e1 } = await ctx.db.from('dispatch_queue').insert(linha);
         if (e1) colisoes++;
         else inseridos++;
@@ -245,7 +267,92 @@ export async function enqueueContacts(
     divisaoPorChip,
     optOut: puladosOptOut,
     foraDoDDD,
+    loteId,
   };
+}
+
+// -------------------- LOTES (filas separadas por importação) --------------------
+export interface LoteInfo {
+  id: string;
+  nome: string | null;
+  status: 'ativo' | 'cancelado' | 'concluido';
+  totalContatos: number;
+  pendentes: number;
+  enviados: number;
+  erros: number;
+  createdAt: string;
+}
+
+/** Lotes com pelo menos 1 contato ainda pendente/processando -- o que aparece pro operador escolher e cancelar. */
+export async function listarLotesAtivos(): Promise<LoteInfo[]> {
+  if (isPlaceholderEnv()) return [];
+  const ctx = await getServiceContext();
+  if (!ctx) return [];
+
+  const { data: lotes } = await ctx.db
+    .from('dispatch_lotes')
+    .select('id, nome, status, total_contatos, created_at')
+    .eq('organization_id', ctx.organizationId)
+    .eq('status', 'ativo')
+    .order('created_at', { ascending: false });
+  if (!lotes || lotes.length === 0) return [];
+
+  const ids = lotes.map((l: any) => l.id);
+  const { data: itens } = await ctx.db
+    .from('dispatch_queue')
+    .select('lote_id, status')
+    .in('lote_id', ids);
+
+  const contagens: Record<string, { pendentes: number; enviados: number; erros: number }> = {};
+  for (const it of itens || []) {
+    const id = (it as any).lote_id;
+    if (!id) continue;
+    contagens[id] ||= { pendentes: 0, enviados: 0, erros: 0 };
+    const st = (it as any).status;
+    if (st === 'pendente' || st === 'processando') contagens[id].pendentes++;
+    else if (st === 'enviado') contagens[id].enviados++;
+    else if (st === 'erro') contagens[id].erros++;
+  }
+
+  return lotes
+    .map((l: any) => ({
+      id: l.id,
+      nome: l.nome,
+      status: l.status,
+      totalContatos: l.total_contatos,
+      pendentes: contagens[l.id]?.pendentes || 0,
+      enviados: contagens[l.id]?.enviados || 0,
+      erros: contagens[l.id]?.erros || 0,
+      createdAt: l.created_at,
+    }))
+    // So interessa ao operador o que ainda tem trabalho pra fazer ou cancelar.
+    .filter((l) => l.pendentes > 0);
+}
+
+/**
+ * Cancela UM lote: remove só os contatos DAQUELE lote que ainda estão
+ * pendentes/processando (não mexe nos já enviados nem nos de outros lotes).
+ */
+export async function cancelarLote(loteId: string): Promise<number> {
+  if (isPlaceholderEnv()) return 0;
+  const ctx = await getServiceContext();
+  if (!ctx) return 0;
+
+  const { data } = await ctx.db
+    .from('dispatch_queue')
+    .delete()
+    .eq('organization_id', ctx.organizationId)
+    .eq('lote_id', loteId)
+    .in('status', ['pendente', 'processando'])
+    .select('id');
+
+  await ctx.db
+    .from('dispatch_lotes')
+    .update({ status: 'cancelado', canceled_at: new Date().toISOString() })
+    .eq('organization_id', ctx.organizationId)
+    .eq('id', loteId);
+
+  return data?.length || 0;
 }
 
 // -------------------- CONTROLE (pausa) --------------------

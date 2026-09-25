@@ -9,6 +9,8 @@ import {
   filterDispatchPool,
   getProgressoPorChip,
   prepararDisparoSimultaneo,
+  listarLotesAtivos,
+  cancelarLote,
 } from '@/lib/dispatchQueue';
 import { triggerServerDispatchCycle, stopServerDispatchWorker } from '@/lib/serverDispatchWorker';
 import { getConnectedDispatchInstances } from '@/lib/evolutionService';
@@ -25,10 +27,11 @@ const NO_CACHE_HEADERS = {
 // GET: status da fila para a UI (progresso, pausado, próximo em Xs) + lista de falhas para auditoria.
 export async function GET() {
   try {
-    const [status, falhas, porChip] = await Promise.all([
+    const [status, falhas, porChip, lotes] = await Promise.all([
       getQueueStatus(),
       getFailedItems(100),
       getProgressoPorChip(),
+      listarLotesAtivos(),
     ]);
 
     // Se a fila estiver ativa com pendentes e sem timer rodando, aciona o worker em 2º plano
@@ -39,7 +42,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { success: true, status, falhas, porChip },
+      { success: true, status, falhas, porChip, lotes },
       { headers: NO_CACHE_HEADERS }
     );
   } catch (err: any) {
@@ -71,6 +74,7 @@ export async function POST(req: NextRequest) {
       const r = await enqueueContacts(contatos, {
         permitirReenvio: body.permitirReenvio === true,
         chips,
+        nomeLote: typeof body.nomeLote === 'string' ? body.nomeLote.slice(0, 200) : undefined,
       });
       const status = await getQueueStatus();
 
@@ -81,6 +85,23 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json(
         { success: true, ...r, status },
+        { headers: NO_CACHE_HEADERS }
+      );
+    }
+
+    // Cancela SÓ um lote (uma importação específica) -- os pendentes de
+    // outras filas continuam sendo trabalhados normalmente.
+    if (action === 'cancelar_lote') {
+      const loteId = String(body.loteId || '');
+      if (!loteId) {
+        return NextResponse.json(
+          { success: false, error: 'loteId é obrigatório' },
+          { status: 400, headers: NO_CACHE_HEADERS }
+        );
+      }
+      const cancelados = await cancelarLote(loteId);
+      return NextResponse.json(
+        { success: true, cancelados },
         { headers: NO_CACHE_HEADERS }
       );
     }
