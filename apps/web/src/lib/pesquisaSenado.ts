@@ -256,7 +256,11 @@ const LISTAS_POR_VERSAO: Record<number, CandidatoSenado[]> = {
  */
 export function parseOpcaoVoto(respostaTexto: string, listaVersao: number = LISTA_VERSAO_ATUAL): number | null {
   const lista = LISTAS_POR_VERSAO[listaVersao] || CANDIDATOS_SENADO_MS;
-  const clean = respostaTexto.trim().replace(/[^\d]/g, '');
+  // Pega só o PRIMEIRO número da resposta -- "2 e 3" ou "2, 3" não pode virar
+  // "23" (concatenando os dois), que nunca bate com nenhuma opção (1-7) e
+  // descarta o voto em silêncio. O eleitor só pode escolher um candidato por
+  // vez aqui, entao a primeira escolha e a que vale.
+  const clean = respostaTexto.trim().match(/\d+/)?.[0] || '';
   if (!clean) {
     // Tenta correspondência textual por nome (e grafias alternativas).
     const lower = normalizar(respostaTexto);
