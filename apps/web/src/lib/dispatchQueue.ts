@@ -44,6 +44,27 @@ function secsUntil(nextAllowedAtMs: number): number {
   return Math.max(0, Math.ceil((nextAllowedAtMs - Date.now()) / 1000));
 }
 
+// Campanha e so para eleitores de MS: numero de outro estado na planilha e
+// erro de importacao (lista errada, digito trocado) ou lead fora do publico-alvo,
+// nunca um voto valido -- e ainda arrisca reclamacao de quem nao tem nada a
+// ver com a pesquisa. DDD_PERMITIDO fica aqui, isolado, para o dia em que a
+// campanha cobrir outro estado.
+const DDD_PERMITIDO = '67';
+
+/**
+ * Extrai o DDD (2 digitos) de um telefone BR em qualquer formato comum: com
+ * ou sem 55 na frente, com ou sem 9o digito, com ou sem o 0 de tronco (ex.:
+ * "067..."). Devolve null se o formato nao for reconhecido -- no duvida,
+ * quem chama trata como "fora do DDD permitido" (nunca assume 67 as cegas).
+ */
+function extrairDDD(phone: string): string | null {
+  let d = String(phone || '').replace(/\D/g, '');
+  if (d.startsWith('0')) d = d.slice(1); // 0 de tronco: "067..." -> "67..."
+  if (d.startsWith('55') && (d.length === 12 || d.length === 13)) d = d.slice(2); // remove o 55
+  if (d.length === 10 || d.length === 11) return d.slice(0, 2);
+  return null;
+}
+
 // -------------------- ENQUEUE --------------------
 export interface EnqueueResult {
   enfileirados: number;
@@ -56,6 +77,8 @@ export interface EnqueueResult {
   divisaoPorChip: Record<string, number>;
   /** Pulados por terem pedido opt-out. */
   optOut: number;
+  /** Pulados por nao serem DDD 67 (campanha e so para eleitores de MS). */
+  foraDoDDD: number;
   /** Lote criado para esta importacao (null em modo placeholder/sem contato inserido). */
   loteId: string | null;
 }
@@ -74,6 +97,12 @@ export interface EnqueueResult {
  * para sempre, nem o botao "Tentar Novamente" da auditoria reativa; so os
  * poucos 'erro' antigos (de antes da 021, sem a marcacao) ainda voltam por
  * ali, 1 a 1, depois do operador checar o motivo.
+ *
+ * Descarta TAMBEM quem nao tem DDD 67 (ver DDD_PERMITIDO): a campanha e so
+ * para eleitores de MS, entao outro DDD na planilha e erro de importacao
+ * (lista errada, coluna deslocada) ou lead fora do publico-alvo -- nunca um
+ * voto valido, e ainda arrisca reclamacao de quem nao tem nada a ver com a
+ * pesquisa.
  */
 export async function enqueueContacts(
   contatos: Array<{ name?: string; phone: string; bairro?: string }>,
@@ -82,9 +111,17 @@ export async function enqueueContacts(
   const permitirReenvio = opts.permitirReenvio === true;
   // Chips que vao dividir a lista. Vazio = sem carimbo (o claim decide na hora).
   const chips = Array.isArray(opts.chips) ? opts.chips.filter(Boolean) : [];
-  const limpos = contatos
+  const mapeados = contatos
     .map((c) => ({ name: (c.name || '').trim(), phone: canonicalDigits(c.phone), bairro: c.bairro || 'Mato Grosso do Sul' }))
     .filter((c) => c.phone && c.phone.length >= 10);
+
+  // Fora do DDD da campanha (67/067) -> descarta antes de tudo, nem entra na
+  // contagem de duplicatas/ja-enviados.
+  let foraDoDDD = 0;
+  const limpos = mapeados.filter((c) => {
+    if (extrairDDD(c.phone) !== DDD_PERMITIDO) { foraDoDDD++; return false; }
+    return true;
+  });
 
   // Dedup no lote.
   const seen = new Set<string>();
@@ -107,11 +144,11 @@ export async function enqueueContacts(
       q.push({ id: `q-${Date.now()}-${n}`, phone: c.phone, name: c.name, bairro: c.bairro, status: 'pendente', attempts: 0 });
       n++;
     }
-    return { enfileirados: n, ignorados: unicos.length - n - ja - jaErrou, jaEnviados: ja, jaErrados: jaErrou, divisaoPorChip: {}, optOut: 0, loteId: null };
+    return { enfileirados: n, ignorados: unicos.length - n - ja - jaErrou, jaEnviados: ja, jaErrados: jaErrou, divisaoPorChip: {}, optOut: 0, foraDoDDD, loteId: null };
   }
 
   const ctx = await getServiceContext();
-  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, jaErrados: 0, divisaoPorChip: {}, optOut: 0, loteId: null };
+  if (!ctx) return { enfileirados: 0, ignorados: 0, jaEnviados: 0, jaErrados: 0, divisaoPorChip: {}, optOut: 0, foraDoDDD, loteId: null };
 
   // Ja na fila (pendente/processando) -> pula sempre.
   const { data: pend } = await ctx.db
@@ -229,6 +266,7 @@ export async function enqueueContacts(
     jaErrados: puladosPorErro,
     divisaoPorChip,
     optOut: puladosOptOut,
+    foraDoDDD,
     loteId,
   };
 }
@@ -961,12 +999,16 @@ export async function prepararDisparoSimultaneo(): Promise<{
       .eq('status', 'pendente');
   }
 
-  // 3. Re-enfileira os contatos que estavam com status 'erro'
+  // 3. Re-enfileira os contatos que estavam com status 'erro' -- exceto os
+  //    marcados como status_definitivo (banco de erros): esses falharam para
+  //    sempre e "Sincronizar Chips"/"Retomar" não pode reativá-los, senão
+  //    desfaz a proteção anti-ban inteira num único clique.
   const { data: erros } = await ctx.db
     .from('dispatch_queue')
     .update({ status: 'pendente', attempts: 0, claimed_at: null, error: null })
     .eq('organization_id', ctx.organizationId)
     .eq('status', 'erro')
+    .eq('status_definitivo', false)
     .select('id');
 
   // 4. Re-enfileira os contatos que ficaram como 'enviado' pelas instâncias
