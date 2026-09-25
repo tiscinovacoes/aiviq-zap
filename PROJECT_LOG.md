@@ -1408,3 +1408,15 @@ Essa versão do `pdfkit` não usa mais arquivos `.afm` (o que eu tinha corrigido
 - ✅ `next.config.mjs`: em vez de mirar arquivos específicos, inclui o pacote `pdfkit` **inteiro** (`node_modules/pdfkit/**/*`) — evita esse tipo de descoberta incremental dolorosa a cada nova versão do pacote.
 - ✅ Validação: `.nft.json` da rota confirma `Helvetica.cjs` presente (30 arquivos de `standard-fonts` no total); testado via `next start` real, PDF de 6.5KB gerado com HTTP 200.
 - Lição: quando um pacote gera erro de "módulo não encontrado" só em produção serverless, mirar arquivo por arquivo é frágil — melhor incluir o pacote todo de uma vez.
+
+
+---
+
+## DATA: 25/09/2026 — Espaçamento Fixo de 1 min Entre Chips (v3.9.3)
+
+### Claude
+Operador reparou disparos de chips diferentes saindo com 5 min de diferença (não 1min40 esperado com 3 chips) e pediu 1 minuto fixo entre eles.
+
+- 🐞 Causa: `intervaloEntreChipsSegundos()` calculava "menor intervalo fixo / nº de chips" — isso é só um mínimo. Quando apenas 1 chip estava com o relógio individual vencido no momento em que o pool liberava, o próximo disparo dele só saía quando o PRÓPRIO relógio dele vencesse de novo (5 min), dando a impressão de "5 min entre chips" em vez de revezamento real.
+- ✅ `intervaloEntreChipsSegundos()` agora é fixo em 60s (nunca maior que o intervalo individual mais curto dos chips, então continua seguro — o que protege cada número contra ban é o relógio individual de 5 min dele, não este espaçamento do pool).
+- ✅ Validação: `tsc --noEmit` 0 erros; função testada com 1, 2, 3 chips e com chip em warm-up — sempre 60s.

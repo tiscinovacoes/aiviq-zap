@@ -31,8 +31,8 @@ export { spin, isOptOut } from '@/lib/spintax';
 // 30/dia -> 25 min; 50/dia -> 15 min; ...
 //
 // Os chips também são ESCALONADOS entre si (ver intervaloEntreChipsSegundos):
-// com 2 chips de 5 min, sai uma mensagem do pool a cada 2m30, alternando
-// chip A / chip B, em vez dos dois dispararem no mesmo segundo.
+// espaçamento fixo de 1 min entre disparos de chips diferentes, para nunca
+// sairem 2 mensagens no mesmo minuto, mesmo com varios chips no pool.
 //
 // O teto continua sendo limite rígido, reservado de forma ATÔMICA a cada envio
 // (reserveDispatchSlot), e o intervalo é disputado de forma atômica por chip
@@ -83,12 +83,20 @@ export function intervaloFixoDoChipSegundos(capDoDia: number): number {
 
 /**
  * Espaçamento mínimo entre DOIS envios quaisquer do pool, para os chips se
- * revezarem em vez de dispararem juntos: menor intervalo fixo / nº de chips.
- * 2 chips de 150/dia -> 150s; 3 chips -> 100s.
+ * revezarem em vez de dispararem juntos. FIXO em 60s (decisão do operador,
+ * 25/09/2026) -- antes era "menor intervalo fixo / nº de chips" (2 chips de
+ * 5 min -> 150s; 3 chips -> 100s), mas na pratica isso so garantia um
+ * espaçamento MINIMO: quando so 1 chip estava com o proprio relogio vencido
+ * no momento em que o pool liberava, o disparo seguinte dele so saia 5 min
+ * depois (o intervalo individual dele), dando a impressao de "5 min entre
+ * chips" em vez de revezamento de verdade. 60s fixo nunca ultrapassa o
+ * intervalo individual de nenhum chip (minimo real e ~100s, com warm-up de
+ * 30/dia = 25min), entao continua seguro: o que protege cada numero contra
+ * ban e o proprio relogio individual dele, nao este espaçamento do pool.
  */
 export function intervaloEntreChipsSegundos(intervalosFixos: number[]): number {
   if (intervalosFixos.length === 0) return 0;
-  return Math.floor(Math.min(...intervalosFixos) / intervalosFixos.length);
+  return Math.min(60, Math.min(...intervalosFixos));
 }
 
 const TZ = 'America/Campo_Grande';
