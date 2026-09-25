@@ -624,7 +624,6 @@ export default function PesquisaSenadoKanban() {
             <Users className="w-4 h-4 text-slate-400" />
           </div>
           <p className="text-xl font-bold text-slate-900">{stats?.totalEleitores || sessions.length}</p>
-          <p className="text-[11px] text-slate-400">Eleitores abordados desde 19/09</p>
         </div>
 
         <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
