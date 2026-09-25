@@ -71,6 +71,10 @@ export interface InstanceView {
    *  outros chips, entao um numero quente herda a reputacao dos demais. */
   proxyOk: boolean;
   proxyHost?: string;
+  proxyPort?: string;
+  proxyProtocol?: string;
+  proxyUsername?: string;
+  proxyHasPassword?: boolean;
 }
 
 // GET: lista todas as instâncias conhecidas (registro local + servidor Evolution),
@@ -118,6 +122,10 @@ export async function GET() {
           webhookOk: Boolean(await getWebhookInstancia(k.instanceName)),
           proxyOk: Boolean(proxy?.enabled && proxy?.host),
           proxyHost: proxy?.host,
+          proxyPort: proxy?.port,
+          proxyProtocol: proxy?.protocol,
+          proxyUsername: proxy?.username,
+          proxyHasPassword: proxy?.hasPassword,
         };
       })
     );

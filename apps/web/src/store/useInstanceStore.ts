@@ -18,6 +18,10 @@ export interface InstanceView {
   /** true = IP dedicado configurado na Evolution para este numero. */
   proxyOk?: boolean;
   proxyHost?: string;
+  proxyPort?: string;
+  proxyProtocol?: string;
+  proxyUsername?: string;
+  proxyHasPassword?: boolean;
 }
 
 export const SELECTED_INSTANCE_KEY = 'aiviq_selected_instance';
