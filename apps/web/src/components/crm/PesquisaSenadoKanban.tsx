@@ -456,6 +456,33 @@ export default function PesquisaSenadoKanban() {
     }
   };
 
+  const [gerandoListaVotantes, setGerandoListaVotantes] = useState(false);
+
+  // Lista (não só números agregados) dos eleitores CONCLUÍDOS, agrupados pelo
+  // candidato do 1º voto -- quem precisa saber QUEM votou em quem, não só
+  // quanto cada um teve.
+  const handleBaixarListaVotantesPdf = async () => {
+    setGerandoListaVotantes(true);
+    try {
+      const res = await fetch('/api/pesquisa/senado/lista-votantes-pdf');
+      if (!res.ok) throw new Error('Falha ao gerar a lista');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `eleitores_por_voto_senado_ms_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Erro ao baixar lista de eleitores por voto:', e);
+      window.alert('Não foi possível gerar a lista de eleitores por voto. Tente novamente.');
+    } finally {
+      setGerandoListaVotantes(false);
+    }
+  };
+
   const handleExportarCSV = () => {
     if (sessions.length === 0) return;
     const headers = ['ID', 'Nome', 'Telefone', 'Bairro', 'Status_Etapa', '1_Voto', '2_Voto', 'Data_Registro'];
@@ -581,6 +608,20 @@ export default function PesquisaSenadoKanban() {
           </button>
 
           <button
+            onClick={handleBaixarListaVotantesPdf}
+            disabled={gerandoListaVotantes}
+            title="Lista de eleitores agrupada por candidato (1º voto), em PDF"
+            className="px-2 sm:px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs disabled:opacity-60"
+          >
+            {gerandoListaVotantes ? (
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+            ) : (
+              <Vote className="w-3.5 h-3.5 text-emerald-600" />
+            )}
+            <span className="hidden sm:inline">{gerandoListaVotantes ? 'Gerando…' : 'Eleitores por Voto (PDF)'}</span>
+          </button>
+
+          <button
             onClick={() => setIsExcelModalOpen(true)}
             title="Importar Lista Excel"
             className="px-2 sm:px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
@@ -674,7 +715,7 @@ export default function PesquisaSenadoKanban() {
       )}
 
       {/* Hero KPIs Bar da Pesquisa — agora com card exclusivo de Falhas */}
-      <div className="px-3 sm:px-8 py-3 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 shrink-0">
+      <div className="px-3 sm:px-8 py-3 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-3 shrink-0">
         <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
           <div className="flex items-center justify-between text-xs text-slate-500 mb-0.5">
             <span className="font-medium">Total de Contatos Disparados</span>
@@ -712,6 +753,20 @@ export default function PesquisaSenadoKanban() {
               (stats?.porEtapa.aguardando_voto2 || 0)}
           </p>
           <p className="text-[11px] text-slate-400">Aguardando resposta</p>
+        </div>
+
+        {/* Quem respondeu e pediu pra sair (SAIR) INTERAGIU com a pesquisa --
+            e diferente de quem nunca respondeu nada. Conta como uma interacao
+            concluida (o eleitor tomou uma decisao), so que fora do funil de
+            votos. Fica em card proprio para nao inflar nem contaminar
+            "Pesquisas Concluidas" (que e estritamente 1º + 2º voto). */}
+        <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
+          <div className="flex items-center justify-between text-xs text-slate-500 mb-0.5">
+            <span className="font-medium">Interagiram e Saíram</span>
+            <XCircle className="w-4 h-4 text-slate-400" />
+          </div>
+          <p className="text-xl font-bold text-slate-700">{stats?.porEtapa.recusado || 0}</p>
+          <p className="text-[11px] text-slate-400">Responderam e pediram SAIR</p>
         </div>
 
         {/* KPI EXCLUSIVO DE FALHAS COM BOTÃO DE VERIFICAÇÃO — conta falhas definitivas (falha na 1a tentativa) + as antigas que ainda seguem em retentativa automatica */}
