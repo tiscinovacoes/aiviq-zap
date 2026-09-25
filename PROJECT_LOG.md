@@ -1394,3 +1394,17 @@ Agravante: é um monorepo com workspaces — `pdfkit` fica hoisted no `node_modu
 
 - ✅ `next.config.mjs`: `experimental.outputFileTracingIncludes` força a inclusão de `node_modules/pdfkit/js/data/**/*` e `node_modules/@react-pdf/**/*`, com os dois caminhos (`./` e `../../`) para cobrir qualquer topologia de instalação.
 - ✅ Validação: build de produção confirmado com `.nft.json` da rota — antes 0 arquivos `.afm` no pacote, depois 14 (todas as fontes padrão do pdfkit).
+
+
+---
+
+## DATA: 25/09/2026 — Relatório PDF: Causa Real Era Outra (v3.9.2)
+
+### Claude
+A correção anterior (v3.9.1) mirou no lugar errado. Operador trouxe o erro exato via DevTools: `Cannot find module '/var/task/node_modules/pdfkit/js/standard-fonts/Helvetica.cjs'`.
+
+Essa versão do `pdfkit` não usa mais arquivos `.afm` (o que eu tinha corrigido antes) — usa módulos `.cjs`/`.mjs` carregados via **subpath import dinâmico do Node** (`require('#standard-fonts/Helvetica')`, mapeado no campo `imports` do `package.json` do pdfkit para `js/standard-fonts/*.cjs`). É ainda mais opaco para o rastreador de arquivos do que um `fs.readFileSync`: nem é um caminho de string reconhecível, é resolução de subpath import em runtime.
+
+- ✅ `next.config.mjs`: em vez de mirar arquivos específicos, inclui o pacote `pdfkit` **inteiro** (`node_modules/pdfkit/**/*`) — evita esse tipo de descoberta incremental dolorosa a cada nova versão do pacote.
+- ✅ Validação: `.nft.json` da rota confirma `Helvetica.cjs` presente (30 arquivos de `standard-fonts` no total); testado via `next start` real, PDF de 6.5KB gerado com HTTP 200.
+- Lição: quando um pacote gera erro de "módulo não encontrado" só em produção serverless, mirar arquivo por arquivo é frágil — melhor incluir o pacote todo de uma vez.
