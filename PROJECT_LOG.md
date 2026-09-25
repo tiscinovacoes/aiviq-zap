@@ -1439,3 +1439,17 @@ Operador reportou que a responsividade "ainda não está 100%, muito ruim de ver
 - ✅ Cabeçalhos de página (`h-16 px-8` fixo, presente em 6 páginas: bots, campaigns, contacts, contacts/[id], crm, reports) padronizados para `min-h-16 px-3 sm:px-8` com `flex-wrap`, permitindo crescer de altura e não cortar texto/botões em telas estreitas. Textos longos (ex. "Pesquisa Senado MS 2026", "Protocolos Ouvidoria") abreviados em mobile.
 - ✅ `MultiInstancePanel`: nome do chip ganha `w-full` em mobile (linha própria) em vez de competir por espaço com os badges na mesma linha.
 - ✅ Validação: testado com Playwright real (Chromium, viewport 375×812) em todas as 8 páginas, antes e depois de cada correção — screenshots conferidos visualmente a cada rodada, não só `tsc`/build. `next build` de produção completo com sucesso.
+
+
+---
+
+## DATA: 25/09/2026 — Funil Cortado ao Rolar em Mobile (v3.10.1)
+
+### Claude
+Operador reportou: rolando a tela de Pesquisa (CRM) pra baixo no celular, o funil não aparecia — ficava em branco depois dos KPIs.
+
+- 🐞 Causa: o container raiz do `PesquisaSenadoKanban` usa `overflow-hidden` (pensado pra desktop, onde header + banner + KPIs + kanban cabem juntos na tela, e só o kanban rola, horizontalmente). Em mobile, esse conjunto já ocupa quase toda a altura da viewport, e como não havia scroll vertical liberado, o kanban ficava cortado em vez de aparecer ao rolar.
+- ✅ Container raiz: `overflow-y-auto` em mobile (a página toda rola), mantém `overflow-hidden` em desktop (`md:`).
+- ✅ Área do kanban: ganha `min-h-[70vh]` em mobile, para ter altura própria suficiente em vez de depender só do espaço que sobra da tela.
+- ✅ Banner da fila (Cluster Anti-Ban): o grupo de texto/badges internamente não tinha `flex-wrap` (só o banner todo tinha) — o badge "PAUSADO" e os botões Retomar/Parar ficavam espremidos contra o texto longo em vez de quebrar linha. Corrigido.
+- ✅ Validação: testado com Playwright real (viewport 375×812) — capturado o topo e o resultado após rolar até o fim; o card "1. Disparado" aparece completo agora. `next build` de produção ok.
