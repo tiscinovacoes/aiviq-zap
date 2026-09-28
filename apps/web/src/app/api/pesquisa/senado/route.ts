@@ -65,7 +65,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const cleanPhone = phone.replace(/\D/g, '');
+    const cleanRaw = phone.replace(/\D/g, '');
+    const cleanPhone = (cleanRaw.length === 10 || cleanRaw.length === 11) ? '55' + cleanRaw : cleanRaw;
 
     // Ação: Iniciar disparo da Pesquisa (Msg 1)
     if (!action || action === 'disparar') {
@@ -113,7 +114,8 @@ export async function POST(req: NextRequest) {
 
       // ============ ANTI-BAN: janela de horário + teto diário/warmup ============
       if (sendWhatsApp) {
-        const gate = await reserveDispatchSlot(instAlvo);
+        // Disparo avulso / forçado bypassa o bloqueio de janela de horário
+        const gate = await reserveDispatchSlot(instAlvo, Boolean(body.forcar));
         if (!gate.ok) {
           const motivo =
             gate.reason === 'fora_horario'

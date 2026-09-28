@@ -436,6 +436,14 @@ export interface SendResult {
   error?: string;
 }
 
+function formatTargetNumber(target: string): string {
+  let clean = target.replace(/@s\.whatsapp\.net$/, '').replace(/@lid$/, '').replace(/\D/g, '');
+  if (clean.length === 10 || clean.length === 11) {
+    clean = '55' + clean;
+  }
+  return clean;
+}
+
 /**
  * Envia texto pela Evolution.
  * @param delayMs presença "digitando..." antes de enviar. 0 (padrão) = envio
@@ -472,7 +480,7 @@ export async function sendRealMessageDetailed(
   }
 
   try {
-    const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
+    const cleanNumber = formatTargetNumber(target);
     if (!cleanNumber || cleanNumber.length < 8) {
       return { ok: false, instance: inst, error: 'Número de telefone inválido ou incompleto' };
     }
@@ -567,7 +575,7 @@ export async function sendListMessageDetailed(
   }
 
   try {
-    const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
+    const cleanNumber = formatTargetNumber(target);
     if (!cleanNumber || cleanNumber.length < 8) {
       return { ok: false, instance: inst, error: 'Número de telefone inválido ou incompleto' };
     }
@@ -673,7 +681,7 @@ export async function sendButtonsDetailed(
     return { ok: false, instance: inst, error: 'Instância WhatsApp desconectada' };
   }
 
-  const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
+  const cleanNumber = formatTargetNumber(target);
   if (!cleanNumber || cleanNumber.length < 8) {
     return { ok: false, instance: inst, error: 'Número de telefone inválido ou incompleto' };
   }

@@ -830,10 +830,11 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
 
 export async function clearDispatchErrorForPhone(phone: string): Promise<void> {
   const clean = canonicalDigits(phone);
-  if (!clean) return;
+  if (!clean || clean.length < 8) return;
+  const last8 = clean.slice(-8);
   if (isPlaceholderEnv()) {
     (global.__aiviq_queue || []).forEach((i) => {
-      if (canonicalDigits(i.phone) === clean && i.status === 'erro') {
+      if (canonicalDigits(i.phone).endsWith(last8) && i.status === 'erro') {
         i.status = 'enviado';
       }
     });
@@ -845,7 +846,7 @@ export async function clearDispatchErrorForPhone(phone: string): Promise<void> {
     .from('dispatch_queue')
     .update({ status: 'enviado', status_definitivo: false, error: null })
     .eq('organization_id', ctx.organizationId)
-    .eq('phone', clean)
+    .ilike('phone', `%${last8}`)
     .eq('status', 'erro');
 }
 
