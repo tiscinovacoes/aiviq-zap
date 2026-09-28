@@ -19,14 +19,56 @@ import {
   LISTA_VERSAO_ATUAL,
   LISTA_VERSAO_CLIQUE,
 } from '@/lib/pesquisaSenado';
-import { sendRealMessageDetailed, resolveSendInstance } from '@/lib/evolutionService';
+import {
+  sendRealMessageDetailed,
+  resolveSendInstance,
+  fetchLiveEvolutionInstances,
+} from '@/lib/evolutionService';
 import { addBotDispatchedMessage } from '@/lib/conversationStore';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 import { persistMessageByJid } from '@/lib/conversationRepo';
 import { reserveDispatchSlot, releaseDispatchSlot, ANTIBAN } from '@/lib/antiBan';
-import { getDispatchErrorForPhone } from '@/lib/dispatchQueue';
+import { getDispatchErrorForPhone, filterDispatchPool, ehErroPermanente } from '@/lib/dispatchQueue';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Número como o operador digita no painel (o placeholder sugere 67999998888,
+ * sem o 55) no formato com DDI que a Evolution e o resto da base usam. Sem o
+ * 55, a Evolution monta o JID de outro país, o número "não existe" e o envio
+ * falha -- era o que acontecia com todo avulso digitado sem DDI. Mesma regra
+ * da importação da planilha: 10 ou 11 dígitos = DDD + número.
+ */
+function normalizarTelefoneBR(raw: string): string {
+  let d = String(raw || '').replace(/\D/g, '').replace(/^0+/, '');
+  if (d.length === 10 || d.length === 11) d = `55${d}`;
+  return d;
+}
+
+/**
+ * Chip do disparo avulso quando o painel não escolhe um: um chip conectado E
+ * no pool de disparo que não seja o próprio número de destino. Antes caía no
+ * padrão ou no 1º conectado da Evolution, que podia ser o chip do próprio
+ * destino -- aí a mensagem ia para o "conversar comigo" e a resposta chegava
+ * como fromMe, que o webhook ignora. Sem candidato, mantém o comportamento
+ * antigo.
+ */
+async function escolherChipAvulso(pedido: string | undefined, destino: string): Promise<string> {
+  if (pedido) return resolveSendInstance(pedido);
+  try {
+    const live = await fetchLiveEvolutionInstances();
+    const conectados = live.filter((i) => i.status === 'connected').map((i) => i.instanceName);
+    const pool = await filterDispatchPool(conectados);
+    const sufixo = destino.slice(-8);
+    const ehODestino = (nome: string) =>
+      (live.find((i) => i.instanceName === nome)?.phoneNumber || '').replace(/\D/g, '').endsWith(sufixo);
+    const chip = pool.find((nome) => !ehODestino(nome));
+    if (chip) return chip;
+  } catch (e) {
+    console.error('[API Pesquisa] escolherChipAvulso:', e);
+  }
+  return resolveSendInstance();
+}
 
 export async function GET() {
   try {
@@ -64,7 +106,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const cleanPhone = phone.replace(/\D/g, '');
+    const cleanPhone = normalizarTelefoneBR(phone);
 
     // Ação: Iniciar disparo da Pesquisa (Msg 1)
     if (!action || action === 'disparar') {
@@ -108,7 +150,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Instância que REALMENTE vai disparar — gate, envio e contador no mesmo chip.
-      const instAlvo = await resolveSendInstance(instance);
+      const instAlvo = await escolherChipAvulso(instance, cleanPhone);
 
       // ============ ANTI-BAN: janela de horário + teto diário/warmup ============
       if (sendWhatsApp) {
@@ -138,6 +180,7 @@ export async function POST(req: NextRequest) {
 
       let dispatched = false;
       let instanciaUsada: string | undefined = instAlvo;
+      let motivoFalha = '';
       let session = existente;
 
       if (sendWhatsApp) {
@@ -194,6 +237,11 @@ export async function POST(req: NextRequest) {
         } else {
           // Envio falhou: nada saiu do chip, devolve o slot reservado.
           await releaseDispatchSlot(instAlvo);
+          // A Evolution às vezes devolve o motivo como lista de objetos, não texto.
+          const erro = typeof r.error === 'string' ? r.error : JSON.stringify(r.error ?? '');
+          motivoFalha = ehErroPermanente(erro)
+            ? 'número sem WhatsApp -- confira o DDD e os dígitos'
+            : erro;
         }
       } else {
         // Registro manual sem envio real (uso interno/API): mantem o
@@ -213,9 +261,10 @@ export async function POST(req: NextRequest) {
         success: true,
         message: dispatched
           ? `Pesquisa iniciada (Msg 1 enviada${modoClique ? ' — fluxo por clique' : ''})`
-          : 'Falha no envio pelo WhatsApp',
+          : `Falha no envio pelo WhatsApp (chip ${instanciaUsada || instAlvo})${motivoFalha ? `: ${motivoFalha}` : ''}`,
         session,
         dispatchedWhatsApp: dispatched,
+        instancia: instanciaUsada,
         modoClique,
       });
     }
