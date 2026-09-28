@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbContext } from '@/lib/supabase/authContext';
 import { runTickCore } from '@/lib/pesquisaSenadoDispatcher';
-import { reenviarMsg3Atrasadas } from '@/lib/pesquisaFluxo';
+import { reenviarMsg3Atrasadas, reenviarListaVoto1Atrasadas } from '@/lib/pesquisaFluxo';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -61,9 +61,14 @@ async function handleRequest(req: NextRequest) {
     console.error('[tick] reenviarMsg3Atrasadas:', e);
     return 0;
   });
+  // Mesma rede de segurança, para sessões do fluxo por clique (teste).
+  const listaVoto1Reenviadas = await reenviarListaVoto1Atrasadas().catch((e) => {
+    console.error('[tick] reenviarListaVoto1Atrasadas:', e);
+    return 0;
+  });
 
   const result = await runTickCore({ bypassHorario: force, forceNow: force });
-  return NextResponse.json({ ...result, msg3Reenviadas });
+  return NextResponse.json({ ...result, msg3Reenviadas, listaVoto1Reenviadas });
 }
 
 export async function GET(req: NextRequest) {
