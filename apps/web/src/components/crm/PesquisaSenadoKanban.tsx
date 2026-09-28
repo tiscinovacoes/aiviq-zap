@@ -62,6 +62,11 @@ function contarVotos(sessions: RespostaEleitor[], campo: 'voto1Id' | 'voto2Id'):
   return out;
 }
 
+// BOM UTF-8 do CSV, U+FEFF (Excel abre acentos corretamente com ele). Via
+// fromCharCode em vez de escape literal, que era decodificado para o
+// caractere real ao transitar por este ambiente e quebrava a concatenação.
+const CSV_BOM = String.fromCharCode(0xfeff);
+
 const etapaLabels: Record<EtapaPesquisa, { label: string; cor: string; bg: string }> = {
   disparado: { label: 'Msg 1: Disparado', cor: 'text-amber-700 border-amber-300', bg: 'bg-amber-50' },
   aguardando_voto1: { label: 'Msg 2/3: Aguardando 1º Voto', cor: 'text-blue-700 border-blue-300', bg: 'bg-blue-50' },
@@ -429,7 +434,7 @@ export default function PesquisaSenadoKanban() {
       f.attempts || 1,
       `"${f.createdAt || ''}"`,
     ]);
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = 'data:text/csv;charset=utf-8,' + CSV_BOM + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const link = document.createElement('a');
     link.setAttribute('href', encodeURI(csvContent));
     link.setAttribute('download', `falhas_disparo_${new Date().toISOString().slice(0, 10)}.csv`);
@@ -528,7 +533,7 @@ export default function PesquisaSenadoKanban() {
       s.createdAt,
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = 'data:text/csv;charset=utf-8,' + CSV_BOM + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);

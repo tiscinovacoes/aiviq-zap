@@ -339,8 +339,13 @@ export function parseListRowId(rowId?: string | null): number | null {
 // ------------------------------------------------------------------------------
 // Validação de Resposta do Eleitor
 // ------------------------------------------------------------------------------
+// Faixa Unicode dos diacríticos combinantes (para strip de acento após NFD),
+// de U+0300 a U+036F. Construída via fromCharCode em vez de escape literal no
+// regex, que era decodificado para os caracteres reais ao transitar por este
+// ambiente e quebrava a regex.
+const DIACRITICOS_RE = new RegExp(`[${String.fromCharCode(0x0300)}-${String.fromCharCode(0x036f)}]`, 'g');
 const normalizar = (t: string) =>
-  t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  t.toLowerCase().normalize('NFD').replace(DIACRITICOS_RE, '').trim();
 
 // Toda numeração que já existiu, por versão: 1 = lista antiga de 12 (o número
 // digitado era o próprio id); 2 = lista de 5 em ordem alfabética; 3 = atual
