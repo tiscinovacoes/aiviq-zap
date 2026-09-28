@@ -108,7 +108,7 @@ export default function PesquisaSenadoKanban() {
   // Bloqueio anti-ban (gated) ou falha real de envio
   const [mensagemErro, setMensagemErro] = useState<string | null>(null);
   // Teste do fluxo por clique (lista clicável em vez de resposta digitada)
-  const [modoClique, setModoClique] = useState(false);
+  const [modoClique, setModoClique] = useState(true);
 
   // Modal e Estado de Importação de Planilha Excel/CSV
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
@@ -262,6 +262,7 @@ export default function PesquisaSenadoKanban() {
           bairro: novoBairro.trim(),
           sendWhatsApp: true,
           modo: modoClique ? 'clique' : undefined,
+          forcar: true,
         }),
       });
       const data = await res.json().catch(() => null);

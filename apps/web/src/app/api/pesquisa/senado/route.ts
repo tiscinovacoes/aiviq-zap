@@ -10,6 +10,7 @@ import {
 import {
   gerarMensagem1,
   gerarMensagem1Clique,
+  gerarMensagem1Data,
   gerarMensagem2,
   gerarMensagem3,
   gerarMensagemSegundoVoto,
@@ -19,7 +20,7 @@ import {
   LISTA_VERSAO_ATUAL,
   LISTA_VERSAO_CLIQUE,
 } from '@/lib/pesquisaSenado';
-import { sendRealMessageDetailed, resolveSendInstance } from '@/lib/evolutionService';
+import { sendRealMessageDetailed, sendButtonsDetailed, resolveSendInstance } from '@/lib/evolutionService';
 import { addBotDispatchedMessage } from '@/lib/conversationStore';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 import { persistMessageByJid } from '@/lib/conversationRepo';
@@ -131,9 +132,9 @@ export async function POST(req: NextRequest) {
       }
 
       // Spintax semeado pelo telefone → cada lead recebe uma abertura diferente.
-      // Modo clique: Msg 1 já funde saudação + pergunta de consentimento (o
-      // próximo passo, depois da saudação respondida, é a lista clicável).
-      const msg1 = modoClique ? gerarMensagem1Clique(name, cleanPhone) : gerarMensagem1(name, cleanPhone);
+      // Modo clique: Msg 1 já funde saudação + pergunta de consentimento com botões clicáveis
+      const msg1Data = modoClique ? gerarMensagem1Data(cleanPhone) : null;
+      const msg1Text = modoClique && msg1Data ? msg1Data.fallbackText : gerarMensagem1(name, cleanPhone);
       const nomeExibicao = name || existente?.name || `Eleitor ${cleanPhone.slice(-4)}`;
 
       let dispatched = false;
@@ -142,7 +143,17 @@ export async function POST(req: NextRequest) {
 
       if (sendWhatsApp) {
         // Presença "digitando..." humaniza o disparo em massa (anti-ban).
-        const r = await sendRealMessageDetailed(cleanPhone, msg1, instAlvo, ANTIBAN.PRESENCA_MS);
+        const r = modoClique && msg1Data
+          ? await sendButtonsDetailed(
+              cleanPhone,
+              msg1Data.title,
+              msg1Data.buttons,
+              instAlvo,
+              ANTIBAN.PRESENCA_MS,
+              msg1Data.fallbackText
+            )
+          : await sendRealMessageDetailed(cleanPhone, msg1Text, instAlvo, ANTIBAN.PRESENCA_MS);
+
         dispatched = r.ok;
         instanciaUsada = r.instance;
         if (r.ok) {
@@ -165,7 +176,7 @@ export async function POST(req: NextRequest) {
           persistMessageByJid({
             phoneOrJid: cleanPhone,
             senderType: 'agent',
-            content: msg1,
+            content: msg1Text,
             name: nomeExibicao,
             externalId: r.messageId,
             instanceName: r.instance,
@@ -176,7 +187,7 @@ export async function POST(req: NextRequest) {
             addBotDispatchedMessage({
               toPhone: cleanPhone,
               name: nomeExibicao,
-              text: msg1,
+              text: msg1Text,
               botName: 'Robô Pesquisa Senado',
               instanceName: instanciaUsada,
             });
