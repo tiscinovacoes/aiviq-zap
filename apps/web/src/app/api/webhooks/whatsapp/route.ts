@@ -12,7 +12,12 @@ import {
   marcarSaudacaoRespondida,
   ESPERA_SAUDACAO_S,
 } from '@/lib/pesquisaSenadoStore';
-import { emSegundoPlano, enviarMsg2e3AposEspera } from '@/lib/pesquisaFluxo';
+import {
+  emSegundoPlano,
+  enviarMsg2e3AposEspera,
+  enviarListaVoto1AposEspera,
+  enviarListaVoto2,
+} from '@/lib/pesquisaFluxo';
 import {
   gerarMensagemSegundoVoto,
   gerarMensagemAgradecimento,
@@ -20,6 +25,8 @@ import {
   obterCandidatoPorId,
   ultimaOpcao,
   LISTA_VERSAO_ATUAL,
+  LISTA_VERSAO_CLIQUE,
+  parseListRowId,
 } from '@/lib/pesquisaSenado';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 
@@ -130,6 +137,8 @@ export async function POST(req: NextRequest) {
       text: string;
       externalId: string;
       name?: string;
+      /** rowId de uma lista clicável (fluxo por clique, teste), quando aplicável. */
+      listRowId?: string;
     }> = [];
 
     // ============ 0. ACK DE ENTREGA (MESSAGES_UPDATE) ============
@@ -220,6 +229,12 @@ export async function POST(req: NextRequest) {
       // Processa apenas mensagens recebidas de contatos (ignora grupos e as minhas)
       if (!fromMe && realJid && !isGroup) {
         const from = realJid.replace('@s.whatsapp.net', '').replace('@lid', '');
+        // Clique numa lista (fluxo por clique, teste): não populam conversation/
+        // extendedTextMessage -- o conteúdo vem só aqui. Formato por convenção
+        // do protocolo Baileys/WA (não confirmado em doc oficial da Evolution;
+        // é o que o teste avulso vai validar na prática).
+        const listRowId: string | undefined = data.message?.listResponseMessage?.singleSelectReply?.selectedRowId;
+        const listRowTitle: string | undefined = data.message?.listResponseMessage?.title;
         const text =
           data.message?.conversation ||
           data.message?.extendedTextMessage?.text ||
@@ -227,15 +242,17 @@ export async function POST(req: NextRequest) {
           data.message?.documentMessage?.caption ||
           (data.message?.audioMessage ? '🎵 [Mensagem de Áudio]' : '') ||
           (data.message?.imageMessage ? '📷 [Foto]' : '') ||
+          (listRowId ? (listRowTitle || `[Selecionou: ${listRowId}]`) : '') ||
           '';
 
         const externalId = key.id || `evo-${Date.now()}`;
         const name = data.pushName || `WhatsApp ${from.slice(-4)}`;
 
-        if (text) {
-          incomingMessages.push({ from, text, externalId, name });
+        if (text || listRowId) {
+          incomingMessages.push({ from, text, externalId, name, listRowId });
           console.log(
-            `[Evolution API Inbound] De: ${from} (${name}) | Mensagem: "${text}"`
+            `[Evolution API Inbound] De: ${from} (${name}) | Mensagem: "${text}"` +
+              (listRowId ? ` | listRowId: ${listRowId}` : '')
           );
         }
       }
@@ -326,6 +343,7 @@ export async function POST(req: NextRequest) {
 
           const cleanText = msg.text.trim();
           const seed = msg.from.replace(/\D/g, '');
+          const modoClique = session.listaVersao === LISTA_VERSAO_CLIQUE;
 
           // Opt-out: encerra o fluxo educadamente (protege o chip e respeita o lead).
           if (isOptOut(cleanText)) {
@@ -351,16 +369,26 @@ export async function POST(req: NextRequest) {
           // bem"). Só a 1ª mensagem vale (marcação atômica); a Msg 2/3 sai
           // em segundo plano após a espera, e o webhook responde na hora.
           if (session.etapa === 'disparado') {
-            const venceu = await marcarSaudacaoRespondida(session.id, LISTA_VERSAO_ATUAL);
+            // Preserva a versão CLIQUE se foi essa a Msg 1 enviada (marcada na
+            // criação da sessão pelo disparo avulso); senão, a atual do fluxo
+            // em massa. Sem isso, esta marcação (sempre LISTA_VERSAO_ATUAL antes)
+            // sobrescrevia a flag do fluxo por clique já no 1º evento.
+            const versaoAlvo = modoClique ? LISTA_VERSAO_CLIQUE : LISTA_VERSAO_ATUAL;
+            const venceu = await marcarSaudacaoRespondida(session.id, versaoAlvo);
             if (!venceu) continue; // outra mensagem do mesmo eleitor chegou antes
             session.etapa = 'aguardando_voto1';
-            session.listaVersao = LISTA_VERSAO_ATUAL;
+            session.listaVersao = versaoAlvo;
             sincronizarContatoEleitor({
               name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'aguardando_voto1',
             }).catch((e) => console.error('[Webhook] Erro sync contato:', e));
 
-            emSegundoPlano(enviarMsg2e3AposEspera(session, stickyInst, msg.from));
-            console.log(`[Pesquisa Senado MS] Saudação respondida por ${msg.from} — Msg 2 e 3 em ${ESPERA_SAUDACAO_S}s`);
+            if (modoClique) {
+              emSegundoPlano(enviarListaVoto1AposEspera(session, stickyInst, msg.from));
+              console.log(`[Pesquisa Senado MS] (clique) Saudação respondida por ${msg.from} — lista do 1º voto em ${ESPERA_SAUDACAO_S}s`);
+            } else {
+              emSegundoPlano(enviarMsg2e3AposEspera(session, stickyInst, msg.from));
+              console.log(`[Pesquisa Senado MS] Saudação respondida por ${msg.from} — Msg 2 e 3 em ${ESPERA_SAUDACAO_S}s`);
+            }
           }
 
           // Ainda dentro da espera (Msg 2/3 não saiu): é o resto da resposta à
@@ -372,9 +400,12 @@ export async function POST(req: NextRequest) {
           // Etapa 2: aguardando 1º voto
           else if (session.etapa === 'aguardando_voto1') {
             // Lê pela numeração da lista que ESTE eleitor recebeu (quem recebeu a
-            // lista antiga de 12 ainda digita os números antigos).
+            // lista antiga de 12 ainda digita os números antigos). No fluxo por
+            // clique, o clique na lista (rowId) tem prioridade sobre o texto --
+            // mas um número digitado continua funcionando como reserva (a lista
+            // CLIQUE também tem opcao 1-5 mapeada).
             const versao = session.listaVersao ?? 1;
-            const votoValido = validarVoto(cleanText, versao);
+            const votoValido = parseListRowId(msg.listRowId) ?? validarVoto(cleanText, versao);
             if (!votoValido) {
               await botReply(msg.from, session.name, `Opa, não consegui identificar direitinho por aqui 😅 Pode me mandar só o número da opção (de 1 a ${ultimaOpcao(versao)})?`, stickyInst);
             } else {
@@ -383,23 +414,29 @@ export async function POST(req: NextRequest) {
                 session.voto1Id = candidato1.id;
                 session.voto1Nome = candidato1.nome;
                 session.etapa = 'aguardando_voto2';
-                // Msg 4 sai com a lista ATUAL, qualquer que tenha sido a do 1º voto.
-                session.listaVersao = LISTA_VERSAO_ATUAL;
+                // Preserva a versão CLIQUE; senão, Msg 4 sai com a lista ATUAL do
+                // fluxo em massa, qualquer que tenha sido a do 1º voto.
+                session.listaVersao = modoClique ? LISTA_VERSAO_CLIQUE : LISTA_VERSAO_ATUAL;
                 await savePesquisaSession(session);
                 sincronizarContatoEleitor({
                   name: session.name, phone: msg.from, bairro: session.bairro,
                   voto1Nome: candidato1.nome, etapa: 'aguardando_voto2',
                 }).catch((e) => console.error('[Webhook] Erro sync contato 1º voto:', e));
 
-                await botReply(msg.from, session.name, gerarMensagemSegundoVoto(candidato1.id, seed), stickyInst);
-                console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) — Msg 4 enviada para ${msg.from} via ${stickyInst || 'default'}`);
+                if (modoClique) {
+                  await enviarListaVoto2(candidato1.id, session, stickyInst, msg.from);
+                  console.log(`[Pesquisa Senado MS] (clique) 1º Voto (${candidato1.nome}) — lista do 2º voto enviada para ${msg.from} via ${stickyInst || 'default'}`);
+                } else {
+                  await botReply(msg.from, session.name, gerarMensagemSegundoVoto(candidato1.id, seed), stickyInst);
+                  console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) — Msg 4 enviada para ${msg.from} via ${stickyInst || 'default'}`);
+                }
               }
             }
           }
 
           // Etapa 3: aguardando 2º voto
           else if (session.etapa === 'aguardando_voto2') {
-            const votoValido = validarVoto(cleanText, session.listaVersao ?? 1);
+            const votoValido = parseListRowId(msg.listRowId) ?? validarVoto(cleanText, session.listaVersao ?? 1);
             if (!votoValido) {
               await botReply(msg.from, session.name, 'Opa, não consegui identificar por aqui 😅 Pode me mandar só o número da sua segunda escolha?', stickyInst);
             } else if (session.voto1Id && session.voto1Id === votoValido && !obterCandidatoPorId(votoValido)?.isEspecial) {

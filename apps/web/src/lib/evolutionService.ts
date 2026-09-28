@@ -517,6 +517,99 @@ export async function sendRealMessageDetailed(
   }
 }
 
+// ================= 4a. ENVIAR LISTA CLICÁVEL (fluxo por clique, teste) =================
+export interface ListaMessagePayload {
+  title: string;
+  description: string;
+  buttonText: string;
+  footerText?: string;
+  sections: Array<{ title: string; rows: Array<{ title: string; description?: string; rowId: string }> }>;
+}
+
+/**
+ * Envia uma lista interativa (WhatsApp list message) pela Evolution.
+ * Espelha o fallback de instância de sendRealMessageDetailed: se a instância
+ * resolvida não estiver conectada, procura qualquer outra conectada no
+ * servidor Evolution antes de desistir.
+ *
+ * ATENÇÃO (risco conhecido, decisão do operador): mensagens de lista/botão são
+ * pouco confiáveis no conector Baileys (não-oficial) -- a Meta detecta e o
+ * WhiskeySockets/Baileys já removeu esse recurso antes. Uso restrito a teste
+ * avulso controlado, não a disparo em massa.
+ */
+export async function sendListMessageDetailed(
+  target: string,
+  payload: ListaMessagePayload,
+  instanceName?: string,
+  delayMs = 0
+): Promise<SendResult> {
+  let inst = resolveInstanceName(instanceName);
+  let isConnected = await isEvolutionConnected(inst);
+
+  if (!isConnected) {
+    try {
+      const live = await fetchLiveEvolutionInstances();
+      const conectada = live.find((i) => i.status === 'connected');
+      if (conectada) {
+        inst = conectada.instanceName;
+        isConnected = true;
+      }
+    } catch {}
+  }
+
+  if (!isConnected) {
+    console.warn(`[Evolution Send List] Nenhuma instância conectada para envio (tentada: ${inst}).`);
+    return { ok: false, instance: inst, error: 'Instância WhatsApp desconectada' };
+  }
+
+  try {
+    const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
+    if (!cleanNumber || cleanNumber.length < 8) {
+      return { ok: false, instance: inst, error: 'Número de telefone inválido ou incompleto' };
+    }
+
+    const res = await fetch(`${EVOLUTION_API_URL}/message/sendList/${inst}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: EVOLUTION_API_KEY,
+      },
+      body: JSON.stringify({
+        number: cleanNumber,
+        title: payload.title,
+        description: payload.description,
+        buttonText: payload.buttonText,
+        footerText: payload.footerText,
+        sections: payload.sections,
+        delay: delayMs,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (res.ok) {
+      let messageId: string | undefined;
+      try {
+        const data = await res.json();
+        messageId = data?.key?.id || data?.messageId || undefined;
+      } catch {}
+      invalidateEvolutionCache(inst);
+      return { ok: true, messageId, instance: inst };
+    }
+
+    const err = await res.text();
+    console.warn(`[Evolution Send List Failed HTTP ${res.status}] (${inst}):`, err);
+    let msgErro = `Falha no envio da lista (HTTP ${res.status})`;
+    try {
+      const parsed = JSON.parse(err);
+      msgErro = parsed?.response?.message || parsed?.message || msgErro;
+    } catch {}
+    return { ok: false, instance: inst, error: msgErro };
+  } catch (err: any) {
+    console.error(`[Evolution Send List Error] (${inst}):`, err.message);
+    return { ok: false, instance: inst, error: err.message || 'Erro de conexão no envio da lista' };
+  }
+}
+
 /** Resolve a instância que REALMENTE será usada para enviar (a padrão se
  *  conectada, senão a primeira conectada no servidor). Serve para gatear o
  *  anti-ban e registrar o contador no MESMO chip que dispara. */
