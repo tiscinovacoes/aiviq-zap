@@ -100,6 +100,9 @@ export default function PesquisaSenadoKanban() {
   const [novoBairro, setNovoBairro] = useState('Campo Grande - MS');
   const [disparando, setDisparando] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
+  // Teste do fluxo por clique (lista clicável em vez de resposta digitada) --
+  // restrito ao disparo avulso, sempre desmarcado por padrão.
+  const [modoClique, setModoClique] = useState(false);
 
   // Modal e Estado de Importação de Planilha Excel/CSV
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
@@ -251,6 +254,7 @@ export default function PesquisaSenadoKanban() {
           name: novoNome.trim(),
           bairro: novoBairro.trim(),
           sendWhatsApp: true,
+          modo: modoClique ? 'clique' : undefined,
         }),
       });
       const data = await res.json();
@@ -1212,6 +1216,21 @@ export default function PesquisaSenadoKanban() {
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden"
                 />
               </div>
+
+              <label className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={modoClique}
+                  onChange={(e) => setModoClique(e.target.checked)}
+                  className="mt-0.5 accent-amber-600"
+                />
+                <span className="text-[11px] text-amber-800 leading-snug">
+                  <span className="font-semibold">Testar fluxo por clique (experimental).</span>{' '}
+                  Msg 1 já pergunta se a pessoa topa a pesquisa; os votos saem como lista
+                  clicável em vez de número digitado. Só para disparo avulso de teste — risco
+                  de instabilidade maior que o texto normal.
+                </span>
+              </label>
 
               {mensagemSucesso && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs">

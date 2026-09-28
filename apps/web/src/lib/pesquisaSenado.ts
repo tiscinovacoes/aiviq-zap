@@ -69,6 +69,23 @@ export const CANDIDATOS_LISTA_V1: CandidatoSenado[] = [
   { id: 12, nome: 'Não sabe/não respondeu', rotulo: 'Não sabe/não respondeu', emoji: '1️⃣2️⃣', isEspecial: true },
 ];
 
+// ------------------------------------------------------------------------------
+// LISTA CLIQUE (v4, 28/09/2026): reta final da campanha, teste de fluxo por
+// CLIQUE (WhatsApp list message) em vez de resposta digitada. Só os 4
+// candidatos do teste + branco/nulo (decisão do operador), na ordem pedida.
+// Mesmos `id` estáveis de sempre -- só muda quem entra na lista, a ordem e a
+// `opcao` (numeração própria desta lista, 1-5).
+// ------------------------------------------------------------------------------
+export const LISTA_VERSAO_CLIQUE = 4;
+
+export const CANDIDATOS_CLIQUE: CandidatoSenado[] = [
+  { id: 7, opcao: 1, nome: 'Soraya', partido: 'PSB', rotulo: 'Soraya (PSB)', emoji: '1️⃣', aliases: ['soraya thronicke', 'thronicke'] },
+  { id: 10, opcao: 2, nome: 'Vander Loubet', partido: 'PT', rotulo: 'Vander Loubet (PT)', emoji: '2️⃣', aliases: ['vander', 'loubet'] },
+  { id: 2, opcao: 3, nome: 'Capitão Contar', partido: 'PL', rotulo: 'Capitão Contar (PL)', emoji: '3️⃣' },
+  { id: 5, opcao: 4, nome: 'Reinaldo Azambuja', partido: 'PL', rotulo: 'Reinaldo Azambuja (PL)', emoji: '4️⃣', aliases: ['azambuja', 'reinaldo'] },
+  { id: 11, opcao: 5, nome: 'Branco/nulo', rotulo: 'Branco/nulo', emoji: '5️⃣', isEspecial: true, aliases: ['branco', 'nulo'] },
+];
+
 /** Candidatos que saíram da lista (só aparecem no painel se tiverem voto gravado). */
 export const CANDIDATOS_FORA_DA_LISTA: CandidatoSenado[] = CANDIDATOS_LISTA_V1
   .filter((c) => !CANDIDATOS_SENADO_MS.some((a) => a.id === c.id))
@@ -179,6 +196,25 @@ export function gerarMensagem1(nome?: string, seed?: string): string {
   return spin(`${alvo}, ${saudacao}{!|,}\n{tudo bem|como vai|espero que esteja bem|tudo certo}?`, seed);
 }
 
+// Mensagem 1 (fluxo CLIQUE, teste): funde saudação + contextualização + a
+// pergunta de consentimento + saída de descadastro numa única mensagem --
+// no fluxo por clique não há Msg 2 separada (o próximo passo já é a lista de
+// candidatos). Mesmo motivo do `nome` não ser usado em gerarMensagem1: nome
+// desatualizado (número reciclado) derruba a taxa de resposta.
+export function gerarMensagem1Clique(nome?: string, seed?: string): string {
+  const { saudacao } = getSaudacaoPeriodo();
+  const abertura = spin(`{Olá|Oi|Olá!|Oi!}, ${saudacao}{!|,} {tudo bem|como vai}?`, seed);
+  const pergunta = spin(
+    `{Estou fazendo|Estou realizando} uma pesquisa {de opinião|rápida de opinião} sobre a eleição para o Senado {Federal |}em Mato Grosso do Sul. {Você toparia responder|Você poderia responder|Podemos fazer} 2 perguntas rápidas?`,
+    seed
+  );
+  const saida = spin(
+    `{Se preferir não participar, responda SAIR|Caso não queira receber, é só responder SAIR|Para não receber mais, responda SAIR}.`,
+    seed
+  );
+  return `${abertura}\n\n${pergunta}\n\n${saida}`;
+}
+
 // Mensagem 2: Contextualização da pesquisa + saída de descadastro.
 //
 // O rodapé de opt-out fica AQUI, e não na Msg 1: a saudação é curta e casual
@@ -240,6 +276,67 @@ export function gerarMensagem5(seed?: string): string {
 }
 
 // ------------------------------------------------------------------------------
+// Listas CLICÁVEIS (WhatsApp list message) do fluxo por clique (teste, 28/09/2026)
+//
+// Mesma ideia da Msg 3/4 em texto, mas como estrutura para a Evolution montar
+// um `message/sendList` -- o eleitor toca a opção em vez de digitar o número.
+// `textoFallback` acompanha o payload só para o histórico da conversa (Inbox
+// e Supabase) mostrarem algo legível; quem decide o que chega no WhatsApp é o
+// `sections`, enviado pela Evolution.
+// ------------------------------------------------------------------------------
+export interface ListaPayload {
+  title: string;
+  description: string;
+  footerText?: string;
+  buttonText: string;
+  sections: Array<{ title: string; rows: Array<{ title: string; description?: string; rowId: string }> }>;
+  /** Representação em texto puro, só para persistir/exibir no histórico. */
+  textoFallback: string;
+}
+
+function construirListaPayload(candidatos: CandidatoSenado[], descricao: string, tituloSecao: string): ListaPayload {
+  return {
+    title: 'Pesquisa Eleitoral MS',
+    description: descricao,
+    footerText: 'Pesquisa Eleitoral Senado MS 2026',
+    buttonText: 'Ver opções',
+    sections: [
+      {
+        title: tituloSecao,
+        rows: candidatos.map((c) => ({ title: c.rotulo, rowId: `voto_${c.id}` })),
+      },
+    ],
+    textoFallback: `${descricao}\n\n${candidatos.map((c) => `${c.emoji} ${c.rotulo}`).join('\n')}`,
+  };
+}
+
+/** Lista clicável do 1º voto (candidatos da lista CLIQUE, v4). */
+export function gerarListaVoto1Payload(seed?: string): ListaPayload {
+  const descricao = spin(
+    `{Pensando no seu primeiro voto|Considerando seu primeiro voto|No seu primeiro voto}, em qual destes candidatos você votaria?`,
+    seed
+  );
+  return construirListaPayload(CANDIDATOS_CLIQUE, descricao, 'Primeiro voto');
+}
+
+/** Lista clicável do 2º voto (exclui o candidato já escolhido no 1º voto). */
+export function gerarListaVoto2Payload(voto1Id: number, seed?: string): ListaPayload {
+  const opcoesFiltradas = CANDIDATOS_CLIQUE.filter((c) => c.isEspecial || c.id !== voto1Id);
+  const descricao = spin(
+    `{Agora, considerando seu segundo voto|E no seu segundo voto|Agora, pensando no segundo voto}, em qual destes candidatos você votaria?`,
+    seed
+  );
+  return construirListaPayload(opcoesFiltradas, descricao, 'Segundo voto');
+}
+
+/** Lê o `rowId` (formato `voto_<id>`) devolvido pelo clique do eleitor na lista. */
+export function parseListRowId(rowId?: string | null): number | null {
+  if (!rowId) return null;
+  const m = /^voto_(\d+)$/.exec(rowId.trim());
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// ------------------------------------------------------------------------------
 // Validação de Resposta do Eleitor
 // ------------------------------------------------------------------------------
 const normalizar = (t: string) =>
@@ -254,6 +351,7 @@ const LISTAS_POR_VERSAO: Record<number, CandidatoSenado[]> = {
   1: CANDIDATOS_LISTA_V1,
   2: CANDIDATOS_LISTA_V2,
   3: CANDIDATOS_SENADO_MS,
+  4: CANDIDATOS_CLIQUE,
 };
 
 /**
