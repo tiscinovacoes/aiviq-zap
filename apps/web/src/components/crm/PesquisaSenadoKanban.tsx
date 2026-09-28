@@ -105,6 +105,9 @@ export default function PesquisaSenadoKanban() {
   const [novoBairro, setNovoBairro] = useState('Campo Grande - MS');
   const [disparando, setDisparando] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
+  // Bloqueio anti-ban (gated) ou falha real de envio -- distinto de sucesso,
+  // para o operador nao ver "enviado com sucesso" quando nada saiu de fato.
+  const [mensagemErro, setMensagemErro] = useState<string | null>(null);
   // Teste do fluxo por clique (lista clicável em vez de resposta digitada) --
   // restrito ao disparo avulso, sempre desmarcado por padrão.
   const [modoClique, setModoClique] = useState(false);
@@ -248,6 +251,7 @@ export default function PesquisaSenadoKanban() {
     if (!novoTelefone.trim()) return;
     setDisparando(true);
     setMensagemSucesso(null);
+    setMensagemErro(null);
 
     try {
       const res = await fetch('/api/pesquisa/senado', {
@@ -263,7 +267,16 @@ export default function PesquisaSenadoKanban() {
         }),
       });
       const data = await res.json();
-      if (data.success) {
+
+      // Bloqueado pelo anti-ban (banco de erros, já em fluxo, fora de horário,
+      // teto do chip) ou o envio pela Evolution falhou de verdade -- nos dois
+      // casos a API responde `success: true` mas NADA saiu do chip. Sem esta
+      // checagem, o painel mostrava "Disparo enviado com sucesso!" e o
+      // operador só descobria que não chegou nada quando o WhatsApp nunca
+      // tocava, sem nenhuma pista do motivo real.
+      if (data.gated || (data.success && data.dispatchedWhatsApp === false)) {
+        setMensagemErro(data.message || 'Disparo bloqueado ou não enviado -- motivo não informado pelo servidor.');
+      } else if (data.success) {
         setMensagemSucesso(
           `Disparo enviado com sucesso! ${data.dispatchedWhatsApp ? 'WhatsApp notificado em tempo real.' : 'Registrado na fila.'}`
         );
@@ -274,9 +287,12 @@ export default function PesquisaSenadoKanban() {
           setIsModalOpen(false);
           setMensagemSucesso(null);
         }, 2000);
+      } else {
+        setMensagemErro(data.error || 'Erro ao processar o disparo.');
       }
     } catch (err) {
       console.error('Erro ao disparar:', err);
+      setMensagemErro('Erro de conexão ao disparar. Tente novamente.');
     } finally {
       setDisparando(false);
     }
@@ -1240,6 +1256,13 @@ export default function PesquisaSenadoKanban() {
               {mensagemSucesso && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs">
                   {mensagemSucesso}
+                </div>
+              )}
+
+              {mensagemErro && (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs flex gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{mensagemErro}</span>
                 </div>
               )}
 
