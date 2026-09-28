@@ -17,8 +17,11 @@ export { spin, isOptOut } from '@/lib/spintax';
 // ============================================================================
 
 // -------- Parâmetros do perfil conservador (ajuste central) --------
-// Perfil pós-ban (23/09/2026), definido pelo operador:
-//   - teto de 150 mensagens por CHIP por dia;
+// Perfil pós-ban (23/09/2026), definido pelo operador. Teto reduzido de
+// 150 -> 50/dia por chip em 28/09/2026 (decisão do operador, reta final da
+// campanha: mais chips com fatia menor cada, em vez de poucos chips no teto
+// alto):
+//   - teto de 50 mensagens por CHIP por dia;
 //   - janela de trabalho das 8h às 21h (fuso MS);
 //   - TEMPO por chip: o intervalo de cada chip é a janela dividida pelo teto
 //     dele, então as mensagens saem espalhadas pelo dia inteiro, sem rajada
@@ -26,10 +29,10 @@ export { spin, isOptOut } from '@/lib/spintax';
 //     disparo (ver intervaloFixoDoChipSegundos) para não bater sempre no
 //     mesmo número redondo, que sozinho já é um padrão mecânico.
 //
-// Conta para um chip de 150/dia:
+// Conta para um chip de 50/dia:
 //   janela útil = 13h (780 min) - 30 min de margem = 750 min
-//   750 min / 150 = 300s (5 min) de BASE entre um envio e outro do MESMO
-//   chip, sorteado entre 275s e 325s a cada vez.
+//   750 min / 50 = 900s (15 min) de BASE entre um envio e outro do MESMO
+//   chip, sorteado com jitter de ±25s a cada vez.
 // Chip em warm-up (teto menor) ganha intervalo base proporcionalmente maior:
 // 30/dia -> ~25 min; 50/dia -> ~15 min; ... (mesmo ±25s de jitter)
 //
@@ -51,8 +54,8 @@ export const ANTIBAN = {
   // WARM-UP: chip declarado "novo" começa baixo e sobe. Número novo despejando
   // centenas de mensagens no primeiro dia é o perfil de ban mais clássico.
   WARMUP_BASE: 30, // teto do dia 0
-  WARMUP_STEP: 20, // ganho por dia até alcançar DAILY_CAP (~6 dias)
-  DAILY_CAP: 150, // teto de regime, por chip/dia (150/dia)
+  WARMUP_STEP: 20, // ganho por dia até alcançar DAILY_CAP
+  DAILY_CAP: 50, // teto de regime, por chip/dia (reduzido de 150, 28/09/2026)
   HORA_INICIO: 8, // 08:00 MS
   HORA_FIM: 21, // 21:00 MS (exclusivo)
   // Folga no fim da janela para absorver atrasos do cron/ticks perdidos sem

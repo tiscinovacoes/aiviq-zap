@@ -18,7 +18,12 @@ import {
   marcarSaudacaoRespondida,
   ESPERA_SAUDACAO_S,
 } from '@/lib/pesquisaSenadoStore';
-import { emSegundoPlano, enviarMsg2e3AposEspera } from '@/lib/pesquisaFluxo';
+import {
+  emSegundoPlano,
+  enviarMsg2e3AposEspera,
+  enviarListaVoto1AposEspera,
+  enviarListaVoto2,
+} from '@/lib/pesquisaFluxo';
 import {
   gerarMensagemPrimeiroVotoData,
   gerarMensagemSegundoVotoData,
@@ -27,6 +32,8 @@ import {
   obterCandidatoPorId,
   ultimaOpcao,
   LISTA_VERSAO_ATUAL,
+  LISTA_VERSAO_CLIQUE,
+  parseListRowId,
 } from '@/lib/pesquisaSenado';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 
@@ -137,6 +144,8 @@ export async function POST(req: NextRequest) {
       text: string;
       externalId: string;
       name?: string;
+      /** rowId de uma lista clicável (fluxo por clique, teste), quando aplicável. */
+      listRowId?: string;
     }> = [];
 
     // ============ 0. ACK DE ENTREGA (MESSAGES_UPDATE) ============
@@ -243,6 +252,12 @@ export async function POST(req: NextRequest) {
       // Processa apenas mensagens recebidas de contatos (ignora grupos e as minhas)
       if (!fromMe && realJid && !isGroup) {
         const from = realJid.replace('@s.whatsapp.net', '').replace('@lid', '');
+        // Clique numa lista (fluxo por clique, teste): não populam conversation/
+        // extendedTextMessage -- o conteúdo vem só aqui. Formato por convenção
+        // do protocolo Baileys/WA (não confirmado em doc oficial da Evolution;
+        // é o que o teste avulso vai validar na prática).
+        const listRowId: string | undefined = data.message?.listResponseMessage?.singleSelectReply?.selectedRowId;
+        const listRowTitle: string | undefined = data.message?.listResponseMessage?.title;
         const text =
           data.message?.conversation ||
           data.message?.extendedTextMessage?.text ||
@@ -255,15 +270,17 @@ export async function POST(req: NextRequest) {
           data.message?.documentMessage?.caption ||
           (data.message?.audioMessage ? '🎵 [Mensagem de Áudio]' : '') ||
           (data.message?.imageMessage ? '📷 [Foto]' : '') ||
+          (listRowId ? (listRowTitle || `[Selecionou: ${listRowId}]`) : '') ||
           '';
 
         const externalId = key.id || `evo-${Date.now()}`;
         const name = data.pushName || `WhatsApp ${from.slice(-4)}`;
 
-        if (text) {
-          incomingMessages.push({ from, text, externalId, name });
+        if (text || listRowId) {
+          incomingMessages.push({ from, text, externalId, name, listRowId });
           console.log(
-            `[Evolution API Inbound] De: ${from} (${name}) | Mensagem: "${text}"`
+            `[Evolution API Inbound] De: ${from} (${name}) | Mensagem: "${text}"` +
+              (listRowId ? ` | listRowId: ${listRowId}` : '')
           );
         }
       }
@@ -386,6 +403,7 @@ export async function POST(req: NextRequest) {
 
           const cleanText = msg.text.trim();
           const seed = msg.from.replace(/\D/g, '');
+          const modoClique = session.listaVersao === LISTA_VERSAO_CLIQUE;
 
           // Opt-out / Recusa ("Agora não" ou palavras de opt-out)
           if (
