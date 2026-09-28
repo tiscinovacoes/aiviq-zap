@@ -818,7 +818,7 @@ export default function PesquisaSenadoKanban() {
             <p className="text-xl font-bold text-rose-700">{totalFalhasDisparo}</p>
             {totalFalhasDisparo > 0 && (
               <span className="text-[10px] font-semibold text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded border border-rose-200 flex items-center gap-0.5">
-                Verificar ➜
+                Verificar ➔
               </span>
             )}
           </div>
