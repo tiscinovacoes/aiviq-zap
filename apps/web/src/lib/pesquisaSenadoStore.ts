@@ -114,7 +114,9 @@ export async function savePesquisaSession(
     voto1_nome: session.voto1Nome ?? null,
     voto2_id: session.voto2Id ?? null,
     voto2_nome: session.voto2Nome ?? null,
+    updated_at: new Date().toISOString(),
   };
+  if (session.createdAt) payloadBase.created_at = session.createdAt;
   // Só grava a versão da lista quando ela foi definida (ao enviar Msg 3/4);
   // omitida, o banco mantém a que já estava.
   if (session.listaVersao) payloadBase.lista_versao = session.listaVersao;
@@ -160,15 +162,22 @@ export async function createOrUpdateSessionByPhone(
   updates: Partial<RespostaEleitor>
 ): Promise<RespostaEleitor> {
   const existing = await getPesquisaSessionByPhone(phone);
+  const now = new Date().toISOString();
   const merged: RespostaEleitor = existing
-    ? { ...existing, ...updates, name: name || existing.name }
+    ? {
+        ...existing,
+        ...updates,
+        name: name || existing.name,
+        lastMessageAt: now,
+        createdAt: updates.createdAt || (updates.etapa === 'disparado' ? now : existing.createdAt || now),
+      }
     : {
         id: `ps-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         phone: cleanPhone(phone),
         name: name || `Eleitor ${cleanPhone(phone).slice(-4)}`,
         etapa: 'disparado',
-        createdAt: new Date().toISOString(),
-        lastMessageAt: new Date().toISOString(),
+        createdAt: now,
+        lastMessageAt: now,
         ...updates,
       };
   return savePesquisaSession(merged);

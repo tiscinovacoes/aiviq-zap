@@ -828,6 +828,27 @@ export async function getFailedItems(limit = 100): Promise<FailedQueueItem[]> {
   }));
 }
 
+export async function clearDispatchErrorForPhone(phone: string): Promise<void> {
+  const clean = canonicalDigits(phone);
+  if (!clean) return;
+  if (isPlaceholderEnv()) {
+    (global.__aiviq_queue || []).forEach((i) => {
+      if (canonicalDigits(i.phone) === clean && i.status === 'erro') {
+        i.status = 'enviado';
+      }
+    });
+    return;
+  }
+  const ctx = await getServiceContext();
+  if (!ctx) return;
+  await ctx.db
+    .from('dispatch_queue')
+    .update({ status: 'enviado', status_definitivo: false, error: null })
+    .eq('organization_id', ctx.organizationId)
+    .eq('phone', clean)
+    .eq('status', 'erro');
+}
+
 export async function requeueFailedItems(): Promise<number> {
   if (isPlaceholderEnv()) {
     let count = 0;

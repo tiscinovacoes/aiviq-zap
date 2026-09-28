@@ -25,7 +25,7 @@ import { addBotDispatchedMessage } from '@/lib/conversationStore';
 import { sincronizarContatoEleitor } from '@/lib/pesquisaContatoSync';
 import { persistMessageByJid } from '@/lib/conversationRepo';
 import { reserveDispatchSlot, releaseDispatchSlot, ANTIBAN } from '@/lib/antiBan';
-import { getDispatchErrorForPhone } from '@/lib/dispatchQueue';
+import { getDispatchErrorForPhone, clearDispatchErrorForPhone } from '@/lib/dispatchQueue';
 
 export const dynamic = 'force-dynamic';
 
@@ -170,7 +170,11 @@ export async function POST(req: NextRequest) {
             voto2Id: undefined,
             voto2Nome: undefined,
             listaVersao: modoClique ? LISTA_VERSAO_CLIQUE : undefined,
+            createdAt: new Date().toISOString(),
           });
+
+          // Limpa histórico de erro em dispatch_queue para o contato não ser ocultado pelo recorte do funil
+          clearDispatchErrorForPhone(cleanPhone).catch((e) => console.error('[API Pesquisa] clearDispatchError:', e));
 
           // Persiste a Msg 1 no Supabase (keyed por JID) — grava a conversa de verdade.
           persistMessageByJid({
