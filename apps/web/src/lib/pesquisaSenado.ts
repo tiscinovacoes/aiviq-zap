@@ -32,9 +32,7 @@ export const CANDIDATOS_SENADO_MS: CandidatoSenado[] = [
   { id: 10, opcao: 2, nome: 'Vander Loubet', partido: 'PT', rotulo: 'Vander Loubet (PT)', emoji: '2️⃣', aliases: ['vander', 'loubet'] },
   { id: 2, opcao: 3, nome: 'Capitão Contar', partido: 'PL', rotulo: 'Capitão Contar (PL)', emoji: '3️⃣', aliases: ['contar', 'capitao'] },
   { id: 5, opcao: 4, nome: 'Reinaldo Azambuja', partido: 'PL', rotulo: 'Reinaldo Azambuja (PL)', emoji: '4️⃣', aliases: ['azambuja', 'reinaldo'] },
-  { id: 6, opcao: 5, nome: 'Roberto Oshiro', partido: 'NOVO', rotulo: 'Roberto Oshiro (NOVO)', emoji: '5️⃣', aliases: ['oshiro'] },
-  { id: 11, opcao: 6, nome: 'Branco/nulo', rotulo: 'Branco ou nulo', emoji: '6️⃣', isEspecial: true, aliases: ['branco', 'nulo'] },
-  { id: 12, opcao: 7, nome: 'Não sabe/não respondeu', rotulo: 'Não sabe/não respondeu', emoji: '7️⃣', isEspecial: true, aliases: ['nao sabe', 'não sei', 'nao sei'] },
+  { id: 11, opcao: 5, nome: 'Branco/nulo', rotulo: 'Branco ou nulo', emoji: '5️⃣', isEspecial: true, aliases: ['branco', 'nulo'] },
 ];
 
 // ------------------------------------------------------------------------------
