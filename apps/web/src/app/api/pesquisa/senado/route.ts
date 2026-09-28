@@ -9,6 +9,7 @@ import {
 } from '@/lib/pesquisaSenadoStore';
 import {
   gerarMensagem1,
+  gerarMensagem1Clique,
   gerarMensagem2,
   gerarMensagem3,
   gerarMensagemSegundoVoto,
@@ -16,6 +17,7 @@ import {
   validarVoto,
   obterCandidatoPorId,
   LISTA_VERSAO_ATUAL,
+  LISTA_VERSAO_CLIQUE,
 } from '@/lib/pesquisaSenado';
 import { sendRealMessageDetailed, resolveSendInstance } from '@/lib/evolutionService';
 import { addBotDispatchedMessage } from '@/lib/conversationStore';
@@ -49,7 +51,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, phone, name, bairro, sendWhatsApp = true, voto1Id, voto2Id } = body;
+    const { action, phone, name, bairro, sendWhatsApp = true, voto1Id, voto2Id, modo } = body;
+    // Fluxo por clique (teste, 28/09/2026): restrito ao disparo avulso, nunca
+    // ao disparo em massa (pesquisaSenadoDispatcher/dispatchQueue não usam
+    // esta rota nem este campo).
+    const modoClique = modo === 'clique';
 
     if (!phone) {
       return NextResponse.json(
@@ -125,7 +131,9 @@ export async function POST(req: NextRequest) {
       }
 
       // Spintax semeado pelo telefone → cada lead recebe uma abertura diferente.
-      const msg1 = gerarMensagem1(name, cleanPhone);
+      // Modo clique: Msg 1 já funde saudação + pergunta de consentimento (o
+      // próximo passo, depois da saudação respondida, é a lista clicável).
+      const msg1 = modoClique ? gerarMensagem1Clique(name, cleanPhone) : gerarMensagem1(name, cleanPhone);
       const nomeExibicao = name || existente?.name || `Eleitor ${cleanPhone.slice(-4)}`;
 
       let dispatched = false;
@@ -150,6 +158,7 @@ export async function POST(req: NextRequest) {
             voto1Nome: undefined,
             voto2Id: undefined,
             voto2Nome: undefined,
+            listaVersao: modoClique ? LISTA_VERSAO_CLIQUE : undefined,
           });
 
           // Persiste a Msg 1 no Supabase (keyed por JID) — grava a conversa de verdade.
@@ -196,14 +205,18 @@ export async function POST(req: NextRequest) {
           voto1Nome: undefined,
           voto2Id: undefined,
           voto2Nome: undefined,
+          listaVersao: modoClique ? LISTA_VERSAO_CLIQUE : undefined,
         });
       }
 
       return NextResponse.json({
         success: true,
-        message: dispatched ? 'Pesquisa iniciada (Msg 1 enviada)' : 'Falha no envio pelo WhatsApp',
+        message: dispatched
+          ? `Pesquisa iniciada (Msg 1 enviada${modoClique ? ' — fluxo por clique' : ''})`
+          : 'Falha no envio pelo WhatsApp',
         session,
         dispatchedWhatsApp: dispatched,
+        modoClique,
       });
     }
 
