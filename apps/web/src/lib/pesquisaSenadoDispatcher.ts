@@ -1,5 +1,5 @@
 import { isPlaceholderEnv } from '@/lib/supabase/authContext';
-import { sendRealMessageDetailed, getConnectedDispatchInstances } from '@/lib/evolutionService';
+import { sendRealMessageDetailed, sendButtonsDetailed, getConnectedDispatchInstances } from '@/lib/evolutionService';
 import {
   reserveDispatchSlot,
   releaseDispatchSlot,
@@ -10,7 +10,7 @@ import {
   checkDispatchGate,
   ANTIBAN,
 } from '@/lib/antiBan';
-import { gerarMensagem1 } from '@/lib/pesquisaSenado';
+import { gerarMensagem1Data } from '@/lib/pesquisaSenado';
 import { createOrUpdateSessionByPhone } from '@/lib/pesquisaSenadoStore';
 import { addBotDispatchedMessage } from '@/lib/conversationStore';
 import { persistMessageByJid } from '@/lib/conversationRepo';
@@ -104,8 +104,15 @@ async function registrarSaude(instancia: string, sucesso: boolean): Promise<void
  */
 async function dispararContato(item: QueueItem, instancia: string): Promise<boolean> {
   try {
-    const msg1 = gerarMensagem1(item.name, item.phone);
-    const r = await sendRealMessageDetailed(item.phone, msg1, instancia, ANTIBAN.PRESENCA_MS);
+    const msg1Data = gerarMensagem1Data(item.phone);
+    const r = await sendButtonsDetailed(
+      item.phone,
+      msg1Data.title,
+      msg1Data.buttons,
+      instancia,
+      ANTIBAN.PRESENCA_MS,
+      msg1Data.fallbackText
+    );
 
     if (!r.ok) {
       const erroMsg = r.error || 'Falha no envio pelo WhatsApp';
@@ -142,7 +149,7 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
     persistMessageByJid({
       phoneOrJid: item.phone,
       senderType: 'agent',
-      content: msg1,
+      content: msg1Data.fallbackText,
       name: item.name,
       externalId: r.messageId,
       instanceName: instEnviou,
@@ -152,7 +159,7 @@ async function dispararContato(item: QueueItem, instancia: string): Promise<bool
       addBotDispatchedMessage({
         toPhone: item.phone,
         name: item.name,
-        text: msg1,
+        text: msg1Data.fallbackText,
         botName: 'Robo Pesquisa Senado',
         instanceName: instEnviou,
       });

@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { addInboundMessage, addBotDispatchedMessage } from '@/lib/conversationStore';
-import { invalidateEvolutionCache, sendRealMessageDetailed, garantirWebhookAtual } from '@/lib/evolutionService';
+import {
+  invalidateEvolutionCache,
+  sendRealMessageDetailed,
+  sendButtonsDetailed,
+  sendListDetailed,
+  garantirWebhookAtual,
+} from '@/lib/evolutionService';
 import { persistMessageByJid, atualizarStatusEntregaMensagem } from '@/lib/conversationRepo';
 import { isOptOut } from '@/lib/spintax';
 import { registrarOptOut, processarAckEntrega, setDispatchEnabled } from '@/lib/dispatchQueue';
@@ -14,8 +20,9 @@ import {
 } from '@/lib/pesquisaSenadoStore';
 import { emSegundoPlano, enviarMsg2e3AposEspera } from '@/lib/pesquisaFluxo';
 import {
-  gerarMensagemSegundoVoto,
-  gerarMensagemAgradecimento,
+  gerarMensagemPrimeiroVotoData,
+  gerarMensagemSegundoVotoData,
+  gerarMensagemAgradecimentoData,
   validarVoto,
   obterCandidatoPorId,
   ultimaOpcao,
@@ -239,6 +246,11 @@ export async function POST(req: NextRequest) {
         const text =
           data.message?.conversation ||
           data.message?.extendedTextMessage?.text ||
+          data.message?.buttonsResponseMessage?.selectedButtonId ||
+          data.message?.buttonsResponseMessage?.selectedDisplayText ||
+          data.message?.templateButtonReplyMessage?.selectedId ||
+          data.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
+          data.message?.listResponseMessage?.title ||
           data.message?.imageMessage?.caption ||
           data.message?.documentMessage?.caption ||
           (data.message?.audioMessage ? '🎵 [Mensagem de Áudio]' : '') ||
@@ -264,15 +276,22 @@ export async function POST(req: NextRequest) {
       const contactProfile = changesValue.contacts?.[0]?.profile?.name;
 
       for (const m of msgs) {
-        if (m.text?.body) {
+        const mText =
+          m.text?.body ||
+          m.interactive?.button_reply?.id ||
+          m.interactive?.button_reply?.title ||
+          m.interactive?.list_reply?.id ||
+          m.interactive?.list_reply?.title;
+
+        if (mText) {
           incomingMessages.push({
             from: m.from,
-            text: m.text.body,
+            text: mText,
             externalId: m.id,
             name: contactProfile || `WhatsApp ${m.from.slice(-4)}`,
           });
           console.log(
-            `[Meta Cloud API Inbound] De: ${m.from} | Mensagem: "${m.text.body}"`
+            `[Meta Cloud API Inbound] De: ${m.from} | Mensagem: "${mText}"`
           );
         }
       }
@@ -310,7 +329,7 @@ export async function POST(req: NextRequest) {
         }).catch((e) => console.error('[Webhook persist inbound]:', e));
       }
 
-      // Helper: resposta do bot ao vivo (delay 0), persistida no banco + espelhada.
+      // Helper: resposta de texto do bot
       const botReply = async (to: string, name: string, text: string, overrideInstance?: string) => {
         const sendInst = overrideInstance || instanceName;
         const r = await sendRealMessageDetailed(to, text, sendInst, 0);
@@ -328,13 +347,38 @@ export async function POST(req: NextRequest) {
         return r.ok;
       };
 
-      // 3. AUTOMAÇÃO: Pesquisa Eleitoral Senado MS (spintax semeado pelo telefone)
+      // Helper: resposta com lista clicável do bot
+      const botReplyList = async (
+        to: string,
+        name: string,
+        title: string,
+        buttonText: string,
+        rows: { id: string; title: string; description?: string }[],
+        fallbackText: string,
+        overrideInstance?: string
+      ) => {
+        const sendInst = overrideInstance || instanceName;
+        const r = await sendListDetailed(to, title, buttonText, rows, sendInst, 0, fallbackText);
+        persistMessageByJid({
+          phoneOrJid: to,
+          senderType: 'agent',
+          content: fallbackText,
+          name,
+          externalId: r.messageId,
+          instanceName: sendInst,
+        }).catch((e) => console.error('[Webhook persist bot list reply]:', e));
+        try {
+          addBotDispatchedMessage({ toPhone: to, name, text: fallbackText, instanceName: sendInst });
+        } catch {}
+        return r.ok;
+      };
+
+      // 3. AUTOMAÇÃO: Pesquisa Eleitoral Senado MS (Novo Fluxo Clicável)
       for (const msg of incomingMessages) {
         try {
           const session = await getPesquisaSessionByPhone(msg.from);
           if (!session || session.etapa === 'concluido' || session.etapa === 'recusado') continue;
 
-          // Sticky Routing: preserva e responde pela mesma instância de WhatsApp
           const stickyInst = instanceName || session.instanceName;
           if (!session.instanceName && instanceName) {
             session.instanceName = instanceName;
@@ -343,83 +387,129 @@ export async function POST(req: NextRequest) {
           const cleanText = msg.text.trim();
           const seed = msg.from.replace(/\D/g, '');
 
-          // Opt-out: encerra o fluxo educadamente (protege o chip e respeita o lead).
-          if (isOptOut(cleanText)) {
+          // Opt-out / Recusa ("Agora não" ou palavras de opt-out)
+          if (
+            cleanText === 'AGORA_NAO' ||
+            cleanText.toLowerCase() === 'agora nao' ||
+            cleanText.toLowerCase() === 'agora não' ||
+            isOptOut(cleanText)
+          ) {
             session.etapa = 'recusado';
             await savePesquisaSession(session);
-            // Entra na lista de opt-out e CANCELA os disparos pendentes dele em
-            // qualquer campanha. Antes a sessao virava 'recusado' mas a linha
-            // seguia pendente na fila: a pessoa seria reabordada depois de ter
-            // pedido para sair.
             const rOpt = await registrarOptOut(msg.from, 'respondeu opt-out no WhatsApp');
             if (rOpt.cancelados > 0) {
               console.log(`[Opt-out] ${msg.from}: ${rOpt.cancelados} disparo(s) pendente(s) cancelado(s)`);
             }
-            await botReply(msg.from, session.name, 'Combinado! Já retirei seu contato da lista e você não vai mais receber mensagens. Desculpe qualquer incômodo e um abraço! 👍', stickyInst);
+            await botReply(msg.from, session.name, 'Combinado! Obrigado pelo retorno e um bom dia! 👍', stickyInst);
             sincronizarContatoEleitor({
               name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'recusado',
             }).catch((e) => console.error('[Webhook] Erro sync opt-out:', e));
             continue;
           }
 
-          // Etapa 1: respondeu à saudação → Msg 2 + Msg 3 depois de 30s.
-          // O eleitor costuma mandar a resposta em pedaços ("oi" ... "tudo
-          // bem"). Só a 1ª mensagem vale (marcação atômica); a Msg 2/3 sai
-          // em segundo plano após a espera, e o webhook responde na hora.
+          // Etapa 1: Respondeu a Msg 1 ("Sim, pode" ou clique no botão)
           if (session.etapa === 'disparado') {
-            const venceu = await marcarSaudacaoRespondida(session.id, LISTA_VERSAO_ATUAL);
-            if (!venceu) continue; // outra mensagem do mesmo eleitor chegou antes
-            session.etapa = 'aguardando_voto1';
-            session.listaVersao = LISTA_VERSAO_ATUAL;
-            sincronizarContatoEleitor({
-              name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'aguardando_voto1',
-            }).catch((e) => console.error('[Webhook] Erro sync contato:', e));
+            const isSim =
+              cleanText === 'SIM_PODE' ||
+              cleanText === '1' ||
+              cleanText.toLowerCase().includes('sim') ||
+              cleanText.toLowerCase().includes('pode');
 
-            emSegundoPlano(enviarMsg2e3AposEspera(session, stickyInst, msg.from));
-            console.log(`[Pesquisa Senado MS] Saudação respondida por ${msg.from} — Msg 2 e 3 em ${ESPERA_SAUDACAO_S}s`);
+            if (isSim) {
+              const venceu = await marcarSaudacaoRespondida(session.id, LISTA_VERSAO_ATUAL);
+              if (!venceu) continue;
+              session.etapa = 'aguardando_voto1';
+              session.listaVersao = LISTA_VERSAO_ATUAL;
+              await savePesquisaSession(session);
+              sincronizarContatoEleitor({
+                name: session.name, phone: msg.from, bairro: session.bairro, etapa: 'aguardando_voto1',
+              }).catch((e) => console.error('[Webhook] Erro sync contato:', e));
+
+              const list1 = gerarMensagemPrimeiroVotoData(seed);
+              await botReplyList(
+                msg.from,
+                session.name,
+                list1.title,
+                list1.buttonText,
+                list1.rows,
+                list1.fallbackText,
+                stickyInst
+              );
+              console.log(`[Pesquisa Senado MS] Sim aceito por ${msg.from} — Msg 2 (Lista 1º Voto) enviada via ${stickyInst || 'default'}`);
+            } else {
+              await botReply(
+                msg.from,
+                session.name,
+                'Para participar da pesquisa, por favor clique no botão "Sim, pode" para escolher seu candidato! 👍',
+                stickyInst
+              );
+            }
           }
 
-          // Ainda dentro da espera (Msg 2/3 não saiu): é o resto da resposta à
-          // saudação ("tudo bem", "quem é?"). Não é voto: ignora.
-          else if (session.etapa === 'aguardando_voto1' && session.saudacaoRespondidaEm && !session.msg3EnviadaEm) {
-            console.log(`[Pesquisa Senado MS] ${msg.from} escreveu durante a espera da Msg 2/3 — ignorado`);
-          }
-
-          // Etapa 2: aguardando 1º voto
+          // Etapa 2: Aguardando 1º voto (clique no candidato da lista 1)
           else if (session.etapa === 'aguardando_voto1') {
-            // Lê pela numeração da lista que ESTE eleitor recebeu (quem recebeu a
-            // lista antiga de 12 ainda digita os números antigos).
-            const versao = session.listaVersao ?? 1;
+            const versao = session.listaVersao ?? LISTA_VERSAO_ATUAL;
             const votoValido = validarVoto(cleanText, versao);
             if (!votoValido) {
-              await botReply(msg.from, session.name, `Opa, não consegui identificar direitinho por aqui 😅 Pode me mandar só o número da opção (de 1 a ${ultimaOpcao(versao)})?`, stickyInst);
+              await botReply(
+                msg.from,
+                session.name,
+                `Opa, não consegui identificar por aqui 😅 Por favor selecione uma opção no menu da lista ou responda com a sua escolha.`,
+                stickyInst
+              );
             } else {
               const candidato1 = obterCandidatoPorId(votoValido);
               if (candidato1) {
                 session.voto1Id = candidato1.id;
                 session.voto1Nome = candidato1.nome;
                 session.etapa = 'aguardando_voto2';
-                // Msg 4 sai com a lista ATUAL, qualquer que tenha sido a do 1º voto.
                 session.listaVersao = LISTA_VERSAO_ATUAL;
                 await savePesquisaSession(session);
                 sincronizarContatoEleitor({
-                  name: session.name, phone: msg.from, bairro: session.bairro,
-                  voto1Nome: candidato1.nome, etapa: 'aguardando_voto2',
+                  name: session.name,
+                  phone: msg.from,
+                  bairro: session.bairro,
+                  voto1Nome: candidato1.nome,
+                  etapa: 'aguardando_voto2',
                 }).catch((e) => console.error('[Webhook] Erro sync contato 1º voto:', e));
 
-                await botReply(msg.from, session.name, gerarMensagemSegundoVoto(candidato1.id, seed), stickyInst);
-                console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) — Msg 4 enviada para ${msg.from} via ${stickyInst || 'default'}`);
+                const list2 = gerarMensagemSegundoVotoData(candidato1.id, seed);
+                await botReplyList(
+                  msg.from,
+                  session.name,
+                  list2.title,
+                  list2.buttonText,
+                  list2.rows,
+                  list2.fallbackText,
+                  stickyInst
+                );
+                console.log(`[Pesquisa Senado MS] 1º Voto (${candidato1.nome}) de ${msg.from} — Msg 3 (Lista 2º Voto) enviada via ${stickyInst || 'default'}`);
               }
             }
           }
 
-          // Etapa 3: aguardando 2º voto
+          // Etapa 3: Aguardando 2º voto (clique no candidato da lista 2)
           else if (session.etapa === 'aguardando_voto2') {
-            const votoValido = validarVoto(cleanText, session.listaVersao ?? 1);
+            const versao = session.listaVersao ?? LISTA_VERSAO_ATUAL;
+            const votoValido = validarVoto(cleanText, versao);
             if (!votoValido) {
-              await botReply(msg.from, session.name, 'Opa, não consegui identificar por aqui 😅 Pode me mandar só o número da sua segunda escolha?', stickyInst);
+              await botReply(
+                msg.from,
+                session.name,
+                'Opa, não consegui identificar por aqui 😅 Por favor escolha uma opção do menu para o seu segundo voto.',
+                stickyInst
+              );
             } else if (session.voto1Id && session.voto1Id === votoValido && !obterCandidatoPorId(votoValido)?.isEspecial) {
-              await botReply(msg.from, session.name, 'Como a gente tem direito a dois votos para candidatos diferentes, essa segunda escolha precisa ser em outro nome 🙂\nDá uma olhadinha na lista e me fala quem seria sua segunda opção:', stickyInst);
+              const list2Rep = gerarMensagemSegundoVotoData(session.voto1Id, seed);
+              await botReplyList(
+                msg.from,
+                session.name,
+                'Como a gente tem direito a dois votos para candidatos diferentes, essa segunda escolha precisa ser em outro nome 🙂',
+                list2Rep.buttonText,
+                list2Rep.rows,
+                list2Rep.fallbackText,
+                stickyInst
+              );
             } else {
               const candidato2 = obterCandidatoPorId(votoValido);
               if (candidato2) {
@@ -428,12 +518,16 @@ export async function POST(req: NextRequest) {
                 session.etapa = 'concluido';
                 await savePesquisaSession(session);
                 sincronizarContatoEleitor({
-                  name: session.name, phone: msg.from, bairro: session.bairro,
-                  voto1Nome: session.voto1Nome, voto2Nome: candidato2.nome, etapa: 'concluido',
+                  name: session.name,
+                  phone: msg.from,
+                  bairro: session.bairro,
+                  voto1Nome: session.voto1Nome,
+                  voto2Nome: candidato2.nome,
+                  etapa: 'concluido',
                 }).catch((e) => console.error('[Webhook] Erro sync contato 2º voto:', e));
 
-                await botReply(msg.from, session.name, gerarMensagemAgradecimento(seed), stickyInst);
-                console.log(`[Pesquisa Senado MS] 2º Voto (${candidato2.nome}) — pesquisa concluída para ${msg.from} via ${stickyInst || 'default'}`);
+                await botReply(msg.from, session.name, gerarMensagemAgradecimentoData(), stickyInst);
+                console.log(`[Pesquisa Senado MS] 2º Voto (${candidato2.nome}) de ${msg.from} — Pesquisa Concluída!`);
               }
             }
           }

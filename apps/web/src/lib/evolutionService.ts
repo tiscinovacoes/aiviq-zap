@@ -545,6 +545,178 @@ export async function sendRealMessage(
   return (await sendRealMessageDetailed(target, text, instanceName, delayMs)).ok;
 }
 
+export interface ButtonOption {
+  id: string;
+  text: string;
+}
+
+/**
+ * Envia mensagem com botões interativos via Evolution API.
+ * Se o envio interativo falhar ou não for suportado, cai para o envio de texto padrão.
+ */
+export async function sendButtonsDetailed(
+  target: string,
+  title: string,
+  buttons: ButtonOption[],
+  instanceName?: string,
+  delayMs = 0,
+  fallbackText?: string
+): Promise<SendResult> {
+  let inst = resolveInstanceName(instanceName);
+  let isConnected = await isEvolutionConnected(inst);
+
+  if (!isConnected) {
+    try {
+      const live = await fetchLiveEvolutionInstances();
+      const conectada = live.find((i) => i.status === 'connected');
+      if (conectada) {
+        inst = conectada.instanceName;
+        isConnected = true;
+      }
+    } catch {}
+  }
+
+  if (!isConnected) {
+    return { ok: false, instance: inst, error: 'Instância WhatsApp desconectada' };
+  }
+
+  const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
+  if (!cleanNumber || cleanNumber.length < 8) {
+    return { ok: false, instance: inst, error: 'Número de telefone inválido ou incompleto' };
+  }
+
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/message/sendButtons/${inst}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: EVOLUTION_API_KEY,
+      },
+      body: JSON.stringify({
+        number: cleanNumber,
+        title: title,
+        description: title,
+        buttons: buttons.map((b) => ({
+          type: 'reply',
+          displayText: b.text,
+          id: b.id,
+        })),
+        delay: delayMs,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (res.ok) {
+      let messageId: string | undefined;
+      try {
+        const data = await res.json();
+        messageId = data?.key?.id || data?.messageId || undefined;
+      } catch {}
+      invalidateEvolutionCache(inst);
+      return { ok: true, messageId, instance: inst };
+    }
+  } catch (err) {
+    console.warn(`[Evolution sendButtons Error] (${inst}):`, err);
+  }
+
+  // Fallback para texto simples se sendButtons falhar
+  const textBody =
+    fallbackText || `${title}\n\n` + buttons.map((b, idx) => `${idx + 1} - ${b.text}`).join('\n');
+  return sendRealMessageDetailed(target, textBody, inst, delayMs);
+}
+
+export interface ListRowOption {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+/**
+ * Envia mensagem com lista clicável (Menu de Seleção) via Evolution API.
+ * Se o envio interativo falhar ou não for suportado, cai para o envio de texto padrão.
+ */
+export async function sendListDetailed(
+  target: string,
+  title: string,
+  buttonText: string,
+  rows: ListRowOption[],
+  instanceName?: string,
+  delayMs = 0,
+  fallbackText?: string
+): Promise<SendResult> {
+  let inst = resolveInstanceName(instanceName);
+  let isConnected = await isEvolutionConnected(inst);
+
+  if (!isConnected) {
+    try {
+      const live = await fetchLiveEvolutionInstances();
+      const conectada = live.find((i) => i.status === 'connected');
+      if (conectada) {
+        inst = conectada.instanceName;
+        isConnected = true;
+      }
+    } catch {}
+  }
+
+  if (!isConnected) {
+    return { ok: false, instance: inst, error: 'Instância WhatsApp desconectada' };
+  }
+
+  const cleanNumber = target.replace('@s.whatsapp.net', '').replace(/@lid$/, '').replace(/\D/g, '');
+  if (!cleanNumber || cleanNumber.length < 8) {
+    return { ok: false, instance: inst, error: 'Número de telefone inválido ou incompleto' };
+  }
+
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/message/sendList/${inst}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: EVOLUTION_API_KEY,
+      },
+      body: JSON.stringify({
+        number: cleanNumber,
+        title: title,
+        description: title,
+        buttonText: buttonText,
+        sections: [
+          {
+            title: 'Candidatos',
+            rows: rows.map((r) => ({
+              title: r.title,
+              description: r.description || '',
+              rowId: r.id,
+            })),
+          },
+        ],
+        delay: delayMs,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (res.ok) {
+      let messageId: string | undefined;
+      try {
+        const data = await res.json();
+        messageId = data?.key?.id || data?.messageId || undefined;
+      } catch {}
+      invalidateEvolutionCache(inst);
+      return { ok: true, messageId, instance: inst };
+    }
+  } catch (err) {
+    console.warn(`[Evolution sendList Error] (${inst}):`, err);
+  }
+
+  // Fallback para texto simples se sendList falhar
+  const textBody =
+    fallbackText ||
+    `${title}\n\n` +
+      rows.map((r, idx) => `${idx + 1}️⃣ ${r.title}`).join('\n') +
+      '\n\nResponda apenas com o número ou nome da opção.';
+  return sendRealMessageDetailed(target, textBody, inst, delayMs);
+}
+
+
 // ================= 4b. HISTÓRICO BRUTO (para reconciliação/backfill) =================
 /** Busca as mensagens brutas armazenadas pela Evolution na instância (todas as
  *  conversas). Usado pela reconciliação que garante que TUDO seja gravado no
