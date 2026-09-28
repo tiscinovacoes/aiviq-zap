@@ -98,11 +98,11 @@ export default function PesquisaSenadoKanban() {
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
   const [novoBairro, setNovoBairro] = useState('Campo Grande - MS');
-  // '' = deixa o sistema escolher (comportamento anterior). Qualquer outro
-  // valor força o disparo a sair por ESSE chip especificamente.
-  const [instanciaEscolhida, setInstanciaEscolhida] = useState('');
   const [disparando, setDisparando] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
+  // Teste do fluxo por clique (lista clicável em vez de resposta digitada) --
+  // restrito ao disparo avulso, sempre desmarcado por padrão.
+  const [modoClique, setModoClique] = useState(false);
 
   // Modal e Estado de Importação de Planilha Excel/CSV
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
@@ -117,11 +117,6 @@ export default function PesquisaSenadoKanban() {
   const [estadoDisparador, setEstadoDisparador] = useState<EstadoDisparador | null>(null);
   const [falhasList, setFalhasList] = useState<any[]>([]);
   const [porChip, setPorChip] = useState<Array<{ instancia: string; pendentes: number; enviados: number; erros: number }>>([]);
-  const [lotes, setLotes] = useState<
-    Array<{ id: string; nome: string | null; totalContatos: number; pendentes: number; enviados: number; erros: number; createdAt: string }>
-  >([]);
-  const [isLotesModalOpen, setIsLotesModalOpen] = useState(false);
-  const [cancelandoLote, setCancelandoLote] = useState<string | null>(null);
   const [isFalhasModalOpen, setIsFalhasModalOpen] = useState(false);
   const [reenfileirandoFalhas, setReenfileirandoFalhas] = useState(false);
 
@@ -237,7 +232,6 @@ export default function PesquisaSenadoKanban() {
         if (Array.isArray(data.falhas)) {
           setFalhasList(data.falhas);
         }
-        if (Array.isArray(data.lotes)) setLotes(data.lotes);
       }
     } catch {
       // silencioso em background
@@ -259,8 +253,8 @@ export default function PesquisaSenadoKanban() {
           phone: novoTelefone.trim(),
           name: novoNome.trim(),
           bairro: novoBairro.trim(),
-          instance: instanciaEscolhida || undefined,
           sendWhatsApp: true,
+          modo: modoClique ? 'clique' : undefined,
         }),
       });
       const data = await res.json();
@@ -270,7 +264,6 @@ export default function PesquisaSenadoKanban() {
         );
         setNovoNome('');
         setNovoTelefone('');
-        setInstanciaEscolhida('');
         fetchDados();
         setTimeout(() => {
           setIsModalOpen(false);
@@ -372,7 +365,6 @@ export default function PesquisaSenadoKanban() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'enfileirar',
-          nomeLote: planilhaNomeArquivo || undefined,
           contatos: planilhaContatos.map((c) => ({
             name: c.name?.trim() || '',
             phone: c.phone.replace(/\D/g, ''),
@@ -420,38 +412,9 @@ export default function PesquisaSenadoKanban() {
 
   const handleIniciarDisparos = () => controlarFila('retomar');
   const handlePausarDisparos = () => controlarFila('pausar');
-
-  // Cancela SÓ um lote (uma importação específica) -- os pendentes das
-  // outras filas continuam sendo trabalhados normalmente. Antes "Parar"
-  // cancelava TUDO que estava pendente, mesmo leads de uma lista diferente
-  // da que o operador queria parar.
-  const handleCancelarLote = async (loteId: string) => {
-    setCancelandoLote(loteId);
-    try {
-      const res = await fetch('/api/pesquisa/senado/queue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cancelar_lote', loteId }),
-      });
-      const data = await res.json();
-      if (data?.success) {
-        setMensagemSucesso(`✅ Fila cancelada: ${data.cancelados} contato(s) removido(s) da fila.`);
-        setTimeout(() => setMensagemSucesso(null), 6000);
-      }
-      await fetchQueueStatus();
-    } catch (err) {
-      console.error('Erro ao cancelar lote:', err);
-    } finally {
-      setCancelandoLote(null);
-    }
-  };
-
-  // Cancela TUDO que está pendente, de qualquer fila -- emergência, use com
-  // cautela (fica dentro do modal de filas, não é mais o botão principal).
-  const handleCancelarTudo = () => {
-    if (!confirm('Isso cancela TODOS os leads pendentes de TODAS as filas, não só uma. Confirma?')) return;
+  const handlePararDisparos = () => {
+    if (!confirm('Deseja realmente cancelar os disparos pendentes da fila?')) return;
     controlarFila('parar');
-    setIsLotesModalOpen(false);
   };
 
   const handleExportarFalhasCSV = () => {
@@ -466,7 +429,7 @@ export default function PesquisaSenadoKanban() {
       f.attempts || 1,
       `"${f.createdAt || ''}"`,
     ]);
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = 'data:text/csv;charset=utf-8,﻿' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const link = document.createElement('a');
     link.setAttribute('href', encodeURI(csvContent));
     link.setAttribute('download', `falhas_disparo_${new Date().toISOString().slice(0, 10)}.csv`);
@@ -565,7 +528,7 @@ export default function PesquisaSenadoKanban() {
       s.createdAt,
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = 'data:text/csv;charset=utf-8,﻿' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -772,12 +735,11 @@ export default function PesquisaSenadoKanban() {
             )}
 
             <button
-              onClick={() => setIsLotesModalOpen(true)}
-              title="Escolher qual fila (importação) cancelar, sem afetar as outras"
+              onClick={handlePararDisparos}
               className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-semibold flex items-center gap-1"
             >
               <Square className="w-3 h-3" />
-              <span>Filas{lotes.length > 0 ? ` (${lotes.length})` : ''}</span>
+              <span>Parar</span>
             </button>
           </div>
         </div>
@@ -856,7 +818,7 @@ export default function PesquisaSenadoKanban() {
             <p className="text-xl font-bold text-rose-700">{totalFalhasDisparo}</p>
             {totalFalhasDisparo > 0 && (
               <span className="text-[10px] font-semibold text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded border border-rose-200 flex items-center gap-0.5">
-                Verificar ➔
+                Verificar ➜
               </span>
             )}
           </div>
@@ -1255,34 +1217,20 @@ export default function PesquisaSenadoKanban() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Chip que vai disparar</label>
-                <select
-                  value={instanciaEscolhida}
-                  onChange={(e) => setInstanciaEscolhida(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden bg-white"
-                >
-                  <option value="">Deixar o sistema escolher (padrão)</option>
-                  {instances.map((i) => {
-                    const emCooldown = Boolean(i.cooldownAte && new Date(i.cooldownAte) > new Date());
-                    return (
-                      <option
-                        key={i.instanceName}
-                        value={i.instanceName}
-                        disabled={i.status !== 'connected' || emCooldown}
-                      >
-                        {i.label} — {i.phoneNumber || i.instanceName}
-                        {i.status !== 'connected' ? ' (desconectado)' : ''}
-                        {emCooldown ? ' (resfriando — indisponível)' : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Chips desconectados ou em resfriamento ficam bloqueados aqui. O chip escolhido ainda passa
-                  pela checagem de janela de horário e teto diário antes de disparar.
-                </p>
-              </div>
+              <label className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={modoClique}
+                  onChange={(e) => setModoClique(e.target.checked)}
+                  className="mt-0.5 accent-amber-600"
+                />
+                <span className="text-[11px] text-amber-800 leading-snug">
+                  <span className="font-semibold">Testar fluxo por clique (experimental).</span>{' '}
+                  Msg 1 já pergunta se a pessoa topa a pesquisa; os votos saem como lista
+                  clicável em vez de número digitado. Só para disparo avulso de teste — risco
+                  de instabilidade maior que o texto normal.
+                </span>
+              </label>
 
               {mensagemSucesso && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs">
@@ -1615,80 +1563,6 @@ export default function PesquisaSenadoKanban() {
                 type="button"
                 onClick={() => setIsFalhasModalOpen(false)}
                 className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-lg transition-colors"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Filas (lotes) ativas -- cada importação vira uma fila separada e
-          cancelável sozinha, sem mexer nas outras que estão em andamento. */}
-      {isLotesModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] flex flex-col">
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Filas de disparo</h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Cada planilha importada é uma fila separada. Cancelar uma não afeta as outras.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsLotesModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
-              >
-                <XCircle className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-              {lotes.length === 0 ? (
-                <div className="h-24 flex items-center justify-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-lg">
-                  Nenhuma fila com contatos pendentes no momento.
-                </div>
-              ) : (
-                lotes.map((lote) => (
-                  <div key={lote.id} className="p-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate">
-                        {lote.nome || `Fila de ${new Date(lote.createdAt).toLocaleDateString('pt-BR')}`}
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        {lote.pendentes} pendente{lote.pendentes === 1 ? '' : 's'} · {lote.enviados} enviado{lote.enviados === 1 ? '' : 's'}
-                        {lote.erros > 0 && ` · ${lote.erros} erro${lote.erros === 1 ? '' : 's'}`} · de {lote.totalContatos}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!confirm(`Cancelar esta fila? Os ${lote.pendentes} contato(s) ainda pendente(s) NÃO serão mais abordados.`)) return;
-                        handleCancelarLote(lote.id);
-                      }}
-                      disabled={cancelandoLote === lote.id}
-                      className="shrink-0 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-semibold disabled:opacity-60"
-                    >
-                      {cancelandoLote === lote.id ? 'Cancelando…' : 'Cancelar fila'}
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="p-4 border-t border-slate-200 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={handleCancelarTudo}
-                className="text-[11px] font-semibold text-slate-400 hover:text-rose-600"
-              >
-                Cancelar todas as filas (emergência)
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsLotesModalOpen(false)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-lg text-xs transition-colors"
               >
                 Fechar
               </button>
